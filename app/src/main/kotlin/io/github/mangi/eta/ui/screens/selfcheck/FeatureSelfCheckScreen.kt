@@ -60,6 +60,10 @@ internal fun FeatureSelfCheckScreen(onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
     var report by remember { mutableStateOf<SelfCheckReport?>(null) }
     var round by remember { mutableStateOf(0) }
+    // 63 项一屏铺开太长：三组各自可折叠，③ 内置功能默认收起。
+    var showPermissions by remember { mutableStateOf(true) }
+    var showStorage by remember { mutableStateOf(true) }
+    var showBuiltin by remember { mutableStateOf(false) }
     LaunchedEffect(round) {
         report = withContext(Dispatchers.IO) { runSelfCheck(context) }
     }
@@ -80,8 +84,17 @@ internal fun FeatureSelfCheckScreen(onBack: () -> Unit) {
             }
         }
 
-        item(key = "selfcheck-permissions") {
-            EtaPreferenceGroupTitle("① 权限与环境")
+        item(key = "selfcheck-permissions-head") {
+            EtaPreferenceGroup {
+                EtaArrowPreference(
+                    title = "① 权限与环境",
+                    summary = if (showPermissions) "点一下收起" else "已收起，点一下展开（${report?.permissions?.size ?: 0} 项）",
+                    onClick = { showPermissions = !showPermissions },
+                )
+            }
+        }
+
+        if (showPermissions) item(key = "selfcheck-permissions") {
             EtaPreferenceGroup {
                 val items = report?.permissions.orEmpty()
                 if (items.isEmpty()) {
@@ -103,8 +116,17 @@ internal fun FeatureSelfCheckScreen(onBack: () -> Unit) {
             }
         }
 
-        item(key = "selfcheck-storage") {
-            EtaPreferenceGroupTitle("② 数据与存储")
+        item(key = "selfcheck-storage-head") {
+            EtaPreferenceGroup {
+                EtaArrowPreference(
+                    title = "② 数据与存储",
+                    summary = if (showStorage) "点一下收起" else "已收起，点一下展开（${report?.storage?.size ?: 0} 项）",
+                    onClick = { showStorage = !showStorage },
+                )
+            }
+        }
+
+        if (showStorage) item(key = "selfcheck-storage") {
             EtaPreferenceGroup {
                 val items = report?.storage.orEmpty()
                 if (items.isEmpty()) {
@@ -146,8 +168,17 @@ internal fun FeatureSelfCheckScreen(onBack: () -> Unit) {
             }
         }
 
-        item(key = "selfcheck-builtin") {
-            EtaPreferenceGroupTitle("③ 已内置功能（本包确认存在）")
+        item(key = "selfcheck-builtin-head") {
+            EtaPreferenceGroup {
+                EtaArrowPreference(
+                    title = "③ 已内置功能（本包确认存在）",
+                    summary = if (showBuiltin) "点一下收起" else "已收起，点一下展开（${report?.builtin?.size ?: 0} 项）",
+                    onClick = { showBuiltin = !showBuiltin },
+                )
+            }
+        }
+
+        if (showBuiltin) item(key = "selfcheck-builtin") {
             EtaPreferenceGroup {
                 val items = report?.builtin.orEmpty()
                 if (items.isEmpty()) {

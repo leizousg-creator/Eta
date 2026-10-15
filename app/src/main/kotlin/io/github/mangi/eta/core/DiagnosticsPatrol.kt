@@ -336,16 +336,34 @@ internal object DiagnosticsPatrol {
             // 9) 日志关键字（导出这一刻抓一次，事后是抓不到的）
             runCatching {
                 val lines = shellCapture(600).also { logLines = it }
-                val fatal = lines.count { it.contains("FATAL EXCEPTION") }
-                val anr = lines.count { it.contains("ANR in") || it.contains("ANR ") }
-                val native = lines.count { it.contains("libc") && it.contains("Fatal signal") }
+                val crashLines = shellCapture(400, "crash")
+                val tomb = tombstones()
+                val fatal = lines.count { it.contains("FATAL EXCEPTION") } +
+                    crashLines.count { it.contains("FATAL EXCEPTION") }
+                val anr = lines.count { it.contains("ANR in") || it.contains("ANR ") } +
+                    crashLines.count { it.contains("ANR in") || it.contains("ANR ") }
+                val native = lines.count { it.contains("libc") && it.contains("Fatal signal") } +
+                    crashLines.count { it.contains("Fatal signal") || it.contains("signal 11") || it.contains("signal 6") } +
+                    tomb.size
                 metrics["日志采样行数"] = lines.size.toString()
+                metrics["crash 缓冲行数"] = crashLines.size.toString()
+                metrics["墓碑份数"] = tomb.size.toString()
                 metrics["FATAL 行数"] = fatal.toString()
                 metrics["ANR 行数"] = anr.toString()
                 metrics["native 崩溃行数"] = native.toString()
                 if (lines.isNotEmpty()) {
                     extra.appendLine("── 日志尾部（最多 120 行）──")
                     extra.append(lines.takeLast(120)).appendLine()
+                    extra.appendLine()
+                }
+                if (crashLines.isNotEmpty()) {
+                    extra.appendLine("── crash 缓冲尾部（最多 60 行；main 被刷爆时靠它）──")
+                    extra.appendLine(crashLines.takeLast(60).joinToString("\n"))
+                    extra.appendLine()
+                }
+                if (tomb.isNotEmpty()) {
+                    extra.appendLine("── 最近原生崩溃墓碑（/data/tombstones）──")
+                    tomb.forEach { extra.appendLine(it) }
                     extra.appendLine()
                 }
                 findings += when {
@@ -615,13 +633,30 @@ internal object DiagnosticsPatrol {
         }
     }
 
-    private fun shellCapture(maxLines: Int): List<String> = runCatching {
-        val process = ProcessBuilder("logcat", "-d", "-v", "time", "-t", maxLines.toString())
+    /** buffer 为 null 抓 main；crash 缓冲单独抓，main 被刷爆时靠它兜住崩溃现场。 */
+    private fun shellCapture(maxLines: Int, buffer: String? = null): List<String> = runCatching {
+        val args = mutableListOf("logcat", "-d", "-v", "time")
+        if (buffer != null) {
+            args += "-b"
+            args += buffer
+        }
+        args += "-t"
+        args += maxLines.toString()
+        val process = ProcessBuilder(args)
             .redirectErrorStream(true)
             .start()
         val lines = process.inputStream.bufferedReader().use { it.readLines() }
         runCatching { process.waitFor() }
         lines.takeLast(maxLines)
+    }.getOrDefault(emptyList())
+
+    /** 最近的原生崩溃墓碑（读不到就返回空，不影响巡检其他项）。 */
+    private fun tombstones(limit: Int = 5): List<String> = runCatching {
+        File("/data/tombstones").listFiles()
+            ?.sortedByDescending { it.lastModified() }
+            ?.take(limit)
+            ?.map { "${it.name}｜${bytes(it.length())}｜${stamp(it.lastModified())}" }
+            ?: emptyList()
     }.getOrDefault(emptyList())
 
     private fun dirSize(dir: File): Long = runCatching {
