@@ -82,6 +82,14 @@ internal object SettingsDataStore {
     private val AUTO_BACKUP_FINGERPRINT = stringPreferencesKey("auto_backup_fingerprint")
     private val AUTO_BACKUP_LAST_FILE = stringPreferencesKey("auto_backup_last_file")
     private val AUTO_BACKUP_DIRECTORY = stringPreferencesKey("auto_backup_directory")
+    private val DIAG_PATROL_ENABLED = booleanPreferencesKey("diag_patrol_enabled")
+    private val DIAG_PATROL_INTERVAL = intPreferencesKey("diag_patrol_interval_minutes")
+    private val DIAG_PATROL_KEEP = intPreferencesKey("diag_patrol_keep_count")
+    private val DIAG_PATROL_ONLY_ABNORMAL = booleanPreferencesKey("diag_patrol_only_abnormal")
+    private val DIAG_PATROL_LAST_AT = longPreferencesKey("diag_patrol_last_at")
+    private val DIAG_PATROL_LAST_FILE = stringPreferencesKey("diag_patrol_last_file")
+    private val DIAG_PATROL_LAST_LEVEL = stringPreferencesKey("diag_patrol_last_level")
+    private val DIAG_PATROL_LAST_SUMMARY = stringPreferencesKey("diag_patrol_last_summary")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -200,6 +208,15 @@ internal object SettingsDataStore {
             prefs.putOrRemove(AUTO_BACKUP_FINGERPRINT, updated.autoBackupFingerprint)
             prefs.putOrRemove(AUTO_BACKUP_LAST_FILE, updated.autoBackupLastFileName)
             prefs.putOrRemove(AUTO_BACKUP_DIRECTORY, updated.autoBackupDirectory)
+            prefs[DIAG_PATROL_ENABLED] = updated.diagPatrolEnabled
+            prefs[DIAG_PATROL_INTERVAL] = io.github.mangi.eta.core.DiagnosticsPatrolInterval
+                .normalize(updated.diagPatrolIntervalMinutes)
+            prefs[DIAG_PATROL_KEEP] = updated.diagPatrolKeepCount.coerceIn(1, 60)
+            prefs[DIAG_PATROL_ONLY_ABNORMAL] = updated.diagPatrolNotifyOnlyAbnormal
+            prefs[DIAG_PATROL_LAST_AT] = updated.diagPatrolLastAt
+            prefs.putOrRemove(DIAG_PATROL_LAST_FILE, updated.diagPatrolLastFile)
+            prefs.putOrRemove(DIAG_PATROL_LAST_LEVEL, updated.diagPatrolLastLevel)
+            prefs.putOrRemove(DIAG_PATROL_LAST_SUMMARY, updated.diagPatrolLastSummary)
             prefs.remove(stringPreferencesKey("vivo_atomic_scene"))
             prefs.putAppearance(updated.appearance.normalized())
         }
@@ -381,6 +398,16 @@ internal object SettingsDataStore {
         autoBackupFingerprint = this[AUTO_BACKUP_FINGERPRINT].orEmpty(),
         autoBackupLastFileName = this[AUTO_BACKUP_LAST_FILE].orEmpty(),
         autoBackupDirectory = this[AUTO_BACKUP_DIRECTORY].orEmpty(),
+        diagPatrolEnabled = this[DIAG_PATROL_ENABLED] ?: false,
+        diagPatrolIntervalMinutes = io.github.mangi.eta.core.DiagnosticsPatrolInterval.normalize(
+            this[DIAG_PATROL_INTERVAL] ?: io.github.mangi.eta.core.DiagnosticsPatrolInterval.DEFAULT_MINUTES,
+        ),
+        diagPatrolKeepCount = (this[DIAG_PATROL_KEEP] ?: 30).coerceIn(1, 60),
+        diagPatrolNotifyOnlyAbnormal = this[DIAG_PATROL_ONLY_ABNORMAL] ?: true,
+        diagPatrolLastAt = this[DIAG_PATROL_LAST_AT] ?: 0L,
+        diagPatrolLastFile = this[DIAG_PATROL_LAST_FILE].orEmpty(),
+        diagPatrolLastLevel = this[DIAG_PATROL_LAST_LEVEL].orEmpty(),
+        diagPatrolLastSummary = this[DIAG_PATROL_LAST_SUMMARY].orEmpty(),
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,

@@ -407,6 +407,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.TokenUsage -> stringResource(R.string.usage_stats_title)
     is AppRoute.DataUsage -> stringResource(R.string.data_usage_title)
     is AppRoute.SelfCheck -> "功能自检"
+    is AppRoute.DiagnosticsPatrol -> stringResource(R.string.diag_patrol_title)
     is AppRoute.SpeechSettings -> stringResource(R.string.speech_settings_title)
     is AppRoute.SpeechRecognition -> stringResource(R.string.speech_recognition_title)
     is AppRoute.SpeechSynthesis -> stringResource(R.string.speech_synthesis_title)

@@ -34,6 +34,25 @@ data class Settings(
     val autoBackupLastFileName: String = "",
     /** 自定义自动备份目录；空串表示默认的「外部存储/Eta备份」。 */
     val autoBackupDirectory: String = "",
+    /** 极致自动排查：本地定时巡检，只报异常，异常即留档。 */
+    val diagPatrolEnabled: Boolean = false,
+
+    /** 巡检周期（分钟）：5 ~ 43200，默认一天一次。 */
+    val diagPatrolIntervalMinutes: Int = 24 * 60,
+
+    /** 巡检报告保留份数：超出的删最旧，只动巡检自己的目录。 */
+    val diagPatrolKeepCount: Int = 30,
+
+    /** 只在出异常时提醒；关掉则每次巡检都提醒。 */
+    val diagPatrolNotifyOnlyAbnormal: Boolean = true,
+
+    val diagPatrolLastAt: Long = 0L,
+    val diagPatrolLastFile: String = "",
+
+    /** 上次巡检等级（正常/注意/异常），给界面和增量对比用。 */
+    val diagPatrolLastLevel: String = "",
+    val diagPatrolLastSummary: String = "",
+
     /** 打开 Eta 后悬浮胶囊常驻显示：没有任务时也留在屏幕上，点它看运行中会话。 */
     val overlayCapsulePinned: Boolean = false,
 

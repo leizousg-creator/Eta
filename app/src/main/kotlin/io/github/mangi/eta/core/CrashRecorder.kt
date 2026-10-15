@@ -65,6 +65,8 @@ internal object CrashRecorder {
         val target = File(dir, "crash-$stamp$EXTENSION")
         target.writeText(report(context, thread, error), Charsets.UTF_8)
         prune(dir)
+        // 崩溃现场顺手补一次巡检取证：独立线程，失败不影响记崩溃。
+        runCatching { DiagnosticsPatrol.captureNow(context, "崩溃即取证") }
         return target
     }
 

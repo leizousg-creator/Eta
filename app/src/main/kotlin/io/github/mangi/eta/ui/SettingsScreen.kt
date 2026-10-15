@@ -963,6 +963,25 @@ private fun SettingsPageContent(
                     )
                 }
             }
+
+            // ── 极致自动排查（设置最下面，独立一组）────────────────────────
+            item(key = "section_patrol") {
+                if (!sectionVisible("section_patrol")) return@item
+                EtaPreferenceGroupTitle(stringResource(R.string.diag_patrol_group_title))
+                EtaPreferenceGroup {
+                    EtaArrowPreference(
+                        title = stringResource(R.string.diag_patrol_title),
+                        summary = stringResource(R.string.diag_patrol_entry_summary),
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.BugReport,
+                                tint = EtaPreferenceColors.Blue,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.DiagnosticsPatrol) },
+                    )
+                }
+            }
         }
 
         SystemizerConfirmDialog(
@@ -1235,6 +1254,7 @@ private val SETTINGS_SEARCH_INDEX = listOf(
     SettingsSearchEntry("section_general", "通用 外观 主题 语言"),
     SettingsSearchEntry("section_permissions", "权限 无障碍 悬浮窗 通知"),
     SettingsSearchEntry("section_about", "关于 版本 用量 token 统计 消耗 数据占用 清理 数据库 大小 诊断包 日志 导出 分享 开源 功能自检 自检 体检"),
+    SettingsSearchEntry("section_patrol", "极致自动排查 自动排查 巡检 排查 诊断 崩溃 日志 报告 巡检周期"),
 )
 
 private fun settingsMatched(sectionKey: String, keyword: String): Boolean =
