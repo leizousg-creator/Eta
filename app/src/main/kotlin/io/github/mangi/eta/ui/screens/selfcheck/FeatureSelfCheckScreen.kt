@@ -340,6 +340,26 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
             "超长会话在请求侧裁剪，顶栏显示已裁掉的提示；本机历史不受影响",
         ),
         SelfCheckItem(
+            "对话内三轮压缩",
+            STATE_BUILTIN,
+            "同一对话最多压缩 3 轮，顶栏胶囊显示「第 x/3 轮」；到上限提示新开对话继续",
+        ),
+        SelfCheckItem(
+            "工具档「开发」档与分组",
+            STATE_BUILTIN,
+            "工具档分「能干活／省 token」两组，并新增「开发」档：只发开发链工具（终端／文件／GUI／日志／记忆），手机个人数据类工具不发送；降档顺序 正常 → 轻度 → 标准 → 极简",
+        ),
+        SelfCheckItem(
+            "记忆自动精简",
+            STATE_BUILTIN,
+            "记忆超过 60 KB 时自动把最旧段落的正文移入冷区 MEMORY-ARCHIVE.md；环境包、硬边界、偏好、进行中项目永不搬动，可在记忆界面开关",
+        ),
+        SelfCheckItem(
+            "返回栈去重（分享与回首页不再崩）",
+            STATE_BUILTIN,
+            "同一 key 不再重复入返回栈；分享后回首页、二级页互跳都不会再崩（Duplicate contentKey）",
+        ),
+        SelfCheckItem(
             "工具档",
             STATE_BUILTIN,
             "设置 → 工具档 五档可选，每档带说明文案；档位跟随所选模型",
