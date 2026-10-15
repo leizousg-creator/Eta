@@ -36,6 +36,74 @@ internal object RootDisplayCommandMain {
     // 帧回调线程读取的画布尺寸快照：切尺寸只在帧线程上发生，这里保证跨线程可见。
     @Volatile private var renderWidth = 0
     @Volatile private var renderHeight = 0
+    /** A′ 直通出帧：向本应用 provider 取当前宿主 Surface；root/system 身份调用走权限豁免。 */
+    /** 直通出帧排查日志：helper 是 root，可直接写公共目录。 */
+    private fun hlog(text: String) {
+        runCatching {
+            java.io.File("/data/local/tmp/xaw-helper.log")
+                .appendText(android.os.SystemClock.elapsedRealtime().toString() + " " + text + "\n")
+        }
+    }
+
+    private const val HOST_AUTHORITY = "io.github.mangi.xiaoaiwindow.hostsurface"
+    private const val APP_PACKAGE = "io.github.mangi.xiaoaiwindow"
+    /** helper 是裸 app_process，没有 AMS 里的 app 记录；必须走 external provider 通道。 */
+    private var extProvider: Any? = null
+
+    // root app_process has no app identity: use uid 0 AttributionSource.
+    private fun attrSource(): Any? = runCatching {
+        val cls = Class.forName("android.content.AttributionSource")
+        runCatching { cls.getMethod("myAttributionSource").invoke(null) }.getOrElse {
+            cls.getDeclaredConstructor(
+                Int::class.javaPrimitiveType, String::class.java, String::class.java
+            ).also { it.isAccessible = true }.newInstance(0, APP_PACKAGE, null)
+        }
+    }.getOrNull()
+
+    private fun callProvider(method: String, extras: android.os.Bundle): android.os.Bundle? {
+        val am = ActivityManager::class.java.getDeclaredMethod("getService").invoke(null)
+        val provider = extProvider ?: run {
+            val holder = am.javaClass.getMethod(
+                "getContentProviderExternal", String::class.java, Int::class.javaPrimitiveType,
+                android.os.IBinder::class.java, String::class.java
+            ).invoke(am, HOST_AUTHORITY, 0, null, "eta-vscr")
+            holder.javaClass.getField("provider").get(holder).also { extProvider = it }
+        }
+        // A15+ 的 IContentProvider.call 首参是 AttributionSource（5 参），更早是 callingPackage+attributionTag（6 参）。
+        val calls = provider!!.javaClass.methods.filter {
+            it.name == "call" && it.parameterTypes.last() == android.os.Bundle::class.java
+        }
+        val call = calls.firstOrNull {
+            it.parameterTypes.size == 5 &&
+                it.parameterTypes[0].name == "android.content.AttributionSource"
+        } ?: calls.firstOrNull { it.parameterTypes.size == 6 }
+        ?: throw NoSuchMethodException("IContentProvider.call")
+        val args = if (call.parameterTypes.size == 6) {
+            arrayOf<Any?>(APP_PACKAGE, null, HOST_AUTHORITY, method, null, extras)
+        } else {
+            arrayOf<Any?>(attrSource(), HOST_AUTHORITY, method, null, extras)
+        }
+        return call.invoke(provider, *args) as android.os.Bundle?
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun pullHostSurface(context: Context, token: String?): android.view.Surface? {
+        if (token.isNullOrEmpty()) { hlog("pull: no token"); return null }
+        return runCatching {
+            val extras = android.os.Bundle().apply { putString("token", token) }
+            val result = try {
+                callProvider("surface", extras)
+            } catch (first: Throwable) {
+                hlog("pull: retry after " + first)
+                extProvider = null
+                callProvider("surface", extras)
+            }
+            if (result == null) { hlog("pull: provider null"); return null }
+            @Suppress("DEPRECATION")
+            result.getParcelable<android.view.Surface>("surface").also { hlog("pull: got=" + (it != null)) }
+        }.onFailure { hlog("pull: fail " + it) }.getOrNull()
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
         // App 侧会收集 stderr：非受控异常必须留下类型与堆栈，否则只看到"虚拟屏不可用"。
@@ -62,6 +130,8 @@ internal object RootDisplayCommandMain {
             var width = integer(setup, "width", 320, VirtualScreenProfile.MAX_WIDTH)
             var height = integer(setup, "height", 480, VirtualScreenProfile.MAX_HEIGHT)
             val dpi = integer(setup, "density", 120, VirtualScreenProfile.MAX_DENSITY)
+            // 虚拟屏刷新率跟随用户选的出帧档位（60/90/120/144/165），越高越跟手。
+            val refreshRate = setup.optInt("refreshRate", 165).coerceIn(60, 165).toFloat()
             val allowOff = setup.optBoolean("allowScreenOff", false)
             val idleTimer = VirtualScreenIdleTimer(setup.optInt("idleTimeoutMinutes", 20),
                 SystemClock::elapsedRealtime, setup.optBoolean("activeRun"))
@@ -134,10 +204,17 @@ internal object RootDisplayCommandMain {
                     // 丢帧即可：帧回调线程抛异常会直接杀死 root helper 进程（表现为打开虚拟屏闪退）。
                 }
             }
-            val initialReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
-                .apply { setOnImageAvailableListener(frameListener, handler) }
+            val surfaceToken = setup.optString("surfaceToken")
+            var hostSurface = pullHostSurface(context, surfaceToken)
+            hlog("create direct=" + (hostSurface != null) + " size=" + width + "x" + height)
+            val initialReader = if (hostSurface == null) {
+                ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+                    .apply { setOnImageAvailableListener(frameListener, handler) }
+            } else {
+                null
+            }
             reader = initialReader
-            readerRef.set(initialReader)
+            if (initialReader != null) readerRef.set(initialReader)
             renderWidth = width
             renderHeight = height
             // Android 14+ own-focus 和不抢顶层焦点；不使用 AUTO_MIRROR，也不捕获安全 Surface。
@@ -149,14 +226,17 @@ internal object RootDisplayCommandMain {
             if (allowOff) flags = flags or flag("VIRTUAL_DISPLAY_FLAG_ALWAYS_UNLOCKED")
             display = displayManager.createVirtualDisplay(
                 VirtualDisplayConfig.Builder("Eta virtual task", width, height, dpi)
-                    .setSurface(initialReader.surface).setFlags(flags)
-                    .setRequestedRefreshRate(120f).build(),
+                    .setSurface(hostSurface ?: initialReader!!.surface).setFlags(flags)
+                    .setRequestedRefreshRate(refreshRate).build(),
             )
                 ?: error("DISPLAY_CREATE_FAILED")
             val id = display.display.displayId
             require(id > 0) { "INVALID_DISPLAY" }
             activeDisplayId = id
+            // 打开虚拟屏先拉起本应用自己的虚拟屏桌面（应用导航页），按 Home/应用键也回这儿。
             selfPackage = setup.optString("selfPackage")
+            runCatching { startVirtualHome(id, setup.optString("sessionId"), "HOME") }
+                .onFailure { runCatching { startSystemHome(id) } }
             val localIme = configureLocalIme(id)
             val textInput = VirtualScreenRootTextInput(id)
             // 横屏场景：虚拟屏自身不能旋转，按顶层应用请求的方向把 display 换成横屏尺寸（画面不旋转、
@@ -173,6 +253,30 @@ internal object RootDisplayCommandMain {
                     try {
                         val previous = reader
                         runCatching { previous?.setOnImageAvailableListener(null, null) }
+                        // A′ 直通：宿主面不变。改虚拟屏尺寸会让直通面重新分配缓冲，实测会崩 native，
+                        // 因此直通下建屏尺寸保持不变（横屏应用按信箱化显示）。
+                        if (hostSurface != null) {
+                            // 直通下也要能横过来：先把直通面摘下来，改完尺寸再挂回去，
+                            // 不让合成器在挂着宿主面的情况下重分配缓冲（以前正是在这一步崩 native）。
+                            val host = hostSurface
+                            val applied = runCatching {
+                                display?.setSurface(null)
+                                display?.resize(nextWidth, nextHeight, dpi)
+                                display?.setSurface(host)
+                            }
+                            if (applied.isFailure) {
+                                runCatching { display?.setSurface(host) }
+                                hlog("shape direct fail landscape=" + landscape)
+                                return@post
+                            }
+                            width = nextWidth
+                            height = nextHeight
+                            renderWidth = nextWidth
+                            renderHeight = nextHeight
+                            frameStore.reset()
+                            hlog("shape direct ok landscape=" + landscape + " size=" + nextWidth + "x" + nextHeight)
+                            return@post
+                        }
                         val next = ImageReader.newInstance(nextWidth, nextHeight, PixelFormat.RGBA_8888, 3)
                         val applied = runCatching {
                             display?.setSurface(next.surface)
@@ -211,6 +315,7 @@ internal object RootDisplayCommandMain {
                 JSONObject().put("ok", true).put("displayId", id).put("width", width)
                     .put("height", height).put("density", dpi).put("refreshRate", display.display.refreshRate)
                     .put("independentFocus", true)
+                    .put("direct", hostSurface != null)
                     .put("localIme", localIme)
             )
             while (true) {
@@ -230,20 +335,49 @@ internal object RootDisplayCommandMain {
                     require(allowOff || (power.isInteractive && !keyguard.isDeviceLocked)) { "SCREEN_OFF_PERMISSION_REQUIRED" }
                     runCatching { syncShape() }
                     val result = when (request.getString("action")) {
+                        "host_surface" -> {
+                            // 查看页/小窗换了宿主面：重新取一次并直接换面，失败保持原面不动。
+                            val next = pullHostSurface(context, surfaceToken)
+                            if (next != null) {
+                                hostSurface = next
+                                runCatching { display?.setSurface(next) }
+                            }
+                            JSONObject().put("ok", true).put("direct", hostSurface != null)
+                        }
                         "lifecycle" -> {
                             idleTimer.update(request.optInt("idleTimeoutMinutes", 20), request.optBoolean("activeRun"))
-                            if (request.has("frameIntervalMs")) frameIntervalMs = request.optInt("frameIntervalMs", frameIntervalMs).coerceIn(8, 66)
+                            if (request.has("frameIntervalMs")) frameIntervalMs = request.optInt("frameIntervalMs", frameIntervalMs).coerceIn(4, 66)
                             if (request.has("jpegQuality")) jpegQuality = request.optInt("jpegQuality", jpegQuality).coerceIn(40, 95)
                             JSONObject().put("ok", true).put("displayId", id)
                         }
                         "probe" -> JSONObject().put("ok", true).put("displayId", id)
+
                             .put("width", width).put("height", height)
                             .put("refreshRate", display.display.refreshRate)
                             .put("packageName", runningTasks().firstOrNull { taskDisplayId(it) == id }?.topActivity?.packageName.orEmpty())
+
+                        // 真机键盘状态：虚拟屏里的编辑框有没有申请输入法、系统到底弹没弹。
+                        "ime" -> {
+                            val dump = runCatching {
+                                command(listOf("/system/bin/dumpsys", "input_method"), 400_000)
+                            }.getOrDefault("")
+                            var requested = false
+                            var sessioned = false
+                            dump.split("ClientState{").forEach { block ->
+                                if (Regex("mSelfReportedDisplayId=" + id + "\\b").containsMatchIn(block)) {
+                                    if (block.contains("sessionRequested=true")) requested = true
+                                    if (block.contains("curSession=")) sessioned = true
+                                }
+                            }
+                            JSONObject().put("ok", true)
+                                .put("inputShown", if (dump.contains("isShowing: true")) "true" else "false")
+                                .put("displayRequested", if (requested) "true" else "false")
+                                .put("displaySession", if (sessioned) "true" else "false")
+                        }
                         "tasks" -> JSONObject().put("ok", true).put("tasks", JSONArray(
                             runningTasks().filter { taskDisplayId(it) == id &&
-                                it.baseActivity?.className != VirtualScreenHomeActivity::class.java.name
-                            }.mapNotNull { task -> task.baseActivity?.let { component ->
+                                    it.baseActivity?.className != VirtualScreenHomeActivity::class.java.name }
+                                .mapNotNull { task -> task.baseActivity?.let { component ->
                                 JSONObject().put("taskId", task.taskId).put("packageName", component.packageName)
                             } },
                         ))
@@ -294,7 +428,7 @@ internal object RootDisplayCommandMain {
                             }
                             if (runningElsewhere) {
                                 require(request.optBoolean("restartApp")) { "APP_ALREADY_RUNNING" }
-                                require(packageName != "io.github.mangi.eta" && info.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0) { "APP_RESTART_UNSUPPORTED" }
+                                require(packageName != "io.github.mangi.xiaoaiwindow" && info.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0) { "APP_RESTART_UNSUPPORTED" }
                                 command(listOf("/system/bin/am", "force-stop", packageName))
                                 require(runningTasks().none {
                                     it.baseActivity?.packageName == packageName || it.topActivity?.packageName == packageName
@@ -309,7 +443,7 @@ internal object RootDisplayCommandMain {
                                     "--display",
                                     id.toString(),
                                     "-f",
-                                    "0x18000000",
+                                    "0x18800000",
                                     "-n",
                                     component
                                 ) + if (uri.isNotBlank()) listOf("-a", "android.intent.action.VIEW", "-d", uri) else emptyList()
@@ -322,6 +456,25 @@ internal object RootDisplayCommandMain {
                             }) { "DISPLAY_LAUNCH_MISMATCH" }
                             JSONObject().put("ok", true).put("displayId", id)
                                 .put("component", component)
+                        }
+
+                        "touch" -> {
+                            val phase = request.getString("phase")
+                            val tx = request.optDouble("x", 0.0).toFloat().coerceIn(0f, (width - 1).toFloat())
+                            val ty = request.optDouble("y", 0.0).toFloat().coerceIn(0f, (height - 1).toFloat())
+                            val taken = when (phase) {
+                                "down" -> touchInjector.down(id, tx, ty)
+                                "move" -> touchInjector.move(id, tx, ty)
+                                "cancel" -> touchInjector.up(id, tx, ty, true)
+                                "up" -> touchInjector.up(id, tx, ty)
+                                else -> false
+                            }
+                            // 注入不可用时按老办法补一次点击，至少保证点得动。
+                            if (!taken && (phase == "up" || phase == "cancel")) {
+                                input(id, "tap", tx.toInt().toString(), ty.toInt().toString())
+                            }
+                            JSONObject().put("ok", true).put("displayId", id)
+                                .put("phase", phase).put("injected", taken)
                         }
 
                         "tap" -> {
@@ -357,17 +510,12 @@ internal object RootDisplayCommandMain {
                             val code = when (button) {
                                 "BACK" -> 4
                                 "ENTER" -> 66
+                                "DEL" -> 67
                                 "HOME", "MENU", "APPS" -> {
-                                    // Secondary displays have no isolated system Recents window.
-                                    // Open our own navigator on this display, without routing global keys.
-                                    val sessionId = setup.optString("sessionId")
-                                    require(Regex("[a-fA-F0-9-]{36}").matches(sessionId)) { "DISPLAY_OWNER_REQUIRED" }
-                                    val output = command(listOf("/system/bin/am", "start", "--display", id.toString(),
-                                        "-f", "0x10020000", "-n",
-                                        "io.github.mangi.eta/${VirtualScreenHomeActivity::class.java.name}",
-                                        "--es", "sessionId", sessionId, "--es", "mode", button))
-                                    require(!output.contains("Error:")) { "DISPLAY_LAUNCH_REJECTED" }
-                                    require(runningTasks().any { it.topActivity?.className == VirtualScreenHomeActivity::class.java.name && taskDisplayId(it) == id }) { "DISPLAY_LAUNCH_MISMATCH" }
+                                    // 虚拟屏里按 Home/应用键直接回系统桌面：不再用 Eta 自己的导航页接管这个 display。
+                                    val sid = setup.optString("sessionId")
+                                    require(Regex("[a-fA-F0-9-]{36}").matches(sid)) { "DISPLAY_OWNER_REQUIRED" }
+                                    startVirtualHome(id, sid, button)
                                     null
                                 }
                                 else -> error("VIRTUAL_ACTION_UNSUPPORTED")
@@ -477,16 +625,61 @@ internal object RootDisplayCommandMain {
         }
     }
 
+    /** 在虚拟屏上拉起本应用自己的虚拟屏桌面（应用导航页）。 */
+    private fun startVirtualHome(displayId: Int, sessionId: String, mode: String): String {
+        val home = VirtualScreenHomeActivity::class.java.name
+        val output = command(listOf("/system/bin/am", "start", "--display", displayId.toString(),
+            "-f", "0x10820000", "--activity-single-top", "-n", "$selfPackage/$home",
+            "--es", "sessionId", sessionId, "--es", "mode", mode))
+        require(!output.contains("Error:")) { "DISPLAY_LAUNCH_REJECTED" }
+        // 任务栈落地是异步的：轮询最多约 1.8s 再判定，避免刚起屏就把自桌面当成失败。
+        var tries = 0
+        while (tries < 12) {
+            if (runningTasks().any { it.topActivity?.className == home && taskDisplayId(it) == displayId }) return selfPackage
+            Thread.sleep(150)
+            tries++
+        }
+        error("DISPLAY_LAUNCH_MISMATCH")
+    }
+
+    /** 在虚拟屏上拉起系统桌面，返回桌面包名；解析不出来时返回空串。 */
+    private fun startSystemHome(displayId: Int): String {
+        val output = command(listOf("/system/bin/am", "start", "--display", displayId.toString(),
+            "-f", "0x10820000", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME"))
+        require(!output.contains("Error:")) { "DISPLAY_LAUNCH_REJECTED" }
+        val homePackage = command(listOf("/system/bin/cmd", "package", "resolve-activity", "--brief",
+            "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME"))
+            .lineSequence().map { it.trim() }.lastOrNull { it.contains("/") }
+            ?.substringBefore("/")
+            .orEmpty()
+        if (homePackage.isNotEmpty()) {
+            require(runningTasks().any { it.topActivity?.packageName == homePackage && taskDisplayId(it) == displayId }) {
+                "DISPLAY_LAUNCH_MISMATCH"
+            }
+        }
+        return homePackage
+    }
+
     private fun flag(name: String) = DisplayManager::class.java.getField(name).getInt(null)
 
     @SuppressLint("BlockedPrivateApi")
     private fun configureLocalIme(displayId: Int): Boolean = runCatching {
         val service = Class.forName("android.view.WindowManagerGlobal").getMethod("getWindowManagerService").invoke(null)
         val type = Class.forName("android.view.IWindowManager")
-        type.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            .invoke(service, displayId, 0)
-        type.getMethod("getDisplayImePolicy", Int::class.javaPrimitiveType).invoke(service, displayId) == 0
-    }.getOrDefault(false)
+        // IWindowManager 的取值：LOCAL=0，FALLBACK_DEFAULT_DISPLAY=1，HIDE=2。
+        // 要“虚拟屏里点输入框、真机屏幕弹键盘”，只能用 1（IME 交给默认屏显示）；
+        // 之前用的 2 是 HIDE，等于把虚拟屏的输入法整个关掉，所以点了输入框什么都不弹。
+        val set = type.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        val get = type.getMethod("getDisplayImePolicy", Int::class.javaPrimitiveType)
+        set.invoke(service, displayId, 1)
+        var policy = get.invoke(service, displayId) as Int
+        if (policy != 1) {
+            set.invoke(service, displayId, 0)
+            policy = get.invoke(service, displayId) as Int
+        }
+        hlog("ime policy want=1 got=" + policy)
+        policy == 1
+    }.onFailure { hlog("ime policy fail " + it) }.getOrDefault(false)
 
     private fun taskDisplayId(task: ActivityManager.RunningTaskInfo): Int =
         android.app.TaskInfo::class.java.getField("displayId").getInt(task)

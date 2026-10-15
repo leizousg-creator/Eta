@@ -89,6 +89,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal class VirtualScreenViewerActivity : ComponentActivity() {
     private var surface: VirtualScreenSurfaceView? = null
     private var hasFrame by mutableStateOf(false)
+    /** 直通出帧已接管画面：此时不再等整帧，也不显示"正在连接"。 */
+    private var directReady by mutableStateOf(false)
     private var inputError by mutableStateOf(false)
     private var interactionEnabled by mutableStateOf(true)
     private var showHistory by mutableStateOf(false)
@@ -96,6 +98,7 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
     private var textInputVisible by mutableStateOf(false)
     private var textDraft by mutableStateOf("")
     private var textPending by mutableStateOf(false)
+    private var sessionError by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,20 +108,54 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
             val appearance by AppearanceSettingsRepository.settingsFlow().collectAsState(initial = AppearanceSettings())
             AgentAppTheme(appearance, applyInterfaceScale = true) { ViewerScreen() }
         }
+        // 独立形态没有会话来开屏：本页自己建屏，并让 helper 把系统桌面拉起来。
+        lifecycleScope.launch(Dispatchers.IO) {
+            var attempt = 0
+            while (attempt < 5 && !isFinishing) {
+                if (VirtualScreenSession.state.value.display != null || VirtualScreenSession.isActive()) break
+                attempt++
+                runCatching {
+                    VirtualScreenSession.execute(
+                        context = applicationContext,
+                        owner = "viewer",
+                        args = JSONObject().put("action", "create"),
+                    )
+                }.onFailure { error ->
+                    sessionError = error.message ?: "DISPLAY_UNAVAILABLE"
+                    VscrDiag.line("viewer 建屏失败: " + sessionError)
+                }
+                if (VirtualScreenSession.state.value.display != null) { sessionError = null; break }
+                delay(2000L)
+            }
+            if (VirtualScreenSession.state.value.display == null) {
+                VscrDiag.line("建屏重试用尽，仍未拿到 display")
+            }
+        }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 launch {
                     VirtualScreenSession.state.collect { state ->
                         if (state.display == null) { surface?.clearFrame(); hasFrame = false; lastFrameId = 0 }
+                        val live = state.display != null && VirtualScreenHostSurfaces.live &&
+                            VirtualScreenHostSurfaces.currentHost() != null
+                        if (live != directReady) {
+                            directReady = live
+                            surface?.setDirectMode(live)
+                            if (live) hasFrame = true
+                        }
                         surface?.showGesture(state.gesture)
                     }
                 }
-                val frameDelay = (io.github.mangi.eta.data.model.VirtualScreenFrameRate.intervalMs(
-                    io.github.mangi.eta.data.datastore.SettingsDataStore.settings().virtualScreenFrameRate) / 2).toLong().coerceIn(6L, 33L)
-                val idleDelay = frameDelay.coerceAtLeast(120L)
+                // 以前除以 2，高帧率档在查看页只有 30fps；现在按档位直出。
+                val frameDelay = io.github.mangi.eta.data.model.VirtualScreenFrameRate.intervalMs(
+                    io.github.mangi.eta.data.datastore.SettingsDataStore.settings().virtualScreenFrameRate).toLong()
+                    .coerceIn(4L, 66L)
+                val idleDelay = frameDelay.coerceAtLeast(40L)
                 while (true) {
+                    val startedAt = android.os.SystemClock.elapsedRealtime()
+                    var fresh = false
                     val info = VirtualScreenSession.state.value.display
-                    if (info != null) {
+                    if (info != null && !directReady && !VirtualScreenFrameGate.paused) {
                         val next = readFrame()
                         if (VirtualScreenSession.state.value.display?.sessionId == info.sessionId) {
                             if (next != null) {
@@ -127,6 +164,7 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                                     view.setFrame(next.bitmap, info)
                                     lastFrameId = next.id
                                     hasFrame = true
+                                    fresh = true
                                 } else next.bitmap.recycle()
                             }
                         } else {
@@ -134,12 +172,19 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                         }
                     }
                     // 手指刚动过就全速追帧，闲置时降频省电；旧帧不排队，永远画最新的那张。
-                    val touching = android.os.SystemClock.elapsedRealtime() -
-                        (VirtualScreenSession.state.value.gesture?.startedAt ?: 0L) < 900L
-                    delay(if (touching) 4L else idleDelay)
+                    // 刚出过新帧或手指刚动过就按档位全速追帧；延迟只补差值，不再叠加在耗时上（以前 = 耗时+延迟）。
+                    val spent = android.os.SystemClock.elapsedRealtime() - startedAt
+                    val base = if (fresh || VirtualScreenFrameGate.sinceInputMs() < 1200L) frameDelay else idleDelay
+                    val budget = base - spent
+                    if (budget > 0L) delay(budget)
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        VirtualScreenFrameGate.viewerForeground = true
     }
 
     private data class Frame(val bitmap: Bitmap, val id: Long)
@@ -170,11 +215,9 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
 
     private fun sendInput(sessionId: String, args: JSONObject) {
         inputError = false
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                VirtualScreenSession.inputForViewer(this@VirtualScreenViewerActivity, sessionId, args)
-            }
-            inputError = !JSONObject(result.content).optBoolean("ok")
+        // 走专用输入通道：单线程串行、拖动只留最新一跳，不再每个事件各起一个协程抢管道。
+        VirtualScreenInputPump.submit(applicationContext, sessionId, args) { ok ->
+            runOnUiThread { inputError = !ok }
         }
     }
 
@@ -249,10 +292,25 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                                         VirtualScreenSurfaceView(context).also {
                                             it.onInput = ::sendInput
                                             it.contentDescription = context.getString(R.string.virtual_screen_touch_description)
+                                            val app = context.applicationContext
+                                            it.onHostSurface = { host ->
+                                                VirtualScreenHostSurfaces.attach("viewer", host)
+                                                val live = VirtualScreenHostSurfaces.live && host != null
+                                                it.post {
+                                                    it.setDirectMode(live)
+                                                    directReady = live
+                                                    if (live) hasFrame = true
+                                                }
+                                                if (VirtualScreenHostSurfaces.live) {
+                                                    Thread {
+                                                        runCatching { VirtualScreenSession.notifyHostSurface(app) }
+                                                    }.apply { isDaemon = true }.start()
+                                                }
+                                            }
                                             surface = it
                                         }
                                     },
-                                    update = { it.touchEnabled = interactionEnabled },
+                                    update = { it.touchEnabled = interactionEnabled; it.setDisplayInfo(display) },
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 if (!hasFrame) {
@@ -268,6 +326,10 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                         }
                         if (inputError) Text(stringResource(R.string.virtual_screen_input_failed),
                             color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.footnote1)
+                        sessionError?.let { message ->
+                            Text("虚拟屏启动失败：$message\n" + VscrDiag.tailText(),
+                                color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.footnote1)
+                        }
                         if (textInputVisible) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextField(value = textDraft, onValueChange = { if (it.length <= 20000) textDraft = it },
@@ -318,6 +380,7 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        VirtualScreenFrameGate.viewerForeground = false
         surface?.clearFrame(); hasFrame = false; lastFrameId = 0
         VirtualScreenFloatWindow.exitFullScreen()
         super.onPause()
@@ -336,7 +399,7 @@ private fun TaskIndicator(state: VirtualScreenViewerState, onClick: () -> Unit) 
         VirtualScreenTaskPhase.COMPLETED -> R.string.virtual_screen_completed
         VirtualScreenTaskPhase.FAILED -> R.string.virtual_screen_failed
         VirtualScreenTaskPhase.STOPPED -> R.string.virtual_screen_stopped
-        VirtualScreenTaskPhase.IDLE -> R.string.virtual_screen_idle
+        VirtualScreenTaskPhase.IDLE -> R.string.virtual_screen_ready
     }
     Row(Modifier.clip(CircleShape).background(color.copy(alpha = 0.1f))
         .clickable(onClickLabel = stringResource(R.string.virtual_screen_history), onClick = onClick)

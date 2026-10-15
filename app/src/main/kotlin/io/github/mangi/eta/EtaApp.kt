@@ -7,6 +7,7 @@ import android.os.Looper
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.display.VirtualScreenFloatWindow
+import io.github.mangi.eta.agent.display.VscrDiag
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -63,6 +64,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
         SettingsDataStore.init(this)
+        runCatching { VscrDiag.init(this) }
         VirtualScreenFloatWindow.init(this)
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled

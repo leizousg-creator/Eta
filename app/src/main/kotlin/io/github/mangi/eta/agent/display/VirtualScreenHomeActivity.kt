@@ -80,7 +80,9 @@ internal class VirtualScreenHomeActivity : ComponentActivity() {
             AgentAppTheme(appearance, applyInterfaceScale = true) {
                 val state by VirtualScreenSession.state.collectAsState()
                 androidx.compose.runtime.LaunchedEffect(state.display?.sessionId) {
-                    if (state.display?.sessionId != sessionId) finish()
+                    val live = state.display?.sessionId
+                    // 建屏瞬间会话状态可能还没落地：只有明确对不上才关闭，避免刚拉起就被自己关掉。
+                    if (live != null && live != sessionId) finish()
                 }
                 Column(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background).padding(top = 48.dp, start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     Text(titleFor(mode), style = MiuixTheme.textStyles.headline1, color = MiuixTheme.colorScheme.onBackground)
@@ -165,9 +167,12 @@ internal class VirtualScreenHomeActivity : ComponentActivity() {
     }
 
     private fun acceptIntent(next: Intent): Boolean {
-        val info = VirtualScreenSession.state.value.display ?: return false
-        if (info.displayId != display?.displayId || next.getStringExtra("sessionId") != info.sessionId) return false
-        sessionId = info.sessionId
+        val requested = next.getStringExtra("sessionId").orEmpty()
+        if (requested.isEmpty()) return false
+        val info = VirtualScreenSession.state.value.display
+        // 会话状态尚未落地时先接受，等状态到位后再由 LaunchedEffect 校验；已落地就严格比对。
+        if (info != null && (info.displayId != display?.displayId || requested != info.sessionId)) return false
+        sessionId = requested
         mode = next.getStringExtra("mode") ?: "HOME"
         return true
     }

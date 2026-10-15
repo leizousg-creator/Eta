@@ -1744,4 +1744,7 @@
   <string name="diag_patrol_custom_close">关闭</string>
   <string name="diag_patrol_custom_copy_path">复制规则文件路径</string>
   <string name="diag_patrol_custom_copied_path">已复制规则文件路径</string>
+    <string name="virtual_screen_action_fullscreen">全屏</string>
+    <string name="virtual_screen_action_normal">常规大小</string>
+    <string name="virtual_screen_ready">就绪</string>
 </resources>
