@@ -384,6 +384,76 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
             STATE_BUILTIN,
             "设备重启后如有被打断的自动任务，开机提示一次是否续跑（不自动重跑）",
         ),
+        SelfCheckItem(
+            "崩溃留证与导出",
+            STATE_BUILTIN,
+            "崩在启动／界面／后台都留证：调用栈 + 设备信息 + 本进程日志尾部写进 files/crash/，只留最近 10 份；设置 → 关于 可看条数并直接分享",
+        ),
+        SelfCheckItem(
+            "定时自动备份",
+            STATE_BUILTIN,
+            "设置 → 数据备份 可选 24 小时／3 天／7 天与保留 3／5／10 份；到点先比指纹，没变化不写文件；产物在共享目录 Eta备份/，无常驻进程",
+        ),
+        SelfCheckItem(
+            "数据占用与清理",
+            STATE_BUILTIN,
+            "数据占用页显示库大小／会话／消息／用量条数／运行归档数；三个清理项只动用量表与运行归档，不碰会话与分类",
+        ),
+        SelfCheckItem(
+            "搜索跳转高亮",
+            STATE_BUILTIN,
+            "会话内搜索结果可跳转，并把命中的那一条高亮出来",
+        ),
+        SelfCheckItem(
+            "消息选择复制",
+            STATE_BUILTIN,
+            "消息正文可整段复制，也能在段内拖选一段复制",
+        ),
+        SelfCheckItem(
+            "会话批量删除与分类折叠",
+            STATE_BUILTIN,
+            "会话列表一键批量模式；分类分组标题可点折叠（跨重启记忆）；按分类删除会二次确认并保留置顶",
+        ),
+        SelfCheckItem(
+            "胶囊常驻与最近会话",
+            STATE_BUILTIN,
+            "悬浮胶囊可设常驻；面板可放大、会话条目可点回；保留最近 3 条；跑完的「已完成」提示不自动消失",
+        ),
+        SelfCheckItem(
+            "任务完成通知",
+            STATE_BUILTIN,
+            "跑完发通知（高优先级通道，归入流体云），点一下回到那次会话",
+        ),
+        SelfCheckItem(
+            "重任务互斥闸门",
+            STATE_BUILTIN,
+            "重活（终端命令、构建等）同一时刻只跑一个，第二个明确排队，不互相拖垮",
+        ),
+        SelfCheckItem(
+            "分享入口加固",
+            STATE_BUILTIN,
+            "分享纯文字／单图／多图到 Eta 都能进输入框；多图会去重并按来源补齐",
+        ),
+        SelfCheckItem(
+            "朗读档位与熄屏续读",
+            STATE_BUILTIN,
+            "系统语音下可调语速／音调；熄屏继续朗读不被打断；正文逐段高亮跟随",
+        ),
+        SelfCheckItem(
+            "中文单语与提示中文化",
+            STATE_BUILTIN,
+            "默认简体中文（语言列表只留 zh-Hans）；并发排队、失败重试等提示统一中文",
+        ),
+        SelfCheckItem(
+            "工具档长按说明气泡",
+            STATE_BUILTIN,
+            "长按档位弹出说明气泡，悬浮展示，不占菜单空间",
+        ),
+        SelfCheckItem(
+            "记忆界面与段落仓库",
+            STATE_BUILTIN,
+            "记忆界面显示热区／冷区与体积，可编辑并写回；段落化拆分与去重由仓库统一处理",
+        ),
     )
 
     return SelfCheckReport(permissions = permissions, storage = storage, builtin = builtin)
