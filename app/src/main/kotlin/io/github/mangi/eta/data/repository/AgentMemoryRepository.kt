@@ -318,12 +318,13 @@ internal class AgentMemoryStore(
     /** 写入后若热区超限，就把无标题前缀与最旧的段落正文移入冷区。保护段落热区保留标题 + 一行摘要，其余只留归档标记。 */
     private fun maybeCompact(content: String): String {
         if (!autoCompactEnabled) return content
-        var current = content
+        var current = normalizeSentinels(content)
         if (current.toByteArray(Charsets.UTF_8).size <= MAX_HOT_BYTES) return current
         repeat(MAX_COMPACT_ROUNDS) {
             if (current.toByteArray(Charsets.UTF_8).size <= TARGET_HOT_BYTES) return current
             var next = compactPrefix(current)
             if (next == current) next = compactOnce(current)
+            if (next == current) next = compactOldestSection(current)
             if (next == current) return current
             current = next
         }
@@ -381,6 +382,47 @@ internal class AgentMemoryStore(
             }
         }
         appendArchive(archive.toString().trimEnd('\n') + "\n")
+        return rebuilt.joinToString("\n")
+    }
+
+    /** 把旧版长归档标记归一化为当前短标记，一次性压低存量地板。 */
+    private fun normalizeSentinels(content: String): String {
+        val legacy = "- 正文已归档到 MEMORY-ARCHIVE.md（检索记忆时自动命中冷区）。"
+        if (legacy == ARCHIVE_SENTINEL) return content
+        return if (content.contains(legacy)) content.replace(legacy, ARCHIVE_SENTINEL) else content
+    }
+
+    /** 治本：正文已无可搬且仍超限时，把最旧的非保护段整段沉入冷区，热区留一个汇总指针行。 */
+    private fun compactOldestSection(content: String): String {
+        val lines = content.memoryLines()
+        val headings = lines.indices.filter { lines[it].startsWith(SECTION_PREFIX) }
+        if (headings.isEmpty()) return content
+
+        val ranges = headings.mapIndexed { position, start ->
+            val next = headings.getOrNull(position + 1) ?: lines.size
+            start to (next - 1)
+        }
+        val targetIndex = ranges.indices.firstOrNull { position ->
+            !isProtectedHeading(lines[ranges[position].first])
+        } ?: return content
+        val (start, end) = ranges[targetIndex]
+
+        val archive = StringBuilder()
+        for (index in start..end) archive.append(lines[index]).append('\n')
+        appendArchive(archive.toString().trimEnd('\n') + "\n")
+
+        val pointerRegex = Regex("""^- 更早 (\d+) 条记忆已归档""")
+        var prevCount = 0
+        val pointerPos = lines.indices.firstOrNull { pointerRegex.containsMatchIn(lines[it]) }
+        if (pointerPos != null) {
+            pointerRegex.find(lines[pointerPos])?.let { prevCount = it.groupValues[1].toInt() }
+        }
+        val pointerLine = "- 更早 ${prevCount + 1} 条记忆已归档（检索自动命中冷区）。"
+
+        val kept = lines.filterIndexed { index, _ -> index != pointerPos && index !in start..end }
+        val rebuilt = ArrayList<String>(kept.size + 1)
+        rebuilt += pointerLine
+        rebuilt += kept
         return rebuilt.joinToString("\n")
     }
 
@@ -504,15 +546,14 @@ internal class AgentMemoryStore(
 
     companion object {
         const val MAX_FILE_BYTES = 1024 * 1024
-        const val MAX_HOT_BYTES = 60 * 1024
-        const val TARGET_HOT_BYTES = 48 * 1024
+        const val MAX_HOT_BYTES = 48 * 1024
+        const val TARGET_HOT_BYTES = 40 * 1024
         const val ARCHIVE_FILE_NAME = "MEMORY-ARCHIVE.md"
         private const val SECTION_PREFIX = "## "
         private const val MIN_SECTION_BYTES = 160
-        private const val MAX_COMPACT_ROUNDS = 20
-        private const val SUMMARY_MAX_CHARS = 96
-        private const val ARCHIVE_SENTINEL =
-            "- 正文已归档到 MEMORY-ARCHIVE.md（检索记忆时自动命中冷区）。"
+        private const val MAX_COMPACT_ROUNDS = 80
+        private const val SUMMARY_MAX_CHARS = 48
+        private const val ARCHIVE_SENTINEL = "- 正文已归档，检索命中冷区。"
         private val PROTECTED_HEADING_KEYWORDS = listOf(
             "环境包",
             "共享文件夹",
