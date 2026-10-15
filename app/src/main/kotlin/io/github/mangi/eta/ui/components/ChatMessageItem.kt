@@ -110,16 +110,26 @@ import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-internal fun rememberDataUrlBitmap(dataUrl: String) = remember(dataUrl) {
-    decodeDataUrlBitmap(dataUrl)
+internal fun rememberDataUrlBitmap(dataUrl: String, maxPx: Int? = null) = remember(dataUrl, maxPx) {
+    decodeDataUrlBitmap(dataUrl, maxPx)
 }
 
-internal fun decodeDataUrlBitmap(dataUrl: String): ImageBitmap? {
+internal fun decodeDataUrlBitmap(dataUrl: String, maxPx: Int? = null): ImageBitmap? {
     val base64 = dataUrl.substringAfter("base64,", "")
     if (base64.isBlank()) return null
     return runCatching {
         val bytes = Base64.decode(base64, Base64.NO_WRAP)
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        if (maxPx == null) {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        } else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            val longest = maxOf(bounds.outWidth, bounds.outHeight)
+            while (longest > 0 && longest / (sample * 2) >= maxPx) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
+        }
     }.getOrNull()
 }
 
@@ -385,23 +395,32 @@ private fun UserMessageBubble(
                     ),
             ) {
                 if (message.images.isNotEmpty()) {
+                    var previewIndex by remember(message.images) { mutableStateOf<Int?>(null) }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
-                        message.images.forEach { dataUrl ->
-                            val bitmap = rememberDataUrlBitmap(dataUrl)
+                        message.images.forEachIndexed { index, dataUrl ->
+                            val bitmap = rememberDataUrlBitmap(dataUrl, 256)
                             if (bitmap != null) {
                                 Image(
                                     bitmap = bitmap,
                                     contentDescription = null,
                                     modifier = Modifier
                                         .size(100.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { previewIndex = index },
                                     contentScale = ContentScale.Crop,
                                 )
                             }
                         }
+                    }
+                    previewIndex?.let { start ->
+                        ImagePreviewOverlay(
+                            images = message.images,
+                            initialIndex = start,
+                            onDismiss = { previewIndex = null },
+                        )
                     }
                 }
                 if (visiblePrompt.references.isNotEmpty()) {

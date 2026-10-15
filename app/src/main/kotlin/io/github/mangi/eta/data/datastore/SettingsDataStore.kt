@@ -74,6 +74,7 @@ internal object SettingsDataStore {
     private val AUTO_BACKUP_LAST_AT = longPreferencesKey("auto_backup_last_at")
     private val AUTO_BACKUP_FINGERPRINT = stringPreferencesKey("auto_backup_fingerprint")
     private val AUTO_BACKUP_LAST_FILE = stringPreferencesKey("auto_backup_last_file")
+    private val AUTO_BACKUP_DIRECTORY = stringPreferencesKey("auto_backup_directory")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -94,6 +95,12 @@ internal object SettingsDataStore {
     @Volatile
     private lateinit var dataStore: DataStore<Preferences>
 
+    /** 自动备份目录的进程内缓存：供非挂起调用（目录解析、界面展示）读取。 */
+    @Volatile
+    private var autoBackupDirectoryCache: String = ""
+
+    fun cachedAutoBackupDirectory(): String = autoBackupDirectoryCache
+
     fun init(context: Context) {
         if (!::dataStore.isInitialized) {
             dataStore = context.applicationContext.dataStore
@@ -110,7 +117,9 @@ internal object SettingsDataStore {
                     throw cause
                 }
             }
-            .map { preferences -> preferences.toSettings() }
+            .map { preferences ->
+                preferences.toSettings().also { autoBackupDirectoryCache = it.autoBackupDirectory }
+            }
     }
 
     suspend fun settings(): Settings = settingsFlow().first()
@@ -175,6 +184,7 @@ internal object SettingsDataStore {
             prefs[AUTO_BACKUP_LAST_AT] = updated.autoBackupLastAt
             prefs.putOrRemove(AUTO_BACKUP_FINGERPRINT, updated.autoBackupFingerprint)
             prefs.putOrRemove(AUTO_BACKUP_LAST_FILE, updated.autoBackupLastFileName)
+            prefs.putOrRemove(AUTO_BACKUP_DIRECTORY, updated.autoBackupDirectory)
             prefs.remove(stringPreferencesKey("vivo_atomic_scene"))
             prefs.putAppearance(updated.appearance.normalized())
         }
@@ -337,6 +347,7 @@ internal object SettingsDataStore {
         autoBackupLastAt = this[AUTO_BACKUP_LAST_AT] ?: 0L,
         autoBackupFingerprint = this[AUTO_BACKUP_FINGERPRINT].orEmpty(),
         autoBackupLastFileName = this[AUTO_BACKUP_LAST_FILE].orEmpty(),
+        autoBackupDirectory = this[AUTO_BACKUP_DIRECTORY].orEmpty(),
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,

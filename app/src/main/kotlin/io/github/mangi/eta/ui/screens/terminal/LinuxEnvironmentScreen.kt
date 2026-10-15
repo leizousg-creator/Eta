@@ -36,6 +36,8 @@ import io.github.mangi.eta.agent.terminal.DebianInstallStage
 import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
 import io.github.mangi.eta.agent.terminal.LinuxApkAnalysisInstaller
 import io.github.mangi.eta.agent.terminal.LinuxDistribution
+import io.github.mangi.eta.agent.terminal.LinuxCapabilityItem
+import io.github.mangi.eta.agent.terminal.LinuxCapabilityProbe
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
 import io.github.mangi.eta.agent.terminal.LinuxPackageProfile
@@ -172,6 +174,10 @@ internal fun LinuxEnvironmentScreen(
     var apkAnalysisReady by remember(selectedDistribution, backend) {
         mutableStateOf(apkAnalysisInstaller.isReady())
     }
+    var capabilityItems by remember(appContext, selectedDistribution, backend) {
+        mutableStateOf<List<LinuxCapabilityItem>>(emptyList())
+    }
+    var capabilityChecking by remember(appContext, selectedDistribution, backend) { mutableStateOf(true) }
     var apkAnalysisProgress by remember { mutableStateOf<ApkAnalysisInstallProgress?>(null) }
     var kimiWebLaunching by remember { mutableStateOf(false) }
     var kimiWebRunning by remember(selectedDistribution, backend) { mutableStateOf(false) }
@@ -189,6 +195,13 @@ internal fun LinuxEnvironmentScreen(
                 linuxSharedMountsProvider = { SharedFolderMounts.current() },
             ),
         )
+    }
+    LaunchedEffect(appContext, selectedDistribution, backend, status.version, debianStatus.version, apkAnalysisReady) {
+        capabilityChecking = true
+        capabilityItems = withContext(Dispatchers.IO) {
+            LinuxCapabilityProbe.probe(appContext, selectedDistribution)
+        }
+        capabilityChecking = false
     }
     LaunchedEffect(selectedDistribution, backend, kimiWebLaunching) {
         if (!kimiWebLaunching) {
@@ -367,6 +380,9 @@ internal fun LinuxEnvironmentScreen(
                     }
                 },
             )
+        }
+        item(key = "capability-section") {
+            LinuxCapabilitySection(items = capabilityItems, checking = capabilityChecking)
         }
         item(key = "files-title") { EtaPreferenceGroupTitle(stringResource(R.string.linux_environment_files)) }
         item(key = "files-card") {

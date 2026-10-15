@@ -654,11 +654,16 @@ fun AgentAppRoot(
                 io.github.mangi.eta.ui.screens.conversations.ConversationCategoriesScreen(
                     categories = agentState.conversationCategories,
                     conversationCategoryIds = agentState.conversationCategoryIds,
+                    conversations = agentState.conversationPaneState.conversations,
                     onBack = ::popRoute,
                     onCreate = { name -> agentState.createConversationCategory(name) },
                     onRename = { id, name -> agentState.renameConversationCategory(id, name) },
                     onDelete = { id -> agentState.deleteConversationCategory(id) },
                     onMove = { id, delta -> agentState.moveConversationCategory(id, delta) },
+                    onOpenConversation = { id ->
+                        agentState.selectConversation(id)
+                        popRoute()
+                    },
                 )
             }
 

@@ -37,6 +37,8 @@ internal data class AgentModelOptionUi(
 internal data class AgentContextUsageUi(
     val contextTokens: Int?,
     val contextWindow: Int?,
+    /** 最近一次响应的平均输出速度（tok/s）；没有数据时为 null。 */
+    val averageTokensPerSecond: Double? = null,
 ) {
     val progress: Float?
         get() = contextUsageProgress(contextTokens, contextWindow)

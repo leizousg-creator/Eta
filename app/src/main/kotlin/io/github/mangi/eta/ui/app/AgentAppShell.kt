@@ -13,15 +13,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.AddComment
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -30,6 +34,9 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.MiuixBackButton
+import io.github.mangi.eta.ui.components.ShortcutIcon
+import io.github.mangi.eta.ui.components.openVirtualScreen
+import io.github.mangi.eta.ui.components.rememberVirtualScreenMenuEntries
 import io.github.mangi.eta.ui.components.TopBarBackdrop
 import io.github.mangi.eta.ui.components.captureForTopBar
 import io.github.mangi.eta.ui.components.rememberTopBarBackdrop
@@ -114,6 +121,7 @@ fun AgentAppShell(
                             color = topBarColor,
                             onBack = onBack,
                             onOpenConversationPane = onOpenConversationPane,
+                            onOpenCategories = onOpenCategories,
                             onNewConversation = onNewConversation,
                             onOpenTerminal = onOpenTerminal,
                             onLaunchKimiWeb = onLaunchKimiWeb,
@@ -182,6 +190,7 @@ private fun AgentTopBar(
     color: Color,
     onBack: () -> Unit,
     onOpenConversationPane: () -> Unit,
+    onOpenCategories: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
@@ -209,7 +218,16 @@ private fun AgentTopBar(
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
             conversationStatus?.invoke()
+            // 顶栏第一排：紧挨速度/内存/工具档，放一个新建对话入口。
+            IconButton(onClick = onNewConversation) {
+                Icon(
+                    imageVector = Icons.Rounded.AddComment,
+                    contentDescription = stringResource(R.string.action_new_conversation),
+                    modifier = Modifier.size(TopBarMenuIconSize),
+                )
+            }
             TopBarOverflowMenu(
+                onOpenCategories = onOpenCategories,
                 onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
                 onLaunchKimiWeb = onLaunchKimiWeb,
@@ -250,6 +268,7 @@ private val TopBarMenuIconSize = 20.dp
  */
 @Composable
 private fun TopBarOverflowMenu(
+    onOpenCategories: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
@@ -273,30 +292,47 @@ private fun TopBarOverflowMenu(
             alignment = PopupPositionProvider.Align.End,
             onDismissRequest = { showMenu = false },
         ) {
-            val newConversationText = stringResource(R.string.action_new_conversation)
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            val virtualEntries = rememberVirtualScreenMenuEntries()
+            val categoriesText = stringResource(R.string.sidebar_categories)
             val openTerminalText = stringResource(R.string.action_open_terminal)
-            val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
-            val menuItems = remember(
-                newConversationText,
-                openTerminalText,
-                launchKimiWebText,
-                openBrowserText,
-                stopKimiWebText,
-                canStopKimiWeb,
-            ) {
-                listOf(
+            // 虚拟屏入口与收藏应用平铺在菜单最上方：点开菜单就能直达，不再有二级页面。
+            val menuItems: List<DropdownItem> = buildList {
+                virtualEntries.forEach { entry ->
+                    add(
+                        DropdownItem(
+                            text = entry.label,
+                            icon = { modifier ->
+                                val bitmap = entry.icon
+                                if (bitmap != null) {
+                                    ShortcutIcon(bitmap, modifier.size(TopBarMenuIconSize))
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Smartphone,
+                                        contentDescription = null,
+                                        modifier = modifier.size(TopBarMenuIconSize),
+                                    )
+                                }
+                            },
+                        ),
+                    )
+                }
+                add(
                     DropdownItem(
-                        text = newConversationText,
+                        text = categoriesText,
                         icon = { modifier ->
                             Icon(
-                                imageVector = Icons.Rounded.AddComment,
+                                imageVector = Icons.Rounded.Folder,
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
                         },
                     ),
+                )
+                add(
                     DropdownItem(
                         text = openTerminalText,
                         icon = { modifier ->
@@ -307,16 +343,8 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                    DropdownItem(
-                        text = launchKimiWebText,
-                        icon = { modifier ->
-                            Icon(
-                                painter = painterResource(R.drawable.ic_kimi_code),
-                                contentDescription = null,
-                                modifier = modifier.size(TopBarMenuIconSize),
-                            )
-                        },
-                    ),
+                )
+                add(
                     DropdownItem(
                         text = openBrowserText,
                         icon = { modifier ->
@@ -327,7 +355,10 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                ) + if (canStopKimiWeb) listOf(DropdownItem(text = stopKimiWebText)) else emptyList()
+                )
+                if (canStopKimiWeb) {
+                    add(DropdownItem(text = stopKimiWebText))
+                }
             }
             ListPopupColumn {
                 menuItems.forEachIndexed { index, item ->
@@ -338,12 +369,13 @@ private fun TopBarOverflowMenu(
                         index = index,
                         onSelectedIndexChange = {
                             showMenu = false
-                            when (index) {
-                                0 -> onNewConversation()
-                                1 -> onOpenTerminal()
-                                2 -> onLaunchKimiWeb()
-                                3 -> onOpenBrowser()
-                                4 -> onStopKimiWeb()
+                            val entry = virtualEntries.getOrNull(index)
+                            when {
+                                entry != null -> openVirtualScreen(context, scope, entry.component)
+                                index == virtualEntries.size -> onOpenCategories()
+                                index == virtualEntries.size + 1 -> onOpenTerminal()
+                                index == virtualEntries.size + 2 -> onOpenBrowser()
+                                else -> onStopKimiWeb()
                             }
                         },
                     )

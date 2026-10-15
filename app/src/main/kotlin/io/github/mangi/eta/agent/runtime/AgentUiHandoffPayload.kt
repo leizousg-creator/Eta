@@ -5,6 +5,8 @@ import org.json.JSONObject
 
 internal data class AgentUiHandoffPayload(
     val conversationId: String,
+    /** 会话标题；悬浮胶囊里用它区分并发运行的多个会话。 */
+    val title: String = "",
     val promptSupplement: Supplement? = null,
     val supplements: List<Supplement> = emptyList(),
 ) {
@@ -25,6 +27,7 @@ internal data class AgentUiHandoffPayload(
             .put("type", TYPE)
             .put("version", VERSION)
             .put("conversationId", conversationId)
+            .put("title", title)
             .also { json ->
                 promptSupplement?.let { json.put("promptSupplement", it.toJson()) }
             }
@@ -57,6 +60,7 @@ internal data class AgentUiHandoffPayload(
                 val supplementsJson = json.optJSONArray("supplements") ?: JSONArray()
                 AgentUiHandoffPayload(
                     conversationId = json.optString("conversationId"),
+                    title = json.optString("title"),
                     promptSupplement = json.optJSONObject("promptSupplement")
                         ?.toSupplement(defaultIndex = 1),
                     supplements = (0 until supplementsJson.length()).mapNotNull { index ->

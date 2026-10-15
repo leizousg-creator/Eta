@@ -38,10 +38,22 @@ internal object AutoBackupRunner {
     private const val FILE_PREFIX = "Eta-自动备份-"
     private const val FILE_SUFFIX = ".eta-backup.json"
 
-    fun directory(): File = File(Environment.getExternalStorageDirectory(), DIR_NAME)
+    /** 默认备份目录（忽略自定义配置）。 */
+    fun defaultDirectory(): File = File(Environment.getExternalStorageDirectory(), DIR_NAME)
+
+    /**
+     * 备份目录：自定义路径优先——绝对路径直接用，相对路径按内部存储根解析；为空时用默认目录。
+     * 默认参数取 [SettingsDataStore.cachedAutoBackupDirectory]，供界面等非挂起调用使用。
+     */
+    fun directory(customDirectory: String = SettingsDataStore.cachedAutoBackupDirectory()): File {
+        val trimmed = customDirectory.trim()
+        if (trimmed.isEmpty()) return defaultDirectory()
+        return if (trimmed.startsWith("/")) File(trimmed)
+        else File(Environment.getExternalStorageDirectory(), trimmed)
+    }
 
     /** 已存在的自动备份文件，最新在前。 */
-    fun backups(): List<File> = directory()
+    fun backups(customDirectory: String = SettingsDataStore.cachedAutoBackupDirectory()): List<File> = directory(customDirectory)
         .listFiles { file: File ->
             file.isFile && file.name.startsWith(FILE_PREFIX) && file.name.endsWith(FILE_SUFFIX)
         }
@@ -75,7 +87,12 @@ internal object AutoBackupRunner {
                 }
                 return@withContext AutoBackupResult.Skipped("数据没有变化")
             }
-            runNow(context, AutoBackupKeepCount.normalize(settings.autoBackupKeepCount), fingerprint)
+            runNow(
+                context,
+                AutoBackupKeepCount.normalize(settings.autoBackupKeepCount),
+                fingerprint,
+                settings.autoBackupDirectory,
+            )
         }
 
     /** 轻量指纹：只读三个计数，不碰数据库文件本身。取不到时返回空串（空串不做跳过判断）。 */
@@ -87,8 +104,13 @@ internal object AutoBackupRunner {
         "c=$conversations;m=$messages;u=$usage"
     }.getOrDefault("")
 
-    private suspend fun runNow(context: Context, keep: Int, fingerprint: String): AutoBackupResult {
-        val dir = directory()
+    private suspend fun runNow(
+        context: Context,
+        keep: Int,
+        fingerprint: String,
+        customDirectory: String,
+    ): AutoBackupResult {
+        val dir = directory(customDirectory)
         if (!dir.exists() && !dir.mkdirs()) {
             return AutoBackupResult.Failed("无法创建备份目录 " + dir.absolutePath)
         }
@@ -98,7 +120,7 @@ internal object AutoBackupRunner {
             val summary = target.outputStream().use { stream ->
                 EtaBackupRepository.export(context, stream)
             }
-            val kept = prune(keep)
+            val kept = prune(keep, customDirectory)
             runCatching {
                 SettingsDataStore.setAutoBackupState(
                     lastAt = System.currentTimeMillis(),
@@ -115,8 +137,8 @@ internal object AutoBackupRunner {
         }
     }
 
-    private fun prune(keep: Int): Int {
-        backups().drop(keep.coerceAtLeast(1)).forEach { it.delete() }
-        return backups().size
+    private fun prune(keep: Int, customDirectory: String): Int {
+        backups(customDirectory).drop(keep.coerceAtLeast(1)).forEach { it.delete() }
+        return backups(customDirectory).size
     }
 }

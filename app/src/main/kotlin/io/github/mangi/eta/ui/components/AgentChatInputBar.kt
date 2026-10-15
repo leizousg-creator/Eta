@@ -317,6 +317,23 @@ internal fun AgentChatInputBar(
                                 onAttachFilePath = onAttachFilePath,
                             )
 
+                            // 输出速度跟 ＋ 放在输入栏这一排；上下文用量由右侧圆环按钮负责。
+                            if (showContextUsage) {
+                                val speedText = contextUsage.averageTokensPerSecond?.let { speed ->
+                                    java.text.NumberFormat.getNumberInstance()
+                                        .apply { maximumFractionDigits = 1 }
+                                        .format(speed)
+                                }
+                                if (speedText != null) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    StatusCapsule(
+                                        text = "$speedText tok/s",
+                                        modifier = Modifier,
+                                        description = stringResource(R.string.conversation_speed_description, speedText),
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.width(2.dp))
 
                             if (availableReasoningEfforts.isNotEmpty()) {

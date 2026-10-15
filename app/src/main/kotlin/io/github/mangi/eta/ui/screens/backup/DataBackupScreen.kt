@@ -6,6 +6,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -55,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -71,6 +74,8 @@ internal fun DataBackupScreen(
     val settings by SettingsDataStore.settingsFlow().collectAsState(initial = Settings())
     var autoBusy by remember { mutableStateOf(false) }
     var autoNote by remember { mutableStateOf<String?>(null) }
+    var showDirDialog by remember { mutableStateOf(false) }
+    var dirInput by remember { mutableStateOf("") }
 
     fun showFailure(throwable: Throwable) {
         if (throwable is CancellationException) throw throwable
@@ -252,9 +257,61 @@ internal fun DataBackupScreen(
                     },
                 )
                 EtaPreferenceDivider(hasLeading = true)
-                EtaPreference(
+                EtaArrowPreference(
                     title = stringResource(R.string.data_backup_auto_dir),
-                    summary = AutoBackupRunner.directory().absolutePath,
+                    summary = AutoBackupRunner.directory(settings.autoBackupDirectory).absolutePath + " · " +
+                        stringResource(
+                            if (settings.autoBackupDirectory.isBlank()) {
+                                R.string.data_backup_dir_default
+                            } else {
+                                R.string.data_backup_dir_custom
+                            },
+                        ),
+                    onClick = {
+                        dirInput = settings.autoBackupDirectory
+                        showDirDialog = true
+                    },
+                )
+            }
+        }
+    }
+
+    if (showDirDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.data_backup_dir_dialog_title),
+            summary = stringResource(
+                R.string.data_backup_dir_dialog_summary,
+                AutoBackupRunner.defaultDirectory().absolutePath,
+            ),
+            onDismissRequest = { showDirDialog = false },
+        ) {
+            Column {
+                TextField(
+                    value = dirInput,
+                    onValueChange = { dirInput = it },
+                    label = stringResource(R.string.data_backup_dir_dialog_label),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MiuixDialogActions(
+                    confirmText = stringResource(R.string.action_confirm),
+                    onCancel = { showDirDialog = false },
+                    onConfirm = {
+                        val value = dirInput.trim()
+                        showDirDialog = false
+                        scope.launch {
+                            SettingsDataStore.updateSettings { it.copy(autoBackupDirectory = value) }
+                            Toast.makeText(
+                                context,
+                                context.getString(
+                                    R.string.data_backup_dir_saved,
+                                    AutoBackupRunner.directory(value).absolutePath,
+                                ),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
                 )
             }
         }

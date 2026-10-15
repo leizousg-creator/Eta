@@ -177,7 +177,11 @@ internal fun AgentChatBody(
     val isKeyboardVisible = imeBottomPx > 0
     val browserSnapshot by AgentBrowserSession.snapshots.collectAsState()
     val contextUsage = remember(messages, modelPickerState.selectedModel) {
-        latestContextUsage(messages, modelPickerState.selectedModel)
+        val usage = latestContextUsage(messages, modelPickerState.selectedModel)
+        val speed = messages.asReversed()
+            .filterIsInstance<io.github.mangi.eta.ui.model.AgentMessageUi>()
+            .firstOrNull { message -> message.usage != null }?.usage?.averageTokensPerSecond
+        usage.copy(averageTokensPerSecond = speed)
     }
 
     val visibleMessages = remember(messages, messageEdit?.targetMessageId, messageEdit?.preserveFollowingMessages) {

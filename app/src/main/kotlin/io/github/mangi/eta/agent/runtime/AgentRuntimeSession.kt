@@ -50,7 +50,13 @@ internal class AgentRuntimeSession(
     private data class Subscriber(
         val eventSink: (AgentEvent) -> Unit,
         val resultSink: (AgentRuntimeWire.RunResult) -> Unit,
+        val kind: SubscriberKind = SubscriberKind.RUN,
+        /** 界面重连后由最新订阅者接管事件；旧订阅者只保留结果回执，避免同一增量投递多遍。 */
+        var receivingEvents: Boolean = true,
     )
+
+    /** 订阅来源：run 是本次执行的发起方，attach 是界面重连。 */
+    private enum class SubscriberKind { RUN, ATTACH }
 
     init {
         if (eventSink != null || resultSink != null) {
@@ -68,7 +74,9 @@ internal class AgentRuntimeSession(
         lock.withLock {
             if (state != State.RUNNING) return false
             recordForReplay(event)
-            subscribers.forEach { it.eventSink(event) }
+            subscribers.forEach { subscriber ->
+                if (subscriber.receivingEvents) subscriber.eventSink(event)
+            }
             true
         }
 
@@ -82,9 +90,17 @@ internal class AgentRuntimeSession(
         onReplayComplete: () -> Unit = {},
     ): Boolean = lock.withLock {
         if (state == State.TERMINAL) return false
-        replayEvents.forEach(eventSink)
+        // 界面重连时旧的 attach 订阅者对应的界面已经销毁，留着只会把同一事件投递多遍。
+        subscribers.removeAll { it.kind == SubscriberKind.ATTACH }
+        subscribers.forEach { it.receivingEvents = false }
+        replayEvents.forEach { event ->
+            // 文本增量不回放：界面已经画过的内容再追加一遍就是重复；
+            // 轮次、工具、结果等结构事件仍按原样补齐。
+            if (event is AgentEvent.AssistantBlockDelta) return@forEach
+            eventSink(event)
+        }
         onReplayComplete()
-        subscribers += Subscriber(eventSink, resultSink)
+        subscribers += Subscriber(eventSink, resultSink, SubscriberKind.ATTACH)
         true
     }
 
@@ -102,7 +118,9 @@ internal class AgentRuntimeSession(
             if (state != State.RUNNING || operation != AgentRuntimeWire.OP_CHAT || !controller.steer(text)) return null
             eventFactory().also { event ->
                 recordForReplay(event)
-                subscribers.forEach { it.eventSink(event) }
+                subscribers.forEach { subscriber ->
+                    if (subscriber.receivingEvents) subscriber.eventSink(event)
+                }
             }
         }
 

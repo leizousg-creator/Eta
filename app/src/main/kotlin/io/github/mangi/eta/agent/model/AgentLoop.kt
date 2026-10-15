@@ -335,7 +335,8 @@ internal class AgentLoop(
         )
 
         val result = try {
-            toolExecutor.execute(toolCall)
+            // 并发会话共用一块屏幕和一个终端环境：需要独占的工具在这里全局排队。
+            AgentToolGate.withGate(toolCall.name) { toolExecutor.execute(toolCall) }
         } catch (throwable: Exception) {
             runController.throwIfCancelled()
             AgentModelClient.ToolResult(

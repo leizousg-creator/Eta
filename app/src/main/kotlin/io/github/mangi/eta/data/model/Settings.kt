@@ -28,6 +28,8 @@ data class Settings(
     val autoBackupLastAt: Long = 0L,
     val autoBackupFingerprint: String = "",
     val autoBackupLastFileName: String = "",
+    /** 自定义自动备份目录；空串表示默认的「外部存储/Eta备份」。 */
+    val autoBackupDirectory: String = "",
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
 

@@ -102,6 +102,12 @@ internal class AgentAppState(
     private val runEventFlushJobs = mutableMapOf<String, Job>()
     private var currentRunId: String? = null
     private var currentRunJob: Job? = null
+
+    /** 同时运行的会话上限，与 Runtime 侧保持一致。 */
+    private val maxConcurrentRuns = 3
+
+    /** 进行中的 run 记在 runConversationIds 里，用它当并发计数。 */
+    private fun hasRunCapacity(): Boolean = runConversationIds.size < maxConcurrentRuns
     /** 最近一次请求被裁掉的轮次/条数：只用于顶栏提示，界面与数据库都不删。 */
     var historyTrimNotice by mutableStateOf<Pair<Int, Int>?>(null)
         private set
@@ -525,7 +531,7 @@ internal class AgentAppState(
             .from(checkpoint.handoff.payload)
             .conversationId
         val existing = conversationsById[conversationId] ?: return
-        if (currentRunId != null || AgentRuntimeHistoryReducer.wasApplied(existing, runId)) return
+        if (!hasRunCapacity() || AgentRuntimeHistoryReducer.wasApplied(existing, runId)) return
 
         runConversationIds[runId] = conversationId
         currentRunId = runId
@@ -1253,7 +1259,7 @@ internal class AgentAppState(
 
     fun compactCurrentContext() {
         val conversationId = selectedConversationId ?: return
-        if (currentRunId != null || !homeState.canCompactContext || modelPickerState.isChanging) return
+        if (!hasRunCapacity() || !homeState.canCompactContext || modelPickerState.isChanging) return
         launchConversationRun(
             conversationId = conversationId,
             runId = java.util.UUID.randomUUID().toString(),
@@ -1400,7 +1406,10 @@ internal class AgentAppState(
                         handoff = AgentRuntimeWire.EntryHandoff(
                             id = runId,
                             source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
-                            payload = conversationId,
+                            payload = io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload(
+                                conversationId = conversationId,
+                                title = conversationTitles[conversationId].orEmpty(),
+                            ).toJson(),
                         ),
                     ),
                     onEvent = { event -> enqueueRunEvent(runId, event) },
@@ -1415,7 +1424,7 @@ internal class AgentAppState(
             val leaseId = "prepare:$runId"
             val acquired = AgentExecutionService.acquire(appContext, leaseId) {
                 scope.launch(Dispatchers.Main.immediate) {
-                    if (currentRunId == runId) stopCurrentRun()
+                    stopRun(runId)
                 }
             }
             if (!acquired) {
@@ -1630,7 +1639,15 @@ internal class AgentAppState(
     private val stopRequestedRunIds = mutableSetOf<String>()
 
     fun stopCurrentRun() {
-        val runId = currentRunId ?: return
+        // 并发时按当前会话定位它自己的 run，找不到再退回最近一次 run。
+        val runId = runConversationIds.entries.firstOrNull { entry -> entry.value == selectedConversationId }?.key
+            ?: currentRunId
+            ?: return
+        stopRun(runId)
+    }
+
+    /** 停止指定 run；非当前会话的 run 也能停。 */
+    private fun stopRun(runId: String) {
         if (!stopRequestedRunIds.add(runId)) return
         runPaused = false
         scope.launch(Dispatchers.IO) {

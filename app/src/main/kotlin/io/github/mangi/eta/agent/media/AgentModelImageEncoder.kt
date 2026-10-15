@@ -22,7 +22,7 @@ internal const val MAX_AGENT_IMAGE_BYTES = 12 * 1024 * 1024
 /** 仅负责为工具截图和聊天预览生成独立的图片副本。 */
 internal object AgentModelImageEncoder {
     private const val MODEL_JPEG_QUALITY = 95
-    private const val PREVIEW_JPEG_QUALITY = 80
+    private const val PREVIEW_JPEG_QUALITY = 92
 
     private data class EncodingProfile(
         val format: Bitmap.CompressFormat,
@@ -51,8 +51,8 @@ internal object AgentModelImageEncoder {
         quality = MODEL_JPEG_QUALITY,
     )
     private val previewProfile = EncodingProfile(
-        maxLongEdge = 512,
-        maxPixels = 256_000L,
+        maxLongEdge = 1920,
+        maxPixels = 3_686_400L,
         format = Bitmap.CompressFormat.JPEG,
         mimeType = "image/jpeg",
         quality = PREVIEW_JPEG_QUALITY,

@@ -1457,6 +1457,8 @@
     <string name="conversation_trimmed_description">本次请求已省略较早的 %1$d 轮对话，界面与记录里一条都没有删。</string>
     <string name="virtual_screen_home">主页</string>
     <string name="virtual_screen_menu">应用菜单</string>
+    <string name="virtual_screen_search_hint">搜索应用</string>
+    <string name="virtual_screen_search_empty">没有匹配「%1$s」的应用</string>
     <string name="virtual_screen_action_collapse">贴边</string>
     <string name="virtual_screen_action_close">关闭</string>
     <string name="virtual_screen_favorites">收藏</string>
@@ -1629,7 +1631,18 @@
   <string name="data_backup_auto_last_file">最近备份：%1$s</string>
   <string name="data_backup_auto_last">上次备份：%1$s</string>
   <string name="data_backup_auto_dir">备份文件夹</string>
+  <string name="data_backup_dir_default">默认</string>
+  <string name="data_backup_dir_custom">自定义</string>
+  <string name="data_backup_dir_dialog_title">备份文件夹</string>
+  <string name="data_backup_dir_dialog_summary">填绝对路径可直接指定目录（例如 /storage/emulated/0/Eta备份）；留空使用默认目录 %1$s，相对路径按内部存储根解析。</string>
+  <string name="data_backup_dir_dialog_label">目录路径</string>
+  <string name="data_backup_dir_saved">备份文件夹已设为 %1$s</string>
   <string name="data_backup_auto_done">已备份 %1$s（会话 %2$d 条，保留 %3$d 份）</string>
   <string name="data_backup_auto_failed">自动备份失败：%1$s</string>
   <string name="data_backup_auto_skipped">本次没有需要执行的备份</string>
+  <string name="top_bar_menu_back">返回</string>
+  <string name="memory_capsule">内存 %1$d%%</string>
+  <string name="memory_capsule_description">物理内存已用 %1$d%%，点一下看已用与可用</string>
+  <string name="memory_capsule_used">已用 %1$s / 总 %2$s</string>
+  <string name="memory_capsule_available">可用 %1$s</string>
 </resources>

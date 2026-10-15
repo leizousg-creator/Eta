@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.LocalToolProfile
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.AgentModelOptionUi
 import io.github.mangi.eta.ui.model.formatCompactTokenCount
@@ -52,8 +53,7 @@ internal fun ConversationStatusCapsules(
     Row(Modifier.widthIn(max = 420.dp).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         StatusCapsule(contextText, Modifier.weight(1f, fill = false), contextDescription)
-        StatusCapsule("$speedText tok/s", Modifier, stringResource(R.string.conversation_speed_description, speedText))
-        VirtualScreenTopBarCapsule()
+        MemoryUsageCapsule()
         LocalProfileTopBarCapsule(model)
         trimmed?.let { (rounds, count) ->
             StatusCapsule(
@@ -69,6 +69,31 @@ internal fun ConversationStatusCapsules(
             )
         }
     }
+}
+
+/** 输入栏左侧的上下文用量文字胶囊：`125.67K/200K · 62.8%`。 */
+@Composable
+internal fun AgentContextUsageCapsule(
+    usage: AgentContextUsageUi,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = usage.contextTokens ?: return
+    val count = formatCompactTokenCount(tokens)
+    val limit = usage.contextWindow?.takeIf { it > 0 }?.let { formatCompactTokenCount(it) }
+    val percent = usage.contextWindow?.takeIf { it > 0 }?.let { window ->
+        NumberFormat.getPercentInstance().apply { maximumFractionDigits = 1 }
+            .format(tokens.toDouble() / window)
+    }
+    val text = count + (limit?.let { "/$it" } ?: "") + (percent?.let { " · $it" } ?: "")
+    Text(
+        text = text,
+        modifier = modifier
+            .background(MiuixTheme.colorScheme.surfaceContainer, CircleShape)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        style = MiuixTheme.textStyles.footnote1,
+        fontSize = 11.sp,
+    )
 }
 
 @Composable

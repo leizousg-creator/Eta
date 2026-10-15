@@ -88,6 +88,8 @@ internal fun AgentOverlayCapsule(
     onStop: () -> Unit,
     onSupplementModeChange: (Boolean) -> Unit,
     onSupplement: (String) -> Unit,
+    /** 点列表里的某条运行中会话 → 跳回该会话。 */
+    onOpenConversation: (String) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -183,6 +185,15 @@ internal fun AgentOverlayCapsule(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (state.runningSessions.size > 1) {
+                        Text(
+                            text = "${state.runningSessions.size} 个会话运行中",
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     ThoughtLine(thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty())
                     }
                 }
@@ -199,6 +210,12 @@ internal fun AgentOverlayCapsule(
                             .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                             .graphicsLayer { translationY = (1f - expansion) * -6.dp.toPx() },
                     ) {
+                        if (state.runningSessions.size > 1) {
+                            OverlayRunningSessionList(
+                                sessions = state.runningSessions,
+                                onOpenConversation = onOpenConversation,
+                            )
+                        }
                         if (supplementMode) {
                             OverlaySupplementInput(
                                 value = supplementText,
@@ -324,6 +341,49 @@ private fun ThoughtLine(thought: String) {
             .padding(top = 1.dp)
             .graphicsLayer { this.alpha = alpha },
     )
+}
+
+/**
+ * 展开胶囊后的“运行中会话”列表：点一条直接跳回那个会话。
+ * 只有并发运行（不止一条）时才出现，单会话保持原来的简洁形态。
+ */
+@Composable
+private fun OverlayRunningSessionList(
+    sessions: List<AgentOverlayRunningSession>,
+    onOpenConversation: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        sessions.forEach { session ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                    .clickable { onOpenConversation(session.conversationId) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = session.title.ifBlank { session.conversationId },
+                    color = MiuixTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "打开",
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+    }
 }
 
 @Composable

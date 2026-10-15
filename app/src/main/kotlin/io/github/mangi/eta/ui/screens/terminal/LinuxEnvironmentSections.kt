@@ -13,11 +13,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.LinuxDistribution
+import io.github.mangi.eta.agent.terminal.LinuxCapabilityItem
 import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
+import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.EtaTextButton
 import io.github.mangi.eta.ui.components.EtaWindowSpinnerPreference
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -162,3 +164,37 @@ internal fun LinuxExecutionBackend.displayName(): String = stringResource(
         LinuxExecutionBackend.CHROOT -> R.string.capability_linux_chroot
     },
 )
+
+@Composable
+internal fun LinuxCapabilitySection(
+    items: List<LinuxCapabilityItem>,
+    checking: Boolean,
+) {
+    if (items.isEmpty() && !checking) return
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        EtaPreferenceGroupTitle("环境能力 · 自动检测")
+        EtaPreferenceGroup {
+            if (checking && items.isEmpty()) {
+                EtaPreference(
+                    title = "正在检测环境能力…",
+                    summary = "直接看当前发行版里实际有哪些工具",
+                )
+            }
+            items.forEachIndexed { index, item ->
+                if (index > 0) EtaPreferenceDivider(hasLeading = false)
+                EtaPreference(
+                    title = item.title,
+                    summary = item.purpose,
+                    endActions = {
+                        Text(
+                            text = if (item.ready) "可用" else "未安装",
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = if (item.ready) MiuixTheme.colorScheme.primary
+                            else MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        )
+                    },
+                )
+            }
+        }
+    }
+}

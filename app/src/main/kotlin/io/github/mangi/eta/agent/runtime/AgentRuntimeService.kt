@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import io.github.mangi.eta.agent.overlay.AgentOverlayRunningSession
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import android.app.Service
@@ -85,8 +86,52 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val serviceMessenger = Messenger(IncomingHandler())
     private lateinit var islandBridge: AgentRuntimeIslandBridge
 
-    @Volatile
-    private var activeSession: AgentRuntimeSession? = null
+    /** 进行中的会话，按 runId 索引；同一时刻最多 [MAX_CONCURRENT_RUNS] 个。 */
+    private val sessions = linkedMapOf<String, AgentRuntimeSession>()
+
+    private fun sessionFor(runId: String): AgentRuntimeSession? = sessions[runId]
+
+    private data class RunningSessionInfo(val runId: String, val conversationId: String, val title: String)
+
+    /** 运行中会话的展示信息：胶囊展开后点一条就能跳回对应会话。 */
+    private val runningSessionInfo = linkedMapOf<String, RunningSessionInfo>()
+
+    /** 按当前 sessions 同步胶囊用的运行中清单（多会话并发时列表会变长）。 */
+    private fun syncRunningSessions() {
+        runningSessionInfo.keys.retainAll(sessions.keys.toSet())
+        val list = sessions.keys.mapNotNull { runId ->
+            runningSessionInfo[runId]?.let { info ->
+                AgentOverlayRunningSession(
+                    runId = info.runId,
+                    conversationId = info.conversationId,
+                    title = info.title,
+                )
+            }
+        }
+        if (state.value.runningSessions == list) return
+        state.value = state.value.copy(runningSessions = list)
+    }
+
+    /** 从悬浮胶囊跳回某个会话：复用 MainActivity 已有的“打开指定会话”入口。 */
+    private fun openConversation(conversationId: String) {
+        if (conversationId.isBlank()) return
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .setAction(MainActivity.ACTION_OPEN_CONVERSATION_ID)
+                    .putExtra(MainActivity.EXTRA_CONVERSATION_ID, conversationId)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+            capsuleExpanded.value = false
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("overlay_open_conversation_failed") {
+                "Overlay open conversation failed: type=${throwable.safeLogType()}"
+            }
+        }
+    }
+
+    /** 仍在运行的会话数（含正在收尾的）。 */
+    private fun runningSessionCount(): Int = sessions.values.count { session -> !session.isTerminal }
     private var startRequestGeneration = 0L
     private var pendingStartRequest: PendingStartRequest? = null
 
@@ -114,7 +159,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 holder.value = next
                 AgentExecutionService.updateRunStatus(
                     this@AgentRuntimeService,
-                    next.status.takeIf { activeSession?.isTerminal == false },
+                    next.status.takeIf { runningSessionCount() > 0 },
                 )
             }
     }
@@ -144,14 +189,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_KEEP_ALIVE || activeSession == null) {
+        if (intent?.action != ACTION_KEEP_ALIVE || sessions.isEmpty()) {
             stopSelf(startId)
         }
         return START_NOT_STICKY
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        if (activeSession?.isTerminal == false) {
+        if (runningSessionCount() > 0) {
             AndroidAgentLogger.debug {
                 "Agent runtime client unbound while run is active; detached run continues"
             }
@@ -176,8 +221,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
         }
         pendingStartRequest = null
-        activeSession?.cancel("Agent Runtime 服务已停止")
-        activeSession = null
+        sessions.values.forEach { session -> session.cancel("Agent Runtime 服务已停止") }
+        sessions.clear()
         islandBridge.close()
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
@@ -349,17 +394,28 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         replyTo: Messenger? = null,
     ) {
         val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
-        if (automated && activeSession?.isTerminal == false) {
+        if (automated && runningSessionCount() > 0) {
             sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "AUTOMATION_RUNTIME_BUSY"))
             return
         }
         val reviewGeneration = AgentExperienceReview.foregroundStarted()
-        activeSession?.controller?.cancel()
+        if (runningSessionCount() >= MAX_CONCURRENT_RUNS) {
+            sendResultTo(
+                replyTo,
+                AgentRuntimeWire.RunResult(
+                    runId = request.runId,
+                    ok = false,
+                    content = "",
+                    error = "RUNTIME_CONCURRENCY_LIMIT",
+                ),
+            )
+            return
+        }
         val session = AgentRuntimeSession(
             runId = request.runId,
             operation = request.operation,
             eventSink = { event ->
-                val current = activeSession?.takeIf { it.runId == request.runId }
+                val current = sessionFor(request.runId)
                 if (current != null && event is AgentEvent.ToolStarted &&
                     (event.name in VirtualScreenRoutingPolicy.uiTools || event.name == "virtual_screen") &&
                     runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
@@ -388,7 +444,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )) {}
             return
         }
-        activeSession = session
+        sessions[request.runId] = session
+        val handoffPayload = request.handoff?.payload?.let { raw -> AgentUiHandoffPayload.from(raw) }
+        runningSessionInfo[request.runId] = RunningSessionInfo(
+            runId = request.runId,
+            conversationId = handoffPayload?.conversationId.orEmpty(),
+            title = handoffPayload?.title.orEmpty(),
+        )
+        syncRunningSessions()
         islandBridge.start(request)
         lastCompletedRunContext = null
         runCatching {
@@ -466,7 +529,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         event: AgentEvent,
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
-        if (activeSession !== session) return
+        if (sessionFor(session.runId) !== session) return
         val revealsOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
         val dismissesEntrySurface = AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
         val virtualScreenEnabled = (revealsOperation || dismissesEntrySurface || event is AgentEvent.ToolStarted) &&
@@ -480,7 +543,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             true
         }
         mainHandler.post {
-            if (activeSession !== session) return@post
+            if (sessionFor(session.runId) !== session) return@post
             if (
                 !virtualUi && AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
@@ -492,6 +555,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (session.isTerminal) return@post
             runCatching {
                 state.value = state.value.applyEvent(event)
+                syncRunningSessions()
                 if (revealsOperation && entrySurfaceReady) {
                     if (capsuleView == null) {
                         AgentHapticFeedback.perform(
@@ -531,9 +595,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         completedContext: CompletedRunContext? = null,
     ) {
         mainHandler.post {
-            if (activeSession !== session) return@post
+            if (sessionFor(session.runId) !== session) return@post
             lastCompletedRunContext = completedContext
-            activeSession = null
+            sessions.remove(session.runId)
+            syncRunningSessions()
             if (session.virtualUiRouted.get()) {
                 VirtualScreenNotification.showCompletion(
                     this,
@@ -671,7 +736,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sendActiveRun(replyTo: Messenger?) {
         runCatching {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_QUERY_ACTIVE_RUN_RESPONSE)
-            msg.data = AgentRuntimeWire.ackBundle(activeSession?.runId.orEmpty())
+            msg.data = AgentRuntimeWire.ackBundle(
+                sessions.values.firstOrNull { session -> !session.isTerminal }?.runId.orEmpty(),
+            )
             replyTo?.send(msg)
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_active_run_delivery_failed") {
@@ -681,7 +748,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun attachRun(runId: String, replyTo: Messenger?) {
-        val session = activeSession
+        val session = sessionFor(runId)
         val attached = replyTo != null &&
             runId.isNotBlank() &&
             session?.runId == runId &&
@@ -760,7 +827,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             replyTo,
             AgentRuntimeWire.RunResult(runId = "", ok = false, content = "", error = message),
         )
-        if (activeSession != null) return
+        if (sessions.isNotEmpty()) return
         enterFinalState(
             AgentOverlayState(
                 phase = AgentOverlayPhase.FAILED,
@@ -771,7 +838,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun requestStop() {
-        val session = activeSession
+        val session = sessions.values.firstOrNull { it -> !it.isTerminal }
         if (session == null) {
             dismissAndStop()
             return
@@ -797,7 +864,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
             return
         }
-        val session = activeSession ?: return
+        val session = sessionFor(runId) ?: return
         if (runId != session.runId) {
             AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
             return
@@ -809,7 +876,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun requestPause() {
-        activeSession?.controller?.pause()
+        sessions.values.forEach { session -> session.controller.pause() }
         state.value = state.value.copy(
             phase = AgentOverlayPhase.PAUSED,
             status = AgentOverlayStatus.Paused,
@@ -817,7 +884,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun requestResume() {
-        activeSession?.controller?.resume()
+        sessions.values.forEach { session -> session.controller.resume() }
         state.value = state.value.copy(
             phase = AgentOverlayPhase.RUNNING,
             status = AgentOverlayStatus.Continuing,
@@ -828,7 +895,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val supplementText = text.trim()
         if (supplementText.isBlank()) return
         setCapsuleInputMode(focusable = false)
-        activeSession?.let { session ->
+        sessions.values.lastOrNull { it -> !it.isTerminal }?.let { session ->
             val event = session.steer(supplementText) {
                 recordSupplementEvent(supplementText)
             }
@@ -915,6 +982,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onStop = ::requestStop,
                 onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = ::requestSupplement,
+                onOpenConversation = ::openConversation,
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -1257,6 +1325,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private companion object {
+        /** 同时运行的会话上限：模型推理并行，工具执行在工具层排队。 */
+        const val MAX_CONCURRENT_RUNS = 3
+
         const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
         const val HIDE_DELAY_MS = 2_500L
         const val RESULT_REVIEW_DELAY_MS = 120_000L

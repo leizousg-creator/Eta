@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private data class Task(
@@ -67,6 +68,8 @@ internal class VirtualScreenHomeActivity : ComponentActivity() {
     private var mode by mutableStateOf("HOME")
     private var failed by mutableStateOf(false)
     private var sessionId = ""
+    /** 应用搜索关键词：只过滤当前列表，不影响收藏与启动。 */
+    private var query by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,6 +99,13 @@ internal class VirtualScreenHomeActivity : ComponentActivity() {
                         }
                     }
                     if (mode == "APPS" && tasks.isNotEmpty()) {
+                        TextField(
+                            value = query,
+                            onValueChange = { value -> query = value },
+                            label = stringResource(R.string.virtual_screen_search_hint),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         Text(stringResource(R.string.virtual_screen_favorite_hint),
                             style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                     }
@@ -107,8 +117,22 @@ internal class VirtualScreenHomeActivity : ComponentActivity() {
                     LazyVerticalGrid(columns = GridCells.Adaptive(if (mode == "MENU") 260.dp else 150.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (mode == "APPS") {
-                            val pinned = tasks.filter { it.packageName in favorites }
-                            val rest = tasks.filter { it.packageName !in favorites }
+                            val keyword = query.trim()
+                            val matched = if (keyword.isEmpty()) {
+                                tasks
+                            } else {
+                                tasks.filter { task ->
+                                    task.label.contains(keyword, ignoreCase = true) ||
+                                        task.packageName.contains(keyword, ignoreCase = true)
+                                }
+                            }
+                            if (matched.isEmpty() && keyword.isNotEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionLabel(stringResource(R.string.virtual_screen_search_empty, keyword))
+                                }
+                            }
+                            val pinned = matched.filter { it.packageName in favorites }
+                            val rest = matched.filter { it.packageName !in favorites }
                             if (pinned.isNotEmpty()) {
                                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(stringResource(R.string.virtual_screen_favorites)) }
                                 items(pinned, key = { "pin-" + it.component }) { task -> AppCard(task, true) }
