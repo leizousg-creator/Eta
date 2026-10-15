@@ -133,13 +133,22 @@ fun AgentAppRoot(
     val resources = LocalResources.current
     val uiScope = rememberCoroutineScope()
     val backStack = rememberNavBackStack<AppRoute>(AppRoute.Home)
+    val navigator = remember(backStack) { AgentNavigator(backStack) }
+    // 返回栈里出现两个同 key 的条目会让 NavDisplay 直接抛 IllegalArgumentException
+    // （Duplicate contentKey on the back stack）并崩在主线程；这里对所有来源兜底去重。
+    LaunchedEffect(backStack.size) {
+        val seen = mutableSetOf<Any>()
+        var index = 0
+        while (index < backStack.size) {
+            if (!seen.add(backStack[index])) backStack.removeAt(index) else index++
+        }
+    }
     LaunchedEffect(openSpeechSettings) {
         if (openSpeechSettings) {
-            if (backStack.lastOrNull() != AppRoute.SpeechSettings) backStack.add(AppRoute.SpeechSettings)
+            navigator.push(AppRoute.SpeechSettings)
             onSpeechSettingsOpened()
         }
     }
-    val navigator = remember(backStack) { AgentNavigator(backStack) }
     var navigationResetKey by rememberSaveable { mutableIntStateOf(0) }
     val appViewModel = viewModel<AgentAppViewModel>()
     val agentState = appViewModel.state
@@ -149,7 +158,7 @@ fun AgentAppRoot(
     // 分享进来的内容：界面就绪后回到首页，填进当前会话输入框并附图。
     LaunchedEffect(ShareIntake.version) {
         val payload = ShareIntake.consume() ?: return@LaunchedEffect
-        if (backStack.lastOrNull() != AppRoute.Home) backStack.add(AppRoute.Home)
+        navigator.push(AppRoute.Home)
         payload.text?.let { text -> agentState.applySharedText(text) }
         payload.images.forEach { uri -> agentState.attachImage(uri) }
     }
@@ -296,6 +305,12 @@ fun AgentAppRoot(
                     agentState.homeState.messages, agentState.modelPickerState.selectedModel,
                     agentState.homeState.lastModelUsage, agentState.historyTrimNotice,
                     agentState.overflowDowngradeNotice,
+                    compaction = agentState.homeState.history
+                        .let { io.github.mangi.eta.agent.model.AgentContextPolicy.rounds(it) }
+                        .takeIf { it > 0 }
+                        ?.let {
+                            it to io.github.mangi.eta.agent.model.AgentContextPolicy.MAX_COMPACTION_ROUNDS
+                        },
                 )
             },
             onBack = { popRoute() },
@@ -743,6 +758,7 @@ fun AgentAppRoot(
                             is AgentMemoryAction.ToggleEnabled -> memory.setMemoryEnabled(action.enabled)
                             is AgentMemoryAction.ToggleAutoMemory -> memory.setAutomaticReview(memory = action.enabled)
                             is AgentMemoryAction.ToggleAutoSkills -> memory.setAutomaticReview(skills = action.enabled)
+                            is AgentMemoryAction.ToggleAutoCompact -> memory.setMemoryAutoCompact(action.enabled)
                             is AgentMemoryAction.DraftChanged -> memory.updateMemoryDraft(action.content)
                             AgentMemoryAction.Save -> memory.saveMemory()
                             AgentMemoryAction.Clear -> memory.clearMemory()

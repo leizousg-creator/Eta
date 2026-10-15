@@ -34,6 +34,7 @@ internal fun ConversationStatusCapsules(
     lastUsage: TokenUsageUi?,
     trimmed: Pair<Int, Int>? = null,
     downgradedProfileId: String? = null,
+    compaction: Pair<Int, Int>? = null,
 ) {
     val usage = latestContextUsage(messages, model).let { it.copy(contextTokens = lastUsage?.contextTokens ?: it.contextTokens) }
     val count = usage.contextTokens?.let { formatCompactTokenCount(it) } ?: "—"
@@ -43,7 +44,10 @@ internal fun ConversationStatusCapsules(
             NumberFormat.getPercentInstance().apply { maximumFractionDigits = 1 }.format(tokens.toDouble() / window)
         }
     }
-    val contextText = count + (limit?.let { "/$it" } ?: "") + (percent?.let { " · $it" } ?: "")
+    val compactionText = compaction?.let { (rounds, max) ->
+        " · " + stringResource(R.string.conversation_compaction_round_capsule, rounds, max)
+    } ?: ""
+    val contextText = count + (limit?.let { "/$it" } ?: "") + (percent?.let { " · $it" } ?: "") + compactionText
     val contextDescription = stringResource(R.string.conversation_context_capsule) + " " + contextText
     val speed = (lastUsage ?: messages.asReversed().filterIsInstance<AgentMessageUi>()
         .firstOrNull { it.usage != null }?.usage)?.averageTokensPerSecond

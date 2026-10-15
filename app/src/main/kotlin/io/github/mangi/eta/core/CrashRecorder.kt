@@ -107,14 +107,30 @@ internal object CrashRecorder {
     }.getOrNull() ?: context.packageName
 
     private fun logcatTail(): String {
-        val rooted = runCatching {
+        // 以前只抓全系统尾部，本进程自己的日志常被刷光——报告里一条 app 行都没有，
+        // 只能靠系统侧 START 记录反推触发点。这里先单独抓本进程 pid 的日志，再补全系统尾部。
+        val pid = android.os.Process.myPid()
+        val own = runCatching {
+            command(listOf("su", "-c", "logcat -d -v threadtime -t 400 --pid=$pid"))
+        }.getOrNull()
+        val global = runCatching {
             command(listOf("su", "-c", "logcat -d -v threadtime -t 400"))
         }.getOrNull()
-        if (!rooted.isNullOrBlank()) return rooted
         val plain = runCatching {
             command(listOf("logcat", "-d", "-v", "threadtime", "-t", "200"))
         }.getOrNull()
-        return plain?.ifBlank { "日志为空：缓冲区可能已被系统刷掉。" } ?: "日志读取失败。"
+        val systemTail = when {
+            !global.isNullOrBlank() -> global
+            !plain.isNullOrBlank() -> plain
+            else -> null
+        }
+        return buildString {
+            if (!own.isNullOrBlank()) {
+                append("--- 本进程（pid=").append(pid).append("）---\n").append(own).append('\n')
+            }
+            append("--- 全系统尾部 ---\n")
+            append(systemTail ?: "日志读取失败。")
+        }
     }
 
     private fun command(args: List<String>): String {

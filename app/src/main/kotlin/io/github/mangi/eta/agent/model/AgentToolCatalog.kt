@@ -22,6 +22,7 @@ internal object AgentToolCatalog {
         capabilities.project(JSONArray().also { tools ->
             val keepAll = localProfile == LocalToolProfile.LIGHT || localProfile == LocalToolProfile.FULL
             val minimal = localProfile == LocalToolProfile.MINIMAL
+            val dev = localProfile == LocalToolProfile.DEV
             AgentContextAppToolCatalog.appendTo(tools)
             if (!minimal) AgentGestureToolCatalog.appendTo(tools)
             if (!minimal) AgentTextSystemToolCatalog.appendTo(tools)
@@ -31,6 +32,14 @@ internal object AgentToolCatalog {
                     directTools = deviceDirectTools,
                     sensitiveReadTools = deviceSensitiveReadTools,
                     sensitiveActionTools = deviceSensitiveActionTools,
+                )
+            } else if (dev && deviceDirectTools) {
+                AgentDeviceToolCatalog.appendTo(
+                    tools,
+                    directTools = true,
+                    sensitiveReadTools = false,
+                    sensitiveActionTools = false,
+                    devOnly = true,
                 )
             }
             if (browserTools) {
@@ -47,7 +56,7 @@ internal object AgentToolCatalog {
             }
             if (memoryTools && !minimal) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
             if (memoryWritable && keepAll) AgentTaskToolCatalog.appendTo(tools)
-            if (deviceDirectTools && keepAll) AgentVirtualScreenToolCatalog.appendTo(tools)
+            if (deviceDirectTools && (keepAll || dev)) AgentVirtualScreenToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

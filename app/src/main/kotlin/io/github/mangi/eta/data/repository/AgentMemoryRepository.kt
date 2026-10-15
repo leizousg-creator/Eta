@@ -6,7 +6,12 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 internal data class AgentMemorySnapshot(
     val content: String,
@@ -61,6 +66,7 @@ internal class AgentMemoryStore(
 ) {
     private val memoryDir = File(rootDir, DIRECTORY_NAME)
     private val atomicFile = AtomicFile(File(memoryDir, FILE_NAME))
+    private val archiveAtomicFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
     private val lock = Any()
 
     fun snapshot(): AgentMemorySnapshot = synchronized(lock) {
@@ -77,7 +83,10 @@ internal class AgentMemoryStore(
         if (query.isNullOrBlank()) {
             page(snapshot, startLine, boundedChars)
         } else {
-            search(snapshot, query.trim(), boundedChars)
+            search(snapshot, query.trim(), boundedChars, archive = false).let { hot ->
+                if (hot.matchedLines > 0) return@let hot
+                search(snapshot, query.trim(), boundedChars, archive = true)
+            }
         }
     }
 
@@ -91,20 +100,82 @@ internal class AgentMemoryStore(
             is AgentMemoryMutation.Append -> append(current, mutation.content)
             is AgentMemoryMutation.Clear -> ""
         }
-        writeLocked(updated)
-        AgentMemoryWriteResult.Success(snapshotOf(updated))
+        val compacted = maybeCompact(updated)
+        writeLocked(compacted)
+        AgentMemoryWriteResult.Success(snapshotOf(compacted))
     }
 
     fun replaceAll(content: String): AgentMemorySnapshot = synchronized(lock) {
-        writeLocked(content)
-        snapshotOf(content)
+        val compacted = maybeCompact(content)
+        writeLocked(compacted)
+        snapshotOf(compacted)
     }
 
     fun replaceAllIfRevision(content: String, revision: String): AgentMemoryWriteResult = synchronized(lock) {
         val current = snapshotLocked()
         if (current.revision != revision) return@synchronized AgentMemoryWriteResult.Conflict(current)
-        writeLocked(content)
-        AgentMemoryWriteResult.Success(snapshotOf(content))
+        val compacted = maybeCompact(content)
+        writeLocked(compacted)
+        AgentMemoryWriteResult.Success(snapshotOf(compacted))
+    }
+
+    /** 冷区（MEMORY-ARCHIVE.md）全文；不参与上下文注入，只供检索与归档。 */
+    fun archiveSnapshot(): AgentMemorySnapshot = synchronized(lock) {
+        snapshotOf(readArchiveText())
+    }
+
+    fun appendArchive(content: String): AgentMemorySnapshot = synchronized(lock) {
+        if (content.isEmpty()) return@synchronized snapshotOf(readArchiveText())
+        val existing = readArchiveText()
+        val merged = if (existing.isEmpty()) content else existing.trimEnd('\n') + "\n" + content
+        val bytes = merged.toByteArray(Charsets.UTF_8)
+        if (bytes.size > MAX_FILE_BYTES) {
+            throw AgentMemoryException(
+                code = "MEMORY_TOO_LARGE",
+                message = "记忆冷区文件超过 1 MiB 安全上限",
+            )
+        }
+        if (!memoryDir.exists() && !memoryDir.mkdirs() && !memoryDir.isDirectory) {
+            throw AgentMemoryException(
+                code = "MEMORY_WRITE_FAILED",
+                message = "无法创建记忆目录",
+            )
+        }
+        val output = try {
+            archiveAtomicFile.startWrite()
+        } catch (throwable: IOException) {
+            throw AgentMemoryException(
+                code = "MEMORY_WRITE_FAILED",
+                message = "无法开始写入记忆冷区文件",
+                cause = throwable,
+            )
+        }
+        try {
+            output.write(bytes)
+            archiveAtomicFile.finishWrite(output)
+        } catch (throwable: Throwable) {
+            archiveAtomicFile.failWrite(output)
+            throw AgentMemoryException(
+                code = "MEMORY_WRITE_FAILED",
+                message = "无法保存记忆冷区文件",
+                cause = throwable,
+            )
+        }
+        snapshotOf(merged, bytes)
+    }
+
+    private fun readArchiveText(): String {
+        val file = archiveAtomicFile.baseFile
+        if (!file.exists()) return ""
+        return try {
+            archiveAtomicFile.openRead().use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (throwable: IOException) {
+            throw AgentMemoryException(
+                code = "MEMORY_READ_FAILED",
+                message = "无法读取记忆冷区文件",
+                cause = throwable,
+            )
+        }
     }
 
     private fun snapshotLocked(): AgentMemorySnapshot {
@@ -194,6 +265,68 @@ internal class AgentMemoryStore(
         return snapshot.content.trimEnd('\n') + "\n" + content
     }
 
+    @Volatile
+    private var autoCompactEnabled: Boolean = true
+
+    fun setAutoCompactEnabled(enabled: Boolean) {
+        autoCompactEnabled = enabled
+    }
+
+    fun isAutoCompactEnabled(): Boolean = autoCompactEnabled
+
+    /** 写入后若热区超限，就把最旧的、非保护的段落正文移入冷区，只留标题与说明。 */
+    private fun maybeCompact(content: String): String {
+        if (!autoCompactEnabled) return content
+        if (content.toByteArray(Charsets.UTF_8).size <= MAX_HOT_BYTES) return content
+
+        val lines = content.memoryLines()
+        val headings = lines.indices.filter { index -> lines[index].startsWith(SECTION_PREFIX) }
+        if (headings.size < 2) return content
+
+        val ranges = headings.mapIndexed { position, start ->
+            val next = headings.getOrNull(position + 1) ?: lines.size
+            start to (next - 1)
+        }
+
+        var totalBytes = content.toByteArray(Charsets.UTF_8).size
+        val movedPositions = mutableSetOf<Int>()
+        val archive = StringBuilder()
+        ranges.forEachIndexed { position, range ->
+            if (totalBytes <= TARGET_HOT_BYTES) return@forEachIndexed
+            val (start, end) = range
+            if (isProtectedHeading(lines[start])) return@forEachIndexed
+            val bodyLines = (start + 1)..end
+            if (bodyLines.count() < 2) return@forEachIndexed
+            var bodyBytes = 0
+            bodyLines.forEach { index -> bodyBytes += lines[index].toByteArray(Charsets.UTF_8).size + 1 }
+            if (bodyBytes < MIN_SECTION_BYTES) return@forEachIndexed
+            movedPositions += position
+            totalBytes -= bodyBytes
+            if (archive.isNotEmpty()) archive.append('\n')
+            archive.append(lines[start]).append('\n')
+            bodyLines.forEach { index -> archive.append(lines[index]).append('\n') }
+        }
+        if (movedPositions.isEmpty()) return content
+
+        val rebuilt = ArrayList<String>(lines.size)
+        if (headings.first() > 0) rebuilt += lines.subList(0, headings.first())
+        ranges.forEachIndexed { position, range ->
+            val (start, end) = range
+            rebuilt += lines[start]
+            if (movedPositions.contains(position)) {
+                rebuilt += ""
+                rebuilt += ARCHIVE_SENTINEL
+            } else {
+                for (index in (start + 1)..end) rebuilt += lines[index]
+            }
+        }
+        appendArchive(archive.toString().trimEnd('\n') + "\n")
+        return rebuilt.joinToString("\n")
+    }
+
+    private fun isProtectedHeading(heading: String): Boolean =
+        PROTECTED_HEADING_KEYWORDS.any { keyword -> heading.contains(keyword) }
+
     private fun page(
         snapshot: AgentMemorySnapshot,
         requestedStartLine: Int,
@@ -232,10 +365,17 @@ internal class AgentMemoryStore(
         snapshot: AgentMemorySnapshot,
         query: String,
         maxChars: Int,
+        archive: Boolean,
     ): AgentMemoryReadResult {
-        val lines = snapshot.content.memoryLines()
+        val lines = if (archive) readArchiveText().memoryLines() else snapshot.content.memoryLines()
+        if (lines.isEmpty()) {
+            return AgentMemoryReadResult(snapshot, "", null, null, false, 0)
+        }
         val matched = lines.indices.filter { index ->
             lines[index].contains(query, ignoreCase = true)
+        }
+        if (matched.isEmpty()) {
+            return AgentMemoryReadResult(snapshot, "", null, null, false, 0)
         }
         val included = linkedSetOf<Int>()
         matched.forEach { index ->
@@ -243,18 +383,19 @@ internal class AgentMemoryStore(
                 if (candidate in lines.indices) included += candidate
             }
         }
-        val output = StringBuilder()
+        val output = StringBuilder(if (archive) "（冷区 $ARCHIVE_FILE_NAME）" else "")
         var lastIncluded: Int? = null
         var renderedCount = 0
         for (index in included) {
-            val rendered = "${index + 1}: ${lines[index]}"
+            val rendered = if (archive) "A${index + 1}: ${lines[index]}" else "${index + 1}: ${lines[index]}"
             val gap = when {
                 output.isEmpty() -> ""
+                archive && lastIncluded == null -> "\n"
                 lastIncluded != null && index > lastIncluded + 1 -> "\n…\n"
                 else -> "\n"
             }
-            if (output.isNotEmpty() && output.length + gap.length + rendered.length > maxChars) break
-            output.append(gap).append(rendered.take(maxChars - output.length - gap.length))
+            if (lastIncluded != null && output.length + gap.length + rendered.length > maxChars) break
+            output.append(gap).append(rendered.take((maxChars - output.length - gap.length).coerceAtLeast(0)))
             lastIncluded = index
             renderedCount++
             if (output.length >= maxChars) break
@@ -291,6 +432,30 @@ internal class AgentMemoryStore(
 
     companion object {
         const val MAX_FILE_BYTES = 1024 * 1024
+        const val MAX_HOT_BYTES = 60 * 1024
+        const val TARGET_HOT_BYTES = 48 * 1024
+        const val ARCHIVE_FILE_NAME = "MEMORY-ARCHIVE.md"
+        private const val SECTION_PREFIX = "## "
+        private const val MIN_SECTION_BYTES = 600
+        private const val ARCHIVE_SENTINEL =
+            "- 正文已归档到 MEMORY-ARCHIVE.md（检索记忆时自动命中冷区）。"
+        private val PROTECTED_HEADING_KEYWORDS = listOf(
+            "环境包",
+            "共享文件夹",
+            "硬边界",
+            "分区",
+            "偏好",
+            "ZenProxy",
+            "白泽",
+            "记忆维护规则",
+            "进行中",
+            "待你",
+            "待用户",
+            "出包",
+            "签名",
+            "可复用",
+            "构建",
+        )
         const val DEFAULT_READ_CHARS = 12_000
         const val MAX_READ_CHARS = 32_000
         const val MIN_READ_CHARS = 1
@@ -306,10 +471,30 @@ internal object AgentMemoryRepository {
     @Volatile
     private lateinit var store: AgentMemoryStore
 
+    private val autoCompactScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     fun init(context: Context) {
         if (!::store.isInitialized) {
             store = AgentMemoryStore(context.applicationContext.filesDir)
+            autoCompactScope.launch {
+                repeat(3) {
+                    val collected = runCatching {
+                        SettingsDataStore.memoryAutoCompactEnabledFlow().collect { enabled ->
+                            store.setAutoCompactEnabled(enabled)
+                        }
+                    }.isSuccess
+                    if (collected) return@launch
+                    delay(1_000)
+                }
+            }
         }
+    }
+
+    fun autoCompactEnabledFlow(): Flow<Boolean> = SettingsDataStore.memoryAutoCompactEnabledFlow()
+
+    suspend fun setAutoCompactEnabled(enabled: Boolean) {
+        SettingsDataStore.setMemoryAutoCompactEnabled(enabled)
+        store.setAutoCompactEnabled(enabled)
     }
 
     fun snapshot(): AgentMemorySnapshot {
@@ -334,6 +519,16 @@ internal object AgentMemoryRepository {
     fun replaceAll(content: String): AgentMemorySnapshot {
         ensureInitialized()
         return store.replaceAll(content)
+    }
+
+    fun archiveSnapshot(): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.archiveSnapshot()
+    }
+
+    fun appendArchive(content: String): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.appendArchive(content)
     }
 
     fun enabledFlow(): Flow<Boolean> = SettingsDataStore.memoryEnabledFlow()

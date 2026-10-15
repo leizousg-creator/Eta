@@ -1048,6 +1048,14 @@ internal class AgentAppState(
 
     fun sendCurrentMessage(submittedText: String? = null) {
         if (homeState.isCompacting) return
+        if (io.github.mangi.eta.agent.model.AgentContextPolicy.isLocked(homeState.history)) {
+            Toast.makeText(
+                appContext,
+                appContext.getString(R.string.context_compaction_limit_reached),
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences

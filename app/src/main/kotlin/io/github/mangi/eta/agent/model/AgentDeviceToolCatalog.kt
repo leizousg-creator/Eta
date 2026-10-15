@@ -10,7 +10,13 @@ internal object AgentDeviceToolCatalog {
         directTools: Boolean,
         sensitiveReadTools: Boolean,
         sensitiveActionTools: Boolean,
+        devOnly: Boolean = false,
     ) {
+        if (devOnly) {
+            AgentPhoneToolCatalog.appendTo(tools, true, false, false)
+            appendDirectTools(tools)
+            return
+        }
         AgentPhoneToolCatalog.appendTo(tools, directTools, sensitiveReadTools, sensitiveActionTools)
         if (directTools) appendDirectTools(tools)
         if (sensitiveReadTools) appendSensitiveReadTools(tools)

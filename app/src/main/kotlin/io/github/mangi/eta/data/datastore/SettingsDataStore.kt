@@ -53,6 +53,7 @@ internal object SettingsDataStore {
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     private val AUTO_MEMORY_ENABLED = booleanPreferencesKey("auto_memory_enabled")
+    private val MEMORY_AUTO_COMPACT_ENABLED = booleanPreferencesKey("memory_auto_compact_enabled")
     private val AUTO_SKILLS_ENABLED = booleanPreferencesKey("auto_skills_enabled")
     private val VIRTUAL_SCREEN_ENABLED = booleanPreferencesKey("virtual_screen_enabled")
     private val VIRTUAL_SCREEN_OFF_ENABLED = booleanPreferencesKey("virtual_screen_off_enabled")
@@ -168,6 +169,7 @@ internal object SettingsDataStore {
             prefs.putOrRemove(SELECTED_MODEL_ID, updated.selectedModelId)
             prefs[MEMORY_ENABLED] = updated.memoryEnabled
             prefs[AUTO_MEMORY_ENABLED] = updated.autoMemoryEnabled
+            prefs[MEMORY_AUTO_COMPACT_ENABLED] = updated.memoryAutoCompactEnabled
             prefs[AUTO_SKILLS_ENABLED] = updated.autoSkillsEnabled
             prefs[VIRTUAL_SCREEN_ENABLED] = updated.virtualScreenEnabled
             prefs[VIRTUAL_SCREEN_OFF_ENABLED] = updated.virtualScreenOffEnabled
@@ -232,6 +234,9 @@ internal object SettingsDataStore {
             .first()
     }
 
+    fun memoryAutoCompactEnabledFlow(): Flow<Boolean> =
+        settingsFlow().map { it.memoryAutoCompactEnabled }
+
     fun memoryEnabledFlow(): Flow<Boolean> =
         settingsFlow().map { it.memoryEnabled }
 
@@ -294,6 +299,10 @@ internal object SettingsDataStore {
         }
     }
 
+    suspend fun setMemoryAutoCompactEnabled(enabled: Boolean) {
+        updateSettings { it.copy(memoryAutoCompactEnabled = enabled) }
+    }
+
     suspend fun setMemoryEnabled(enabled: Boolean) {
         updateSettings { it.copy(memoryEnabled = enabled) }
     }
@@ -335,6 +344,7 @@ internal object SettingsDataStore {
         selectedModelId = this[SELECTED_MODEL_ID],
         memoryEnabled = this[MEMORY_ENABLED] ?: true,
         autoMemoryEnabled = this[AUTO_MEMORY_ENABLED] ?: true,
+        memoryAutoCompactEnabled = this[MEMORY_AUTO_COMPACT_ENABLED] ?: true,
         autoSkillsEnabled = this[AUTO_SKILLS_ENABLED] ?: true,
         virtualScreenEnabled = this[VIRTUAL_SCREEN_ENABLED] ?: false,
         virtualScreenOffEnabled = this[VIRTUAL_SCREEN_OFF_ENABLED] ?: false,

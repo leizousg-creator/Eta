@@ -7,9 +7,12 @@ class AgentNavigator(
     val backStack: NavBackStack,
 ) {
     fun push(route: AppRoute) {
-        if (route !in backStack) {
-            backStack.add(route)
+        if (route in backStack) {
+            // 同一个 key 在返回栈里出现两次会直接崩溃；目标若是首页则退回首页，等价于「再回一次主页」。
+            if (route is AppRoute.Home) popToHome()
+            return
         }
+        backStack.add(route)
     }
 
     fun replace(route: AppRoute) {

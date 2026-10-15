@@ -22,13 +22,13 @@ internal object AgentToolSchemaCompactor {
     private fun functionLimit(profile: LocalToolProfile): Int = when (profile) {
         LocalToolProfile.CHAT, LocalToolProfile.MINIMAL -> 90
         LocalToolProfile.STANDARD -> 150
-        LocalToolProfile.LIGHT, LocalToolProfile.FULL -> 260
+        LocalToolProfile.DEV, LocalToolProfile.LIGHT, LocalToolProfile.FULL -> 260
     }
 
     private fun propertyLimit(profile: LocalToolProfile): Int = when (profile) {
         LocalToolProfile.CHAT, LocalToolProfile.MINIMAL -> 55
         LocalToolProfile.STANDARD -> 80
-        LocalToolProfile.LIGHT, LocalToolProfile.FULL -> 110
+        LocalToolProfile.DEV, LocalToolProfile.LIGHT, LocalToolProfile.FULL -> 110
     }
 
     private fun compactNode(node: JSONObject?, limit: Int) {

@@ -11,6 +11,9 @@ internal enum class LocalToolProfile(val id: String) {
     /** 正常：工具与描述原样发送，不做任何压缩。 */
     FULL("full"),
 
+    /** 开发：只留开发链路工具（终端／文件／GUI／日志／记忆），手机个人数据类工具不发送。 */
+    DEV("dev"),
+
     /** 纯聊天：不发送任何工具定义，只做对话（仍可接收图片）。 */
     CHAT("chat"),
 
@@ -23,9 +26,10 @@ internal enum class LocalToolProfile(val id: String) {
     /** 极简：只留最小工具集，最省 token。 */
     MINIMAL("minimal");
 
-    /** 自动降档顺序：正常 → 轻度 → 标准 → 极简；纯聊天档不带工具，无需降档。 */
+    /** 自动降档顺序：正常 → 轻度 → 标准 → 极简；开发档降到标准档仍保留终端／文件。纯聊天档不带工具，无需降档。 */
     fun leaner(): LocalToolProfile? = when (this) {
         FULL -> LIGHT
+        DEV -> STANDARD
         LIGHT -> STANDARD
         STANDARD -> MINIMAL
         MINIMAL, CHAT -> null

@@ -67,6 +67,7 @@ sealed interface AgentMemoryAction {
     data class ToggleEnabled(val enabled: Boolean) : AgentMemoryAction
     data class ToggleAutoMemory(val enabled: Boolean) : AgentMemoryAction
     data class ToggleAutoSkills(val enabled: Boolean) : AgentMemoryAction
+    data class ToggleAutoCompact(val enabled: Boolean) : AgentMemoryAction
     data class DraftChanged(val content: String) : AgentMemoryAction
     data object Save : AgentMemoryAction
     data object Clear : AgentMemoryAction

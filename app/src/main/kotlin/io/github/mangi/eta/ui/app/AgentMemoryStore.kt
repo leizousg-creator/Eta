@@ -41,6 +41,7 @@ internal class AgentMemoryStore(
                         memoryState = AgentMemoryUiState(
                             enabled = settings.memoryEnabled,
                             autoMemoryEnabled = settings.autoMemoryEnabled,
+                            autoCompactEnabled = settings.memoryAutoCompactEnabled,
                             autoSkillsEnabled = settings.autoSkillsEnabled,
                             isLoading = false,
                             draft = snapshot.content,
@@ -84,6 +85,7 @@ internal class AgentMemoryStore(
             }.onSuccess { settings ->
                 withContext(Dispatchers.Main) {
                     memoryState = memoryState.copy(autoMemoryEnabled = settings.autoMemoryEnabled,
+                            autoCompactEnabled = settings.memoryAutoCompactEnabled,
                         autoSkillsEnabled = settings.autoSkillsEnabled, notice = null)
                 }
             }.onFailure {
@@ -91,6 +93,24 @@ internal class AgentMemoryStore(
                     memoryState = memoryState.copy(notice = appContext.getString(R.string.state_ui_memory_switch_failed_to_save_83b5d6))
                 }
             }
+        }
+    }
+
+    fun setMemoryAutoCompact(enabled: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.setAutoCompactEnabled(enabled) }
+                .fold(
+                    onSuccess = {
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(autoCompactEnabled = enabled, notice = null)
+                        }
+                    },
+                    onFailure = {
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(notice = appContext.getString(R.string.state_ui_memory_switch_failed_to_save_83b5d6))
+                        }
+                    },
+                )
         }
     }
 

@@ -107,6 +107,14 @@ internal fun AgentMemoryScreen(
                             onCheckedChange = { onAction(AgentMemoryAction.ToggleAutoSkills(it)) },
                         )
                         EtaPreferenceDivider(hasLeading = false)
+                        EtaSwitchPreference(
+                            title = stringResource(R.string.memory_auto_compact_title),
+                            summary = stringResource(R.string.memory_auto_compact_summary),
+                            checked = state.autoCompactEnabled,
+                            enabled = !state.isLoading && state.enabled,
+                            onCheckedChange = { onAction(AgentMemoryAction.ToggleAutoCompact(it)) },
+                        )
+                        EtaPreferenceDivider(hasLeading = false)
                         EtaPreference(
                             title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),
                             summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),

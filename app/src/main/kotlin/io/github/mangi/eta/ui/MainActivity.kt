@@ -98,23 +98,17 @@ class MainActivity : ComponentActivity() {
 
     /** 系统分享面板送进来的文字／图片，先暂存起来，界面就绪后由 AgentAppRoot 取走。 */
     private fun handleShareIntent(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_SEND) return
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-        val images = mutableListOf<String>()
-        val stream = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            intent.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri
-        }
-        stream?.let { uri ->
+        val action = intent?.action
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+        val text = intent.shareText()
+        val images = intent.shareUris().map { uri ->
             runCatching {
                 contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            images += uri.toString()
+            uri.toString()
         }
         io.github.mangi.eta.core.EtaTrace.log(
             "share.intent",
@@ -122,6 +116,43 @@ class MainActivity : ComponentActivity() {
         )
         io.github.mangi.eta.ui.app.ShareIntake.offer(text, images)
         intent.action = null
+    }
+
+    /**
+     * 分享进来的文字：有的应用塞 CharSequence，有的塞 String，还有的只挂在 ClipData 上；
+     * 只读一次 EXTRA_TEXT 会漏，表现就是「提示分享成功、输入框却是空的」。
+     */
+    private fun Intent.shareText(): String? {
+        getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
+        @Suppress("DEPRECATION")
+        getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { return it }
+        val clip = clipData ?: return null
+        for (index in 0 until clip.itemCount) {
+            val item = clip.getItemAt(index)
+            item.text?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
+            item.htmlText?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * 分享进来的图片／文件：EXTRA_STREAM 可能是单个 Uri，也可能是 ArrayList（多选分享），
+     * 有的应用只放进 ClipData；三种来源都要收，否则就是「分享成功但没图」。
+     */
+    private fun Intent.shareUris(): List<android.net.Uri> {
+        val uris = linkedSetOf<android.net.Uri>()
+        runCatching {
+            getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+        }.getOrNull()?.forEach { uri -> uri?.let(uris::add) }
+        runCatching {
+            getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+        }.getOrNull()?.let(uris::add)
+        clipData?.let { clip ->
+            for (index in 0 until clip.itemCount) {
+                clip.getItemAt(index)?.uri?.let(uris::add)
+            }
+        }
+        return uris.toList()
     }
 
     private fun updateAssistantHandoff(intent: Intent?) {
