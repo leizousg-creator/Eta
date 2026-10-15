@@ -362,7 +362,7 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem(
             "工具档",
             STATE_BUILTIN,
-            "设置 → 工具档 五档可选，每档带说明文案；档位跟随所选模型",
+            "设置 → 工具档 六档可选（正常／轻度／标准／纯聊天／极简／开发），每档带说明文案；档位跟随所选模型",
         ),
         SelfCheckItem(
             "设置项搜索",
