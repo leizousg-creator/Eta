@@ -53,11 +53,15 @@ internal interface ChunkedTextDao {
         if (text.startsWith("{")) return text
         val cut = text.length - MAX_FIELD_CHARS
         if (text.startsWith("[")) {
-            // 对象数组优先落在元素边界；字符串数组退到逗号边界；都找不到就不截断。
+            // 对象数组优先落在元素边界："," 的下标 +2 才是下一个元素的 '{'，+1 会把 '}' 留在数组开头。
             val element = text.indexOf("},{", cut)
-            if (element in 0 until text.length - 2) return "[" + text.substring(element + 1)
+            if (element in 0 until text.length - 2) return "[" + text.substring(element + 2)
+            // 字符串数组退到逗号边界；但逗号后必须是引号或对象，否则原样返回而不是切出半个元素。
             val comma = text.indexOf(',', cut)
-            if (comma in 0 until text.length - 1) return "[" + text.substring(comma + 1)
+            if (comma in 0 until text.length - 1) {
+                val head = text.substring(comma + 1).trimStart()
+                if (head.startsWith("\"") || head.startsWith("{")) return "[" + head
+            }
             return text
         }
         return text.substring(cut)
@@ -126,7 +130,8 @@ internal interface ChunkedTextDao {
         val buffer = StringBuilder(maxChars + CHUNK_CHARS * 2)
         kept.forEach { buffer.append(it.content) }
         if (buffer.length <= maxChars) return buffer.toString()
-        return buffer.substring(buffer.length - maxChars)
+        // 任意位置截断会把首个元素腰斩；统一过一遍元素边界，交出去的必须是能解析的数组开头。
+        return trimToElementBoundary(buffer.substring(buffer.length - maxChars))
     }
 
     /**
@@ -145,12 +150,25 @@ internal interface ChunkedTextDao {
         return header to (ref.second - kept.length).toLong()
     }
 
-    /** 尾巴是从中间切出来的，去掉被腰斩的首个元素，让 JSON 数组仍然完整。 */
+    /**
+     * 把「从中间切出来的尾巴」修成合法 JSON 数组开头，绝不交出 [,{ / [},{ 这类坏头：
+     * 1) 已经是 "[{" 合法数组头 —— 原样返回（幂等）；
+     * 2) '[' 与首个 '{' 之间只剩 , } ] 空白等残渣（含 [,{ 、[},{ ）—— 丢掉残渣，从完整对象 '{' 起重包 '['；
+     * 3) 首个 '{' 前面还有正文（被腰斩的元素）—— 跳到下一个 "},{" 之后的 '{'；
+     * 4) 都做不到就退回空数组，宁可少一段历史也不把解析不了的 JSON 交出去。
+     */
     fun trimToElementBoundary(text: String): String {
-        if (!text.startsWith("[")) return text
-        val boundary = text.indexOf("},{")
-        if (boundary >= 0 && boundary < text.length - 3) return "[" + text.substring(boundary + 2)
-        return text
+        if (text.isBlank()) return text
+        if (text.startsWith("[{")) return text
+        val head = text.indexOf('{')
+        if (head < 0) return "[]"
+        val residue = text.substring(0, head).all {
+            it == '[' || it == ']' || it == ',' || it == '}' || it.isWhitespace()
+        }
+        if (residue) return "[" + text.substring(head)
+        val boundary = text.indexOf("},{", head)
+        if (boundary >= 0 && boundary + 2 < text.length) return "[" + text.substring(boundary + 2)
+        return "[]"
     }
 
     companion object {
