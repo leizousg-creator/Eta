@@ -27,35 +27,56 @@ import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
+import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
+import io.github.mangi.eta.ui.components.EtaPreferenceGroup
+import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
+import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.model.AgentToolsAction
 import io.github.mangi.eta.ui.model.AgentToolsUiState
 import io.github.mangi.eta.ui.model.projectToolGroups
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.ui.model.ToolItemUi
 
 @Composable
 fun AgentToolsScreen(state: AgentToolsUiState, onAction: (AgentToolsAction) -> Unit, modifier: Modifier = Modifier) {
     val capabilities = rememberDeviceCapabilities()
     var showAll by rememberSaveable { mutableStateOf(false) }
-    val currentGridState = rememberLazyStaggeredGridState()
-    val allGridState = rememberLazyStaggeredGridState()
+    val currentListState = rememberLazyListState()
+    val allListState = rememberLazyListState()
     val groups = projectToolGroups(state.groups, showAll, capabilities.root.isGranted, capabilities.tools.colorOs)
-    val minCardWidth = 150.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
-    MiuixScaffold(title = stringResource(R.string.ui_tool_ability_9f0f80),
-        onBack = { onAction(AgentToolsAction.NavigateBack) }, modifier = modifier) { padding, scrollBehavior, sidePadding ->
-        LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Adaptive(minCardWidth),
-            state = if (showAll) allGridState else currentGridState,
-            modifier = Modifier.fillMaxSize().horizontalCutoutPadding().navigationBarsPadding()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = PaddingValues(start = sidePadding + 16.dp, end = sidePadding + 16.dp,
-                top = padding.calculateTopPadding(), bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalItemSpacing = 12.dp,
-        ) {
-            item(key = "capability-view", span = StaggeredGridItemSpan.FullLine) {
-                TabRow(tabs = listOf(stringResource(R.string.capability_current_device), stringResource(R.string.capability_all)),
-                    selectedTabIndex = if (showAll) 1 else 0, onTabSelected = { showAll = it == 1 })
+    MiuixScaffoldPage(
+        title = stringResource(R.string.ui_tool_ability_9f0f80),
+        onBack = { onAction(AgentToolsAction.NavigateBack) },
+        modifier = modifier,
+        listState = if (showAll) allListState else currentListState,
+    ) {
+        item(key = "capability-view") {
+            TabRow(
+                tabs = listOf(stringResource(R.string.capability_current_device), stringResource(R.string.capability_all)),
+                selectedTabIndex = if (showAll) 1 else 0,
+                onTabSelected = { showAll = it == 1 },
+                modifier = Modifier.padding(horizontal = EtaPreferenceDefaults.SidePadding, vertical = 8.dp),
+            )
+        }
+        item(key = "capability-discovery") {
+            EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+                EtaArrowPreference(
+                    title = stringResource(R.string.capability_enhancements),
+                    summary = stringResource(R.string.capability_enhancements_summary),
+                    onClick = { onAction(AgentToolsAction.OpenEnhancements) },
+                )
             }
             item(key = "capability-discovery", span = StaggeredGridItemSpan.FullLine) {
                 EtaCard {

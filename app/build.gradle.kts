@@ -39,8 +39,8 @@ android {
         minSdk = 33
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026101103
-        versionName = "3.3.0"
+        versionCode = 2026101501
+        versionName = "3.3.1-p31"
         testInstrumentationRunner = "io.github.mangi.eta.validation.DeviceValidationRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -51,6 +51,8 @@ android {
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = file(requireNotNull(releaseStoreFile))
+                // 自签密钥库是 PKCS12；工作流把它落成 .jks 文件名，必须显式声明类型
+                storeType = "PKCS12"
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword

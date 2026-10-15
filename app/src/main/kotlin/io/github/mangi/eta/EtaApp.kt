@@ -63,6 +63,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
+        applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)
         runCatching { VscrDiag.init(this) }
         VirtualScreenFloatWindow.init(this)

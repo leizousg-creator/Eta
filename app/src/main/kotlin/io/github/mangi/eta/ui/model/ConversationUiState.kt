@@ -26,6 +26,7 @@ data class ConversationSummaryUi(
     /** 所属会话分类；null 表示未分类。 */
     val categoryId: String? = null,
     val categoryName: String? = null,
+    val characterAvatarPath: String? = null,
 )
 
 @Immutable

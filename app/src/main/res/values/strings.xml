@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="permission_local_network_title">局域网访问</string>
   <string name="permission_local_network_summary">用于模型、MCP、内置浏览器和终端访问局域网，请按需授权；不授权仍可访问公网。</string>
@@ -307,7 +307,7 @@
   <string name="ui_context_length_tokens_227860">上下文窗口（tokens）</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏唤起自动语音输入</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">仅以 /agent 前缀接管</string>
-  <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">仅勾选模型或网关实际支持的档位；不支持的组合会在请求前明确报错。</string>
+  <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">只选模型或网关实际支持的档位</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好与策略</string>
   <string name="ui_stop_a17f70">停止</string>
   <string name="ui_allow_sensitive_device_operation_3d42ea">允许敏感设备操作</string>
@@ -738,7 +738,7 @@
   <string name="tool_ui_coloros_system_memory_eff961">ColorOS 系统记忆</string>
   <string name="tool_ui_qq_chat_pictures_e21bf9">QQ 聊天图片</string>
   <string name="tool_ui_wi_fi_password_80e9a4">Wi‑Fi 密码</string>
-  <string name="tool_ui_user_root_shell_conversational_execution_and_asy_13c2ab">user/root shell，会话式执行与异步读取</string>
+  <string name="tool_ui_user_root_shell_conversational_execution_and_asy_13c2ab">执行命令或复用持久 Shell 会话</string>
   <string name="tool_ui_download_history_8494d7">下载记录</string>
   <string name="tool_ui_personal_order_25e4c9">个人订单</string>
   <string name="tool_ui_retrieve_recording_files_from_system_media_libra_314c4d">从系统媒体库检索录音文件</string>
@@ -1105,7 +1105,7 @@
   <string name="browser_title">Agent 浏览器</string>
   <string name="browser_open_external">用外部应用打开</string>
   <string name="browser_reset_session">重置会话</string>
-  <string name="browser_user_controlling">你正在接管当前会话，Agent 的网页操作已停止；返回后可让 Agent 继续。</string>
+  <string name="browser_user_controlling">你正在操作网页，Agent 已暂停，返回后继续</string>
   <string name="browser_opening">正在打开网页</string>
   <string name="browser_opening_host">正在打开 %1$s</string>
   <string name="model_not_selected">未选择</string>
@@ -1587,7 +1587,6 @@
   <string name="agent_run_resume_prompt">（继续）上一次运行中途被终止，请从中断的地方接着完成剩余步骤，不要重复已经完成的工作。</string>
     <string name="route_skills" translatable="false">Skills</string>
     <string name="speech_api_key" translatable="false">API Key</string>
-
   <string name="usage_stats_title">用量统计</string>
   <string name="usage_stats_summary">本地记录每次模型请求的 token 与降档重试</string>
   <string name="usage_range_today">今日</string>
@@ -1747,4 +1746,62 @@
     <string name="virtual_screen_action_fullscreen">全屏</string>
     <string name="virtual_screen_action_normal">常规大小</string>
     <string name="virtual_screen_ready">就绪</string>
+  <string name="terminal_key_paste">粘贴</string>
+  <string name="terminal_keyboard_show">显示键盘</string>
+  <string name="terminal_keyboard_hide">收起键盘</string>
+  <string name="terminal_key_left">左</string>
+  <string name="terminal_key_up">上</string>
+  <string name="terminal_key_down">下</string>
+  <string name="terminal_key_right">右</string>
+  <string name="terminal_key_enter">回车</string>
+  <string name="tool_terminal_job">异步命令</string>
+  <string name="tool_terminal_job_description">启动、查看和停止后台命令；回复结束后继续运行，完成时通知</string>
+  <string name="tool_terminal_daemon">后台服务</string>
+  <string name="tool_terminal_daemon_description">启动、查看和停止可跨 Agent 任务运行的后台服务</string>
+  <string name="ui_about_update_title">检查更新</string>
+  <string name="ui_about_update_checking">正在检查…</string>
+  <string name="ui_update_already_latest">当前已是最新版本</string>
+  <string name="ui_update_check_failed">检查更新失败，请稍后重试</string>
+  <string name="ui_update_available_title">发现新版本</string>
+  <string name="ui_update_available_message">最新版本 %1$s，当前版本 %2$s</string>
+  <string name="ui_update_go_download">前往下载</string>
+  <string name="provider_models_up_to_date">已是最新，没有新模型</string>
+  <string name="provider_context_window_hint">选择常用大小或手动填写，用于判断何时自动压缩</string>
+  <string name="provider_context_window_invalid">请输入正整数</string>
+  <string name="provider_context_window_value">约 %1$s tokens</string>
+  <string name="provider_context_window_usage">对话接近这个长度时会自动压缩</string>
+  <plurals name="provider_models_added">
+    <item quantity="other">已添加 %d 个模型</item>
+  </plurals>
+  <string name="remote_model_import_title">添加模型</string>
+  <string name="remote_model_import_summary">远端有 %1$d 个尚未添加的模型</string>
+  <string name="remote_model_import_pick_hint">选择要添加的模型</string>
+  <string name="remote_model_import_confirm">添加 %1$d 个</string>
+  <plurals name="provider_delete_models_action">
+    <item quantity="other">删除 %d 个模型</item>
+  </plurals>
+  <string name="provider_delete_models_pick_hint">选择要删除的模型</string>
+  <string name="provider_auto_reasoning_detected">已自动识别</string>
+  <string name="model_picker_title">选择模型</string>
+  <string name="model_picker_filter_all">全部</string>
+  <string name="speech_auto_read_on">自动朗读已开启，点按关闭</string>
+  <string name="speech_auto_read_off">自动朗读已关闭，点按开启</string>
+  <string name="read_aloud_channel">朗读</string>
+  <string name="read_aloud_notification_title">Eta 正在朗读</string>
+  <string name="chat_edit_character_reply">编辑角色回复</string>
+  <string name="chat_previous_candidate">上一条候选回复</string>
+  <string name="chat_next_candidate">下一条候选回复</string>
+  <string name="chat_image_attachment">图片附件</string>
+  <string name="chat_edit_preserve_following">保存后原位更新这条消息，并保留后续对话</string>
+  <string name="chat_save_message">保存消息</string>
+  <string name="chat_character_story_start">故事从这里开始</string>
+  <string name="tool_details_expand">展开工具详情</string>
+  <string name="tool_details_collapse">收起工具详情</string>
+  <string name="shared_folders_picker_no_subfolders">此处没有子文件夹</string>
+  <string name="memory_empty_title">还没有记忆</string>
+  <string name="memory_mode_preview">预览</string>
+  <string name="memory_mode_edit">编辑</string>
+  <string name="memory_discard">放弃</string>
+  <string name="chat_character_input_hint">对%1$s说点什么…</string>
+  <string name="chat_character_typing">%1$s 正在回复…</string>
 </resources>

@@ -39,9 +39,8 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,6 +56,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
@@ -558,6 +558,14 @@ private fun ConversationTextRow(
         ) {
             if (batchMode) {
                 Checkbox(state = if (checked) ToggleableState.On else ToggleableState.Off, onClick = onClick, modifier = Modifier.padding(end = 4.dp))
+            conversation.characterName?.let { name ->
+                CharacterAvatar(
+                    name = name,
+                    avatarPath = conversation.characterAvatarPath,
+                    size = 36.dp,
+                    shape = CircleShape,
+                )
+                Spacer(Modifier.width(12.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
             val title = conversation.title.ifBlank { conversation.preview }

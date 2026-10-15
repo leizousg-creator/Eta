@@ -9,6 +9,7 @@ import io.github.mangi.eta.agent.display.MainScreenFallbackDecision
 import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.model.Settings
+import android.graphics.Rect
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -26,8 +27,10 @@ import io.github.mangi.eta.agent.web.AgentWebTools
 import io.github.mangi.eta.agent.web.WebHttpTransport
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
+import io.github.mangi.eta.agent.model.AgentTerminalToolCatalog
 import io.github.mangi.eta.agent.model.AgentFileToolCatalog
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
+import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
@@ -45,7 +48,7 @@ import io.github.mangi.eta.agent.skill.GitHubSkillInspection
 import io.github.mangi.eta.agent.skill.GitHubSkillRepository
 import io.github.mangi.eta.agent.skill.GitHubSkillSourceException
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
-import io.github.mangi.eta.agent.terminal.AlpineEnvironmentPaths
+import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
@@ -137,31 +140,27 @@ internal class AgentLocalTools(
         transport = WebHttpTransport(AgentHttpClient.client),
         localNetworkAccess = { LocalNetworkPermission.accessState(context).name.lowercase(Locale.ROOT) },
     )
+    val terminalExecutionContext = LinuxEnvironmentSettingsRepository.current(context).terminalEnvironment.let { environment ->
+        TerminalExecutionContext(
+            linuxEnvironment = environment,
+            linuxRootfsPath = LinuxEnvironmentPaths.rootfsDir(context, checkNotNull(environment.linuxDistribution)).absolutePath,
+        )
+    }
     private val terminalController = RootShellTerminalController(
         logger = logger,
         rootAvailable = rootAvailable,
-        linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
-        linuxRootfsPathProvider = { environment ->
-            environment.linuxDistribution?.let { distribution ->
-                LinuxEnvironmentPaths.rootfsDir(context, distribution).absolutePath
-            }
-        },
+        executionContext = terminalExecutionContext,
+        backgroundJobs = io.github.mangi.eta.agent.terminal.TerminalRuntime.backgroundJobs(context),
         detachedSupervisor = DetachedTaskSupervisor(
             logger = logger,
             recordsFile = DetachedTaskSupervisor.defaultRecordsFile(context),
-            linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
-            linuxRootfsPathProvider = { environment ->
-                environment.linuxDistribution?.let { distribution ->
-                    LinuxEnvironmentPaths.rootfsDir(context, distribution).absolutePath
-                }
-            },
+            linuxRootfsPath = terminalExecutionContext.linuxRootfsPath,
             linuxSharedMountsProvider = { SharedFolderMounts.current() },
+            rootAvailable = rootAvailable,
         ),
         linuxSharedMountsProvider = { SharedFolderMounts.current() },
-        selectedLinuxEnvironmentProvider = {
-            LinuxEnvironmentSettingsRepository.current(context).terminalEnvironment
-        },
     )
+
     private val publishedObservation = AtomicReference(PublishedObservation())
     private val runAvailableSkillIds = runAvailableSkillIds
         .mapTo(mutableSetOf(), SkillParser::normalizeSkillLookup)
@@ -345,8 +344,10 @@ internal class AgentLocalTools(
                     structuredDeviceTools.execute(toolCall.name, args)
                         ?: textResult(errorResult("UNKNOWN_TOOL", "未知设备工具"))
                 "read_image" -> fileVisionTool { imageTools.readImage(args) }
-                "terminal" -> textResult(terminalTool { terminal(args) })
-                "run_command" -> textResult(terminalTool { runCommand(args) })
+                in AgentTerminalToolCatalog.names -> textResult(terminalTool {
+                    if (toolCall.name == "terminal" && args.optString("action").equals("check_root", ignoreCase = true)) checkRoot()
+                    else terminalController.executeTool(toolCall.name, args)
+                })
                 in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
@@ -368,7 +369,7 @@ internal class AgentLocalTools(
             textResult(
                 errorResult(
                     code = when (throwable) {
-                        is InvalidToolArgumentException -> "INVALID_ARGUMENT"
+                        is InvalidToolArgumentException, is org.json.JSONException -> "INVALID_ARGUMENT"
                         is DeviceControlUnavailableException -> "ACCESSIBILITY_UNAVAILABLE"
                         else -> "TOOL_ERROR"
                     },
@@ -458,11 +459,11 @@ internal class AgentLocalTools(
                 revision = revision,
                 startLine = args.getInt("start_line"),
                 endLine = args.getInt("end_line"),
-                content = args.getString("content"),
+                content = args.requiredText("content"),
             )
             "append" -> AgentMemoryMutation.Append(
                 revision = revision,
-                content = args.getString("content"),
+                content = args.requiredText("content"),
             )
             "clear" -> AgentMemoryMutation.Clear(revision)
             else -> error("不支持的记忆写入模式")
@@ -572,20 +573,22 @@ internal class AgentLocalTools(
 
     private fun tap(args: JSONObject): String {
         val point = convertPoint(
-            x = args.optInt("x"),
-            y = args.optInt("y"),
+            x = args.getInt("x"),
+            y = args.getInt("y"),
             coordinateSpace = args.optString("coordinate_space")
         )
-        AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
-        showTap(point.x, point.y)
-        return deviceController.tap(point.x, point.y)
+        return clearOverlay(point) {
+            AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
+            showTap(point.x, point.y)
+            deviceController.tap(point.x, point.y)
+        }
     }
 
     private fun tapArea(args: JSONObject): String {
-        val x1 = args.optInt("x1")
-        val y1 = args.optInt("y1")
-        val x2 = args.optInt("x2")
-        val y2 = args.optInt("y2")
+        val x1 = args.getInt("x1")
+        val y1 = args.getInt("y1")
+        val x2 = args.getInt("x2")
+        val y2 = args.getInt("y2")
         val coordinateSpace = args.optString("coordinate_space")
         val first = convertPoint(x1, y1, coordinateSpace)
         val second = convertPoint(x2, y2, coordinateSpace)
@@ -593,9 +596,11 @@ internal class AgentLocalTools(
             x = ((first.x.toLong() + second.x.toLong()) / 2L).toInt(),
             y = ((first.y.toLong() + second.y.toLong()) / 2L).toInt(),
         )
-        AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
-        showTap(point.x, point.y)
-        return deviceController.tap(point.x, point.y)
+        return clearOverlay(point) {
+            AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
+            showTap(point.x, point.y)
+            deviceController.tap(point.x, point.y)
+        }
     }
 
     private fun tapElement(args: JSONObject): String {
@@ -605,7 +610,9 @@ internal class AgentLocalTools(
         if (node == null) {
             return errorResult("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index")
         }
-        val result = deviceController.tapElement(observation, index)
+        val result = clearOverlay(ScreenPoint(node.centerX, node.centerY)) {
+            deviceController.tapElement(observation, index)
+        }
         if (result.isOkJson()) {
             AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
             showTap(node.centerX, node.centerY)
@@ -621,7 +628,9 @@ internal class AgentLocalTools(
         if (node == null) {
             return errorResult("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index")
         }
-        val result = deviceController.longPressElement(observation, index, durationMs)
+        val result = clearOverlay(ScreenPoint(node.centerX, node.centerY)) {
+            deviceController.longPressElement(observation, index, durationMs)
+        }
         if (result.isOkJson()) {
             AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.LONG_PRESS)
             showLongPress(node.centerX, node.centerY, durationMs)
@@ -631,37 +640,41 @@ internal class AgentLocalTools(
 
     private fun longPress(args: JSONObject): String {
         val point = convertPoint(
-            x = args.optInt("x"),
-            y = args.optInt("y"),
+            x = args.getInt("x"),
+            y = args.getInt("y"),
             coordinateSpace = args.optString("coordinate_space")
         )
         val durationMs = args.optInt("duration_ms", 800)
-        AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.LONG_PRESS)
-        showLongPress(point.x, point.y, durationMs)
-        return deviceController.longPress(point.x, point.y, durationMs)
+        return clearOverlay(point) {
+            AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.LONG_PRESS)
+            showLongPress(point.x, point.y, durationMs)
+            deviceController.longPress(point.x, point.y, durationMs)
+        }
     }
 
     private fun swipe(args: JSONObject): String {
         val start = convertPoint(
-            x = args.optInt("x1"),
-            y = args.optInt("y1"),
+            x = args.getInt("x1"),
+            y = args.getInt("y1"),
             coordinateSpace = args.optString("coordinate_space")
         )
         val end = convertPoint(
-            x = args.optInt("x2"),
-            y = args.optInt("y2"),
+            x = args.getInt("x2"),
+            y = args.getInt("y2"),
             coordinateSpace = args.optString("coordinate_space")
         )
         val durationMs = args.optInt("duration_ms", 500)
-        AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.SWIPE)
-        showSwipe(start.x, start.y, end.x, end.y, durationMs)
-        return deviceController.swipe(
-            start.x,
-            start.y,
-            end.x,
-            end.y,
-            durationMs
-        )
+        return clearOverlay(start, end) {
+            AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.SWIPE)
+            showSwipe(start.x, start.y, end.x, end.y, durationMs)
+            deviceController.swipe(
+                start.x,
+                start.y,
+                end.x,
+                end.y,
+                durationMs
+            )
+        }
     }
 
     private fun scrollElement(args: JSONObject): String {
@@ -680,7 +693,7 @@ internal class AgentLocalTools(
      * submit=true 在写入成功后按输入法回车，用于搜索、发送等提交动作。
      */
     private fun typeText(args: JSONObject): String {
-        val text = args.optString("text")
+        val text = args.requiredText("text")
         val mode = args.optString("mode", "replace").trim().lowercase(Locale.ROOT).ifBlank { "replace" }
         val written = when (mode) {
             "replace" -> replaceText(args)
@@ -707,7 +720,7 @@ internal class AgentLocalTools(
     }
 
     private fun inputText(args: JSONObject): String {
-        val text = args.optString("text")
+        val text = args.requiredText("text")
         if (text.length > 1_000) {
             return errorResult("TEXT_TOO_LONG", "input_text 最多支持 1000 个字符")
         }
@@ -726,7 +739,7 @@ internal class AgentLocalTools(
             null
         }
         return deviceController.replaceText(
-            text = args.optString("text"),
+            text = args.requiredText("text"),
             index = index,
             observation = observation,
         )
@@ -743,17 +756,17 @@ internal class AgentLocalTools(
     }
 
     private fun setClipboard(args: JSONObject): String =
-        deviceController.clipboardSet(requireContext(), args.optString("text"))
+        deviceController.clipboardSet(requireContext(), args.requiredText("text"))
 
     private fun getClipboard(): String =
         deviceController.clipboardGet(requireContext())
 
     private fun pasteText(args: JSONObject): String =
-        deviceController.pasteText(args.optString("text"))
+        deviceController.pasteText(args.requiredText("text"))
 
     private fun waitForText(args: JSONObject): String =
         deviceController.waitForText(
-            text = args.optString("text"),
+            text = args.requiredText("text"),
             timeoutMs = args.optInt("timeout_ms", 10_000),
             includeDesc = args.optBoolean("include_desc", true),
             matchMode = args.optString("match", "contains")
@@ -920,14 +933,21 @@ internal class AgentLocalTools(
             .toString()
     }
 
-    private fun runCommand(args: JSONObject): String =
-        terminalController.runCommand(
-            command = args.optString("command"),
-            cwd = args.optString("cwd").ifBlank { null },
-            timeoutSeconds = args.optInt("timeout_seconds", 30)
-        )
-
-    private fun terminal(args: JSONObject): String = terminalController.terminalAction(args)
+    private fun checkRoot(): String {
+        val probe = RootAccess.request(requireContext())
+        kotlinx.coroutines.runBlocking {
+            while (probe.isActive && !closed.get()) kotlinx.coroutines.delay(100)
+        }
+        if (closed.get()) return errorResult("CANCELLED", "已取消等待 Root 检测")
+        val state = RootAccess.state.value
+        return JSONObject().put("ok", true).put("tool", "terminal").put("action", "check_root")
+            .put("root_available", state.isGranted).put("status", state.status.name.lowercase(Locale.ROOT))
+            .put("checking", state.isChecking).put("su_present", state.suPresent)
+            .put("uid", if (state.isGranted) 0 else JSONObject.NULL)
+            .put("message", if (state.isGranted) "已确认 Root 授权；后续新命令默认使用 Root" else
+                "尚未确认 Root 授权；请根据 status 检查授权或检测结果，默认 user 不表示终端不支持 Root")
+            .toString()
+    }
 
     private fun findAppsByName(query: String, includeSystem: Boolean): List<AppInfo> {
         val normalizedQuery = query.normalized()
@@ -1513,6 +1533,17 @@ internal class AgentLocalTools(
         val prefix: String?,
         val candidatesByPath: Map<String, String>,
     )
+
+    /** 手势经过状态胶囊时让它暂时穿透并淡出；滑动按起止点包围盒判断。 */
+    private fun <T> clearOverlay(vararg points: ScreenPoint, gesture: () -> T): T {
+        val area = Rect(
+            points.minOf { it.x },
+            points.minOf { it.y },
+            points.maxOf { it.x } + 1,
+            points.maxOf { it.y } + 1,
+        )
+        return AgentOverlayClearance.around(area, gesture)
+    }
 
     private fun showTap(x: Int, y: Int) {
         GestureIndicator.showTap(context, x, y)
