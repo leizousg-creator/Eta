@@ -27,6 +27,7 @@ import io.github.mangi.eta.agent.roleplay.CharacterMacros
 import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageLink
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.CharacterRepository
 import io.github.mangi.eta.data.usage.TokenUsageRecorder
 import io.github.mangi.eta.agent.runtime.AgentEvent
@@ -75,6 +76,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -130,6 +132,39 @@ internal class AgentAppState(
 
     private var selectedConversationId: String? = initialConversations.selectedConversationId
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
+
+    /** 最近打开过的会话 id（最新在前）：侧栏顶部那一栏用，存进设置，重启后还在。 */
+    /** 内部最多记 8 条，侧栏只显示 3 条，多的折叠。 */
+    private val recentOpenedLimit = 8
+
+    private var recentOpenedIds: List<String> = loadRecentOpenedIds()
+
+    private fun loadRecentOpenedIds(): List<String> = runCatching {
+        runBlocking { SettingsDataStore.settings().recentOpenedConversationIds }
+    }.getOrDefault("")
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .take(recentOpenedLimit)
+
+    private fun persistRecentOpened(ids: List<String>) {
+        runCatching {
+            runBlocking {
+                SettingsDataStore.updateSettings {
+                    it.copy(recentOpenedConversationIds = ids.joinToString(","))
+                }
+            }
+        }
+    }
+
+    private fun noteRecentOpened(conversationId: String) {
+        val updated = (listOf(conversationId) + recentOpenedIds.filterNot { it == conversationId })
+            .take(recentOpenedLimit)
+        recentOpenedIds = updated
+        conversationPaneState = conversationPaneState.copy(recentOpenedIds = updated)
+        persistRecentOpened(updated)
+    }
+
     private var conversationTitles: Map<String, String> = initialConversations.titles
     private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
     private var conversationPinned: Map<String, Boolean> = initialConversations.pinned
@@ -313,6 +348,7 @@ internal class AgentAppState(
                 ?: emptyChatState(defaultThinkingEnabled)
             refreshConversationModel()
             conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,
                 selectedConversationId = selectedConversationId,
                 searchQuery = "",
             )
@@ -357,6 +393,8 @@ internal class AgentAppState(
         val activeStateKnown = activeRunQuery is AgentRuntimeClient.ActiveRunQuery.Known
         val terminalStateKnown = terminalRaceQuery is AgentRuntimeClient.CompletedRunsQuery.Known
         val activeRunId = (activeRunQuery as? AgentRuntimeClient.ActiveRunQuery.Known)?.runId
+        val activeRunIds =
+            (activeRunQuery as? AgentRuntimeClient.ActiveRunQuery.Known)?.runIds.orEmpty()
         val locallyObservedRunId = withContext(Dispatchers.Main) { currentRunId }
         val plan = AgentRunRecoveryCoordinator.plan(
             checkpoints = checkpoints,
@@ -365,11 +403,13 @@ internal class AgentAppState(
             terminalStateKnown = terminalStateKnown,
             activeRunId = activeRunId,
             locallyObservedRunId = locallyObservedRunId,
+            activeRunIds = activeRunIds,
         )
         val orphanRewrites = if (activeStateKnown && terminalStateKnown) withContext(Dispatchers.Main) {
             val observed = checkpoints.mapTo(mutableSetOf()) { it.runId }.apply {
                 addAll(completedRuns.map { it.result.runId })
                 activeRunId?.let(::add)
+                addAll(activeRunIds)
                 currentRunId?.let(::add)
             }
             conversationsById.flatMap { (id, state) ->
@@ -719,7 +759,8 @@ internal class AgentAppState(
     }
 
     fun updateSearchQuery(query: String) {
-        conversationPaneState = conversationPaneState.copy(searchQuery = query)
+        conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,searchQuery = query)
         refreshConversationSummaries()
     }
 
@@ -747,6 +788,12 @@ internal class AgentAppState(
 
     fun selectConversation(conversationId: String) {
         if (homeState.messageEdit != null) cancelMessageEdit()
+        // 切换前先把当前会话没发出去的输入写回缓存，切回来时文字还在。
+        selectedConversationId
+            ?.takeIf { it != conversationId }
+            ?.let { previous -> conversationsById = conversationsById + (previous to homeState) }
+        // 记一笔"最近打开"：侧栏最上面那一栏按这个顺序排。
+        noteRecentOpened(conversationId)
         val state = conversationsById[conversationId] ?: return
         fileAttachmentOwnerVersion += 1
         selectedConversationId = conversationId
@@ -767,17 +814,22 @@ internal class AgentAppState(
                 ).show()
             }
         }
-        conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
+        conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,selectedConversationId = conversationId)
         persistConversations()
     }
 
     fun createConversation() {
         if (homeState.messageEdit != null) cancelMessageEdit()
+        // 新建会话前同样把草稿写回，别把没发出去的字丢了。
+        selectedConversationId
+            ?.let { previous -> conversationsById = conversationsById + (previous to homeState) }
         fileAttachmentOwnerVersion += 1
         selectedConversationId = null
         homeState = emptyChatState(defaultThinkingEnabled)
         refreshConversationModel()
         conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,
             selectedConversationId = null,
             searchQuery = "",
         )
@@ -807,7 +859,8 @@ internal class AgentAppState(
         )
         conversationTitles = conversationTitles + (id to binding.characterName)
         updateConversation(id, homeState)
-        conversationPaneState = conversationPaneState.copy(selectedConversationId = id, searchQuery = "")
+        conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,selectedConversationId = id, searchQuery = "")
         refreshConversationSummaries()
         persistConversations()
     }
@@ -838,7 +891,8 @@ internal class AgentAppState(
             }
             refreshConversationModel()
         }
-        conversationPaneState = conversationPaneState.copy(selectedConversationId = selectedConversationId)
+        conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,selectedConversationId = selectedConversationId)
         refreshConversationSummaries()
         persistConversations()
     }
@@ -1082,7 +1136,8 @@ internal class AgentAppState(
         }
 
         conversationTitles = conversationTitles + (conversationId to title)
-        conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
+        conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,selectedConversationId = conversationId)
         launchConversationRun(
             conversationId = conversationId,
             runId = runId,
@@ -1203,7 +1258,8 @@ internal class AgentAppState(
             selectedConversationId = null
             homeState = emptyChatState(defaultThinkingEnabled)
             refreshConversationModel()
-            conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
+            conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,selectedConversationId = null)
             refreshConversationSummaries()
             persistConversations()
             return
@@ -1835,7 +1891,8 @@ internal class AgentAppState(
                         runId = runId,
                         messages = messages,
                         ok = result.ok,
-                        detail = if (result.ok) "上下文压缩完成" else result.error ?: "上下文压缩失败",
+                        detail = if (result.ok) "上下文压缩完成"
+                        else AgentErrorText.toChinese(result.error, "上下文压缩失败"),
                     )
                 }
             else -> {
@@ -1849,7 +1906,9 @@ internal class AgentAppState(
                 updateMessages(runId) { messages ->
                     AgentRunMessageProjector.applyResult(
                         runId, messages, result.content, notice,
-                        detail = result.error.takeIf { notice == SystemNoticeCode.RuntimeFailed },
+                        detail = result.error
+                            .takeIf { notice == SystemNoticeCode.RuntimeFailed }
+                            ?.let { raw -> AgentErrorText.toChinese(raw) },
                     )
                 }
             }
@@ -1953,7 +2012,8 @@ internal class AgentAppState(
             pendingFileReferences = draft.pendingFileReferences,
             modelId = draft.modelId,
         )
-        conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
+        conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,selectedConversationId = null)
     }
 
     private fun updateConversation(
@@ -2040,6 +2100,7 @@ internal class AgentAppState(
             }
         val query = conversationPaneState.searchQuery.trim()
         conversationPaneState = conversationPaneState.copy(
+            recentOpenedIds = recentOpenedIds,
             selectedConversationId = selectedConversationId,
             categories = conversationCategories.sortedWith(compareBy({ it.sortOrder }, { it.createdAt })).map { it.id to it.name },
             conversations = if (query.isBlank()) {

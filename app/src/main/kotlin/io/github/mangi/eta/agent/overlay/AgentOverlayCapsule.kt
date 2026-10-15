@@ -22,13 +22,21 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,7 +54,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -62,6 +73,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
@@ -90,6 +102,20 @@ internal fun AgentOverlayCapsule(
     onSupplement: (String) -> Unit,
     /** 点列表里的某条运行中会话 → 跳回该会话。 */
     onOpenConversation: (String) -> Unit,
+    /** 收起态拖动：把手指位移交给窗口层，实现自由拖动。 */
+    onDragBy: (Float, Float) -> Unit = { _, _ -> },
+    /** 松手：吸附到更近的一侧边缘。 */
+    onDragFinished: () -> Unit = {},
+    /** 点面板外任意位置：收起大面板。 */
+    onCollapseRequest: () -> Unit = {},
+    /** 小胶囊当前所在的屏幕位置（像素）。 */
+    collapsedX: Int = 0,
+    collapsedY: Int = 0,
+    /** 窗口是否处于全屏展开态；全屏时才需要按上面的位置摆放面板。 */
+    fullScreen: Boolean = false,
+    /** 最近打开过的对话：面板最上面一栏，最多 3 条。 */
+    recentOpened: List<AgentOverlayRunningSession> = emptyList(),
+    unreadSessions: List<AgentOverlayRunningSession> = emptyList(),
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -137,11 +163,77 @@ internal fun AgentOverlayCapsule(
             fadeIn(tween(160)),
         exit = slideOutVertically(tween(160)) { -it } + fadeOut(tween(140)),
     ) {
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopStart,
+        ) {
+            // 面板拖动偏移：拖顶部把手累积，收起后保留。
+            var panelDrag by remember { mutableStateOf(Offset.Zero) }
+            // 宽度跟着展开动画走：收起时是小尺寸，点开才变宽，方便点会话。
+            val capsuleWidth = CapsuleCollapsedWidth +
+                (CapsuleExpandedWidth - CapsuleCollapsedWidth) * expansion
+            // 展开态窗口是全屏的：把面板摆在小胶囊原来待的位置，
+            // 展开/收起动画都在原地播放，不会先在屏幕中间停一下再弹回去。
+            // 面板宽度与位置全部夹在屏幕内：贴边、拖到角落都不会有边跑到屏幕外。
+            val panelWidth = minOf(
+                capsuleWidth,
+                with(LocalDensity.current) {
+                    (LocalConfiguration.current.screenWidthDp - 32).dp
+                },
+            )
+            // 面板本体与屏幕四边保持对称留白，靠边也不贴死。
+            val panelEdgePx = with(LocalDensity.current) { 16.dp.toPx() }
+            val panelStartX = if (fullScreen) {
+                val widthPx = with(LocalDensity.current) { panelWidth.toPx() }
+                collapsedX.toFloat().coerceIn(
+                    panelEdgePx,
+                    (constraints.maxWidth - widthPx - panelEdgePx).coerceAtLeast(panelEdgePx),
+                )
+            } else {
+                0f
+            }
+            val panelStartY = if (fullScreen) {
+                val maxHeightPx = with(LocalDensity.current) {
+                    (LocalConfiguration.current.screenHeightDp * 0.30f).dp.toPx()
+                }
+                collapsedY.toFloat()
+                    .coerceIn(
+                        panelEdgePx,
+                        (constraints.maxHeight - maxHeightPx - panelEdgePx).coerceAtLeast(panelEdgePx),
+                    )
+            } else {
+                0f
+            }
+            // 拖动后的实际位置：四边都留同样的 16dp，拖到哪都不会贴死屏幕。
+            val panelWidthPx = with(LocalDensity.current) { panelWidth.toPx() }
+            val panelMaxHeightPx = with(LocalDensity.current) {
+                (LocalConfiguration.current.screenHeightDp * 0.30f).dp.toPx()
+            }
+            val panelX = (panelStartX + panelDrag.x).coerceIn(
+                panelEdgePx,
+                (constraints.maxWidth - panelWidthPx - panelEdgePx).coerceAtLeast(panelEdgePx),
+            )
+            val panelY = (panelStartY + panelDrag.y).coerceIn(
+                panelEdgePx,
+                (constraints.maxHeight - panelMaxHeightPx - panelEdgePx).coerceAtLeast(panelEdgePx),
+            )
+            if (expanded) {
+                // 面板外任意位置点一下就收起；面板本体画在它上面，不受影响。
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onCollapseRequest,
+                        ),
+                )
+            }
             Column(
                 modifier = Modifier
+                    .offset { IntOffset(panelX.toInt(), panelY.toInt()) }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .width(CapsuleWidth)
+                    .width(panelWidth)
                     .graphicsLayer {
                         // 点击时轻微回弹，展开后保持原尺寸；只改绘制层，不触发重新布局。
                         val press = 1f - 0.03f * (1f - expansion) * expansion * 4f
@@ -158,13 +250,51 @@ internal fun AgentOverlayCapsule(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = onToggleExpanded,
+                            onClick = {
+                                // 展开态且有没看过的结果：点一下直接跳回那条会话。
+                                val target = if (expanded && state.finishedBadge > 0) {
+                                    unreadSessions.firstOrNull()?.conversationId
+                                } else {
+                                    null
+                                }
+                                if (target != null) {
+                                    onCollapseRequest()
+                                    onOpenConversation(target)
+                                } else {
+                                    onToggleExpanded()
+                                }
+                            },
                         )
                         .semantics { contentDescription = expandDescription }
-                        .padding(start = 12.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
+                        .pointerInput(expanded) {
+                            // 只有收起态能拖：展开态是要点会话的，别被拖动抢走手势。
+                            if (expanded) return@pointerInput
+                            detectDragGestures(
+                                onDragEnd = { onDragFinished() },
+                                onDragCancel = { onDragFinished() },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    onDragBy(dragAmount.x, dragAmount.y)
+                                },
+                            )
+                        }
+                        .padding(
+                            start = if (expanded) 12.dp else 8.dp,
+                            end = if (expanded) 16.dp else 8.dp,
+                            top = 9.dp,
+                            bottom = 9.dp,
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PhaseIndicator(phase = state.phase, accent = accent)
+                    if (state.finishedBadge > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        CapsuleBadge(
+                            count = state.finishedBadge,
+                            failed = state.phase == AgentOverlayPhase.FAILED,
+                        )
+                    }
+                    if (expanded) {
                     Spacer(Modifier.width(9.dp))
                     Column(modifier = Modifier.weight(1f)) {
                     AnimatedContent(
@@ -185,46 +315,56 @@ internal fun AgentOverlayCapsule(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (state.runningSessions.isNotEmpty()) {
-                        Text(
-                            text = run {
-                                val running = state.runningSessions.count { it.running }
-                                if (running > 0) {
-                                    "$running 个会话正在运行 · 点开选择"
-                                } else {
-                                    "最近 ${state.runningSessions.size} 个会话 · 点开切回"
-                                }
-                            },
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                     ThoughtLine(
                         thought = state.thought.takeIf {
                             state.phase == AgentOverlayPhase.RUNNING || state.phase == AgentOverlayPhase.FINISHED
                         }.orEmpty(),
                     )
                     }
+                    }
                 }
 
                 AnimatedVisibility(
                     visible = expanded,
-                    enter = expandVertically(spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow), clip = true) +
-                        fadeIn(tween(180, delayMillis = 40)),
-                    exit = shrinkVertically(spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium), clip = true) +
-                        fadeOut(tween(90)),
+                    enter = expandVertically(spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium), clip = true) +
+                        fadeIn(tween(140)),
+                    exit = shrinkVertically(spring(Spring.DampingRatioNoBouncy, Spring.StiffnessHigh), clip = true) +
+                        fadeOut(tween(80)),
                 ) {
                     Column(
                         modifier = Modifier
                             .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-                            .graphicsLayer { translationY = (1f - expansion) * -6.dp.toPx() },
+                            // 面板最高只占屏幕三成，超出时在面板内滚动，别把屏幕盖住。
+                            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.30f).dp),
                     ) {
-                        if (state.runningSessions.isNotEmpty()) {
-                            OverlayRunningSessionList(
-                                sessions = state.runningSessions,
+                        // 顶部把手：拖它移动整个面板；列表本身照旧可以点。
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(bottom = 8.dp)
+                                .size(width = 44.dp, height = 4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.45f))
+                                .pointerInput(Unit) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        panelDrag += dragAmount
+                                    }
+                                },
+                        )
+                        // 运行中会话下面接「最新回复」：完成但还没看过的会话，点一条就跳回去。
+                        if (unreadSessions.isNotEmpty()) {
+                            OverlayRecentOpenedList(
+                                sessions = unreadSessions,
                                 onOpenConversation = onOpenConversation,
+                                title = "最新回复",
+                            )
+                        }
+                        if (recentOpened.isNotEmpty()) {
+                            OverlayRecentOpenedList(
+                                sessions = recentOpened,
+                                onOpenConversation = onOpenConversation,
+                                title = "最近打开",
                             )
                         }
                         if (supplementMode) {
@@ -279,6 +419,26 @@ internal fun AgentOverlayCapsule(
 }
 
 /** 运行中是旋转的弧形光点，暂停为静止空心环，结束为实心点；只在运行时持有帧动画。 */
+/** 小胶囊角标：完成未看的条数，失败用红色，最多显示 9+。 */
+@Composable
+private fun CapsuleBadge(count: Int, failed: Boolean) {
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (failed) CapsuleBadgeFailed else CapsuleBadgeOk)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (count >= 9) "9+" else count.toString(),
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
 @Composable
 private fun PhaseIndicator(phase: AgentOverlayPhase, accent: Color) {
     val size = 14.dp
@@ -358,6 +518,55 @@ private fun ThoughtLine(thought: String) {
  * 展开胶囊后的“运行中会话”列表：点一条直接跳回那个会话。
  * 只有并发运行（不止一条）时才出现，单会话保持原来的简洁形态。
  */
+/** 最近打开过的对话：最多 3 条，超出的折叠不显示，点一条直接跳回去。 */
+@Composable
+private fun OverlayRecentOpenedList(
+    sessions: List<AgentOverlayRunningSession>,
+    onOpenConversation: (String) -> Unit,
+    title: String = "最近打开",
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = title,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        sessions.forEachIndexed { index, session ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                    .clickable { onOpenConversation(session.conversationId) }
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${index + 1}",
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = session.title.ifBlank { session.conversationId },
+                    color = MiuixTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun OverlayRunningSessionList(
     sessions: List<AgentOverlayRunningSession>,
@@ -366,8 +575,8 @@ private fun OverlayRunningSessionList(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = sessionListTitle(sessions),
@@ -376,20 +585,42 @@ private fun OverlayRunningSessionList(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        sessions.forEach { session ->
+        sessions.forEachIndexed { index, session ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(MiuixTheme.colorScheme.surfaceContainerHigh)
                     .clickable { onOpenConversation(session.conversationId) }
-                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // 序号跟小胶囊上的角标数字对得上：1、2、3…
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(
+                            if (session.running) {
+                                CapsuleBadgeOk.copy(alpha = 0.18f)
+                            } else {
+                                MiuixTheme.colorScheme.surfaceContainerHighest
+                            },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        color = if (session.running) CapsuleBadgeOk else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = session.title.ifBlank { session.conversationId },
                     color = MiuixTheme.colorScheme.onSurface,
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -430,8 +661,15 @@ private fun CapsuleAction(icon: ImageVector, label: String, tint: Color, onClick
 
 private val CapsuleCorner = 22.dp
 
-/** 展开面板宽度：比收起时更宽，方便点会话条目。 */
-private val CapsuleWidth = 372.dp
+/** 角标配色：成功偏绿，失败偏红。 */
+private val CapsuleBadgeOk = Color(0xFF3F9E5A)
+private val CapsuleBadgeFailed = Color(0xFFD93F3F)
+
+/** 收起时是个小胶囊：只放图标和角标，比上一版再短一点，角标仍然看得清。 */
+private val CapsuleCollapsedWidth = 64.dp
+
+/** 展开后的宽度：会话条目更好点。 */
+private val CapsuleExpandedWidth = 372.dp
 
 /** 展开后的会话列表标题：运行时说"正在运行"，跑完就说"最近会话"。 */
 private fun sessionListTitle(sessions: List<AgentOverlayRunningSession>): String {

@@ -28,6 +28,7 @@ internal fun AgentHomeScreen(
     key(chatConversationCompositionKey(conversationKey)) {
         AgentChatBody(
             messages = state.messages,
+            draftKey = conversationKey,
             modelPickerState = modelPickerState,
             isCompacting = state.isCompacting,
             input = state.input,

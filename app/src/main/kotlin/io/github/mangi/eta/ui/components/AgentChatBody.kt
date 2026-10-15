@@ -162,6 +162,8 @@ internal fun AgentChatBody(
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     characterName: String? = null,
+    /** 草稿键（会话 id）：转给输入框，让未发送的文字按会话存下来。 */
+    draftKey: String? = null,
     isDrawerOpen: Boolean = false,
     searchJump: SearchJumpUiState? = null,
     onSearchJumpConsumed: () -> Unit = {},
@@ -230,6 +232,7 @@ internal fun AgentChatBody(
     SpeechPlaybackHost {
         AgentChatScaffold(
             visibleMessages = visibleMessages,
+            draftKey = draftKey,
             hasMessages = visibleMessages.isNotEmpty(),
             scrollState = scrollState,
             input = input,
@@ -289,6 +292,7 @@ internal fun AgentChatBody(
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun AgentChatScaffold(
+    draftKey: String? = null,
     visibleMessages: List<AgentChatMessageUi>,
     hasMessages: Boolean,
     scrollState: LazyListState,
@@ -356,6 +360,7 @@ private fun AgentChatScaffold(
         ),
         bottomBar = {
             AgentChatBottomBar(
+                draftKey = draftKey,
                 messageBackdrop = messageBackdrop.takeIf { frostEnabled },
                 input = input,
                 modelPickerState = modelPickerState,
@@ -479,6 +484,17 @@ internal fun AgentConversationMessages(
     // 滑回时复用同一解析会话与打字机进度，避免整段内容重新解析并重放显现动画。
     val streamingMarkdownStates = remember { mutableStateMapOf<String, StreamingMarkdownState>() }
     val bottomItemIndex = timelineEntries.size
+    // 进入/切换会话后落到最新一条：从胶囊、通知跳进来时也能直接看到最新回复，
+    // 不用再手动点那个"到底部"箭头。只在进入时跳一次，之后用户往上翻历史不会被拽回来。
+    var didJumpToLatest by remember { mutableStateOf(false) }
+    LaunchedEffect(visibleMessages.isNotEmpty()) {
+        if (didJumpToLatest || visibleMessages.isEmpty()) return@LaunchedEffect
+        didJumpToLatest = true
+        // 等列表把历史条目排好再定位，避免滚到中间位置。
+        delay(80)
+        onBottomAnchorChanged(true)
+        scrollState.scrollToItem(Int.MAX_VALUE)
+    }
     val isUserDragging by scrollState.interactionSource.collectIsDraggedAsState()
     val isAtBottom by remember(scrollState) {
         derivedStateOf { !scrollState.canScrollForward }
@@ -952,6 +968,7 @@ internal fun resolveFinalResultMessageIds(
 
 @Composable
 private fun AgentChatBottomBar(
+    draftKey: String? = null,
     messageBackdrop: LayerBackdrop?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
@@ -1041,6 +1058,7 @@ private fun AgentChatBottomBar(
         ) {
             AgentChatInputBar(
                 input = input,
+                draftKey = draftKey,
                 modelPickerState = modelPickerState,
                 isCompacting = isCompacting,
                 contextUsage = contextUsage,

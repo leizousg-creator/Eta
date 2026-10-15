@@ -31,7 +31,10 @@ internal class AgentRuntimeClient(
     }
 
     sealed interface ActiveRunQuery {
-        data class Known(val runId: String?) : ActiveRunQuery
+        data class Known(
+            val runId: String?,
+            val runIds: Set<String> = emptySet(),
+        ) : ActiveRunQuery
         data object Unavailable : ActiveRunQuery
     }
 
@@ -219,9 +222,11 @@ internal class AgentRuntimeClient(
     fun queryActiveRun(): ActiveRunQuery {
         val responseLatch = CountDownLatch(1)
         val runIdRef = AtomicReference("")
+        val runIdsRef = AtomicReference<List<String>>(emptyList())
         val clientMessenger = Messenger(
-            ActiveRunHandler { runId ->
+            ActiveRunHandler { runId, runIds ->
                 runIdRef.set(runId)
+                runIdsRef.set(runIds)
                 responseLatch.countDown()
             }
         )
@@ -233,7 +238,10 @@ internal class AgentRuntimeClient(
             if (!responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 ActiveRunQuery.Unavailable
             } else {
-                ActiveRunQuery.Known(runIdRef.get().takeIf(String::isNotBlank))
+                val ids = runIdsRef.get().ifEmpty {
+                    listOfNotNull(runIdRef.get().takeIf(String::isNotBlank))
+                }
+                ActiveRunQuery.Known(ids.firstOrNull(), ids.toSet())
             }
         }
     }
@@ -351,11 +359,15 @@ internal class AgentRuntimeClient(
     }
 
     private class ActiveRunHandler(
-        private val onResponse: (String) -> Unit,
+        private val onResponse: (String, List<String>) -> Unit,
     ) : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             if (msg.what == AgentRuntimeWire.MSG_QUERY_ACTIVE_RUN_RESPONSE) {
-                onResponse(AgentRuntimeWire.runIdFromBundle(msg.data ?: return))
+                val data = msg.data ?: return
+                onResponse(
+                    AgentRuntimeWire.runIdFromBundle(data),
+                    AgentRuntimeWire.activeRunIdsFromBundle(data),
+                )
             }
         }
     }

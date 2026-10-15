@@ -96,14 +96,17 @@ class AgentAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        io.github.mangi.eta.core.EtaTrace.log("a11y", "服务已连接")
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        io.github.mangi.eta.core.EtaTrace.log("a11y", "服务已解绑（onUnbind）")
         clearCurrentInstance()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        io.github.mangi.eta.core.EtaTrace.log("a11y", "服务销毁（onDestroy）")
         clearCurrentInstance()
         scrollEventExecutor.shutdownNow()
         super.onDestroy()
@@ -144,7 +147,9 @@ class AgentAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onInterrupt() = Unit
+    override fun onInterrupt() {
+        io.github.mangi.eta.core.EtaTrace.log("a11y", "onInterrupt：无障碍被系统打断")
+    }
     private var lastTriggerPackage: String = ""
 
     /**

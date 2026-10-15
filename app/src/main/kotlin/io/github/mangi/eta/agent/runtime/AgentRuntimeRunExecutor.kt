@@ -314,10 +314,19 @@ internal class AgentRuntimeRunExecutor(
                 AndroidAgentLogger.info("Agent runtime stopped")
             } else {
                 val requestFailure = modelFailure?.cause as? AgentModelFailure
+                val causeChain = generateSequence(throwable.cause) { cause -> cause.cause }
+                    .take(3)
+                    .joinToString("<-") { cause -> cause.safeLogType() }
                 AndroidAgentLogger.error(
                     "Agent runtime failed: type=${throwable.safeLogType()}, " +
                         "model_code=${requestFailure?.code.orEmpty()}, " +
-                        "cause_type=${requestFailure?.cause?.safeLogType().orEmpty()}"
+                        "cause_type=${requestFailure?.cause?.safeLogType().orEmpty()}, " +
+                        "cause_chain=$causeChain, run_id=${request.runId}"
+                )
+                io.github.mangi.eta.core.EtaTrace.log(
+                    "run.fail",
+                    "runId=${request.runId} type=${throwable.safeLogType()} " +
+                        "model_code=${requestFailure?.code.orEmpty()} cause=$causeChain",
                 )
                 val event = AgentEvent.RunFailed(message)
                 runCatching {

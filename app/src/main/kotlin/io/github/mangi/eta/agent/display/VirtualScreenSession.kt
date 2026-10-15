@@ -157,6 +157,11 @@ internal object VirtualScreenSession {
                 val width = bounded(args, "width", 320, VirtualScreenProfile.MAX_WIDTH, profile.width)
                 val height = bounded(args, "height", 480, VirtualScreenProfile.MAX_HEIGHT, profile.height)
                 val density = bounded(args, "density", 120, VirtualScreenProfile.MAX_DENSITY, profile.density)
+                io.github.mangi.eta.core.EtaTrace.log(
+                    "vscr",
+                    "helper 启动 runId=$runId owner=$owner ${width}x$height" +
+                        " density=$density allowOff=$allowOff",
+                )
                 HelperExitLog.started()
                 val apk = context.applicationInfo.sourceDir
                 fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
@@ -184,6 +189,7 @@ internal object VirtualScreenSession {
                 Thread {
                     val exitCode = runCatching { process.waitFor() }.getOrDefault(-1)
                     // 退出码是判断 native 崩溃还是被系统回收的唯一线索，必须留下。
+                    io.github.mangi.eta.core.EtaTrace.log("vscr", "helper 退出 exitCode=$exitCode")
                     HelperExitLog.finished(exitCode)
                     current.close()
                 }.apply { name = "eta-display-exit"; isDaemon = true; start() }

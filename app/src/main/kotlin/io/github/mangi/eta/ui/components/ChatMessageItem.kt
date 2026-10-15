@@ -305,6 +305,15 @@ private fun UserMessageBubble(
     LaunchedEffect(actionsEnabled) {
         if (!actionsEnabled) tooltipState.dismiss()
     }
+
+    // 自己发的消息也常驻一行操作：复制后给一句轻提示，避免"点了没反应"。
+    var copied by remember(message.id) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1600)
+            copied = false
+        }
+    }
     val visiblePrompt = remember(message.content) {
         AgentFileReferencePromptCodec.parse(message.content)
     }
@@ -314,14 +323,14 @@ private fun UserMessageBubble(
         Color(0xFFE5E7EA)
     }
 
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(
                 horizontal = if (assistantOverlay) 16.dp else 20.dp,
                 vertical = if (assistantOverlay) 4.dp else 7.dp,
             ),
-        horizontalArrangement = Arrangement.End,
+        horizontalAlignment = Alignment.End,
     ) {
         TooltipBox(
             positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
@@ -449,6 +458,64 @@ private fun UserMessageBubble(
                     )
                 }
             }
+        }
+        // 复制 / 编辑 / 删除：跟自己这行常驻按钮一致，长按菜单也保留不动。
+        UserMessageActionRow(
+            actionsEnabled = actionsEnabled,
+            copied = copied,
+            onCopy = {
+                @Suppress("DEPRECATION")
+                clipboardManager.setText(AnnotatedString(message.content))
+                copied = true
+            },
+            onEdit = onEdit,
+            onDelete = onDelete,
+        )
+    }
+}
+
+
+@Composable
+private fun UserMessageActionRow(
+    actionsEnabled: Boolean,
+    copied: Boolean,
+    onCopy: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.padding(top = 4.dp, end = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (copied) {
+            Text(
+                text = "已复制",
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.primary,
+                modifier = Modifier.padding(end = 4.dp),
+            )
+        }
+        IconButton(onClick = onCopy, enabled = actionsEnabled, minWidth = 30.dp, minHeight = 30.dp) {
+            Icon(
+                imageVector = Icons.Rounded.ContentCopy,
+                contentDescription = stringResource(R.string.ui_copy_4edd1d),
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onEdit, enabled = actionsEnabled, minWidth = 30.dp, minHeight = 30.dp) {
+            Icon(
+                imageVector = Icons.Rounded.Edit,
+                contentDescription = stringResource(R.string.ui_edit_a7f814),
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onDelete, enabled = actionsEnabled, minWidth = 30.dp, minHeight = 30.dp) {
+            Icon(
+                imageVector = Icons.Rounded.Delete,
+                contentDescription = stringResource(R.string.ui_delete_3755f5),
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

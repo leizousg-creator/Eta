@@ -23,7 +23,11 @@ internal object AgentRunRecoveryCoordinator {
         terminalStateKnown: Boolean,
         activeRunId: String?,
         locallyObservedRunId: String?,
+        activeRunIds: Set<String> = emptySet(),
     ): Plan {
+        val activeIds = (activeRunIds + listOfNotNull(activeRunId))
+            .filter { runId -> runId.isNotBlank() }
+            .toSet()
         val uiCheckpoints = checkpoints
             .filter { it.handoff.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
             .associateBy { it.runId }
@@ -38,15 +42,16 @@ internal object AgentRunRecoveryCoordinator {
         val unresolved = uiCheckpoints.values
             .filterNot { it.runId == locallyObservedRunId || it.runId in completedRunIds }
             .sortedBy { it.createdAt }
+        // 多开时活跃会话不止一个：集合里的每一个都还在跑，都不能当"中断"处理。
         val active = unresolved
             .takeIf { activeStateKnown }
-            ?.singleOrNull { it.runId == activeRunId }
+            ?.firstOrNull { checkpoint -> checkpoint.runId in activeIds }
 
         return Plan(
             completed = completed,
             reattach = active,
             interrupted = if (activeStateKnown && terminalStateKnown) {
-                unresolved.filterNot { it.runId == active?.runId }
+                unresolved.filterNot { checkpoint -> checkpoint.runId in activeIds }
             } else {
                 emptyList()
             },

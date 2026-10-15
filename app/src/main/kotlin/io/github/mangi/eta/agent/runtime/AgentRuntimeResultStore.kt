@@ -62,6 +62,10 @@ internal object AgentRuntimeResultStore {
     fun remove(context: Context, runId: String) {
         if (runId.isBlank()) return
         val appContext = context.applicationContext
+        io.github.mangi.eta.core.EtaTrace.log(
+            "ack.remove",
+            "runId=$runId 调用方=${io.github.mangi.eta.core.EtaTrace.callerHint()}",
+        )
         synchronized(deliveryLock) {
             runBlocking(Dispatchers.IO) {
                 EtaDatabase.get(appContext)

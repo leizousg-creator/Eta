@@ -48,10 +48,12 @@ internal class AgentRunCheckpointRecorder private constructor(
     /** 把最后一段增量提交到日志；日志由结果 ACK 或中断恢复负责删除。 */
     fun seal() {
         flushPendingDelta()
+        active.remove(runId)
     }
 
     fun discard() {
         pendingDelta = null
+        active.remove(runId)
         AgentRunCheckpointStore.remove(appContext, runId)
     }
 
@@ -77,17 +79,32 @@ internal class AgentRunCheckpointRecorder private constructor(
         private const val MAX_BUFFERED_DELTA_CHARS = 512
         private const val MAX_BUFFERED_DELTA_NANOS = 250_000_000L
 
+        /** 在途记录器：内存冻结时用它把全部会话的现场强制落盘。 */
+        private val active =
+            java.util.concurrent.ConcurrentHashMap<String, AgentRunCheckpointRecorder>()
+
+        /** 强制保存全部在途会话现场，返回成功存档的会话数。 */
+        fun sealAllActive(): Int {
+            var sealed = 0
+            active.values.toList().forEach { recorder ->
+                runCatching { recorder.seal() }.onSuccess { sealed++ }
+            }
+            return sealed
+        }
+
         fun create(
             context: Context,
             request: AgentRuntimeWire.RunRequest,
             nanoTime: () -> Long = System::nanoTime,
         ): AgentRunCheckpointRecorder? {
             if (!AgentRunCheckpointStore.start(context, request)) return null
-            return AgentRunCheckpointRecorder(
+            val recorder = AgentRunCheckpointRecorder(
                 context = context,
                 runId = request.runId,
                 nanoTime = nanoTime,
             )
+            active[request.runId] = recorder
+            return recorder
         }
     }
 }

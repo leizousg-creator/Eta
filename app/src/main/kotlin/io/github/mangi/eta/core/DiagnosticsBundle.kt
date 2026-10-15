@@ -32,10 +32,12 @@ internal object DiagnosticsBundle {
         entries["README.txt"] = README
         entries["state.txt"] = state(context, root)
         entries["helper-exit.txt"] = HelperExitLog.dump()
+        entries["build.txt"] = apkIdentity(context)
         CrashRecorder.records(context).forEach { file ->
             val text = runCatching { file.readText() }.getOrNull() ?: return@forEach
             entries["crash/" + file.name] = text.take(MAX_CRASH_CHARS)
         }
+        entries["trace.txt"] = EtaTrace.dump(context)
         entries["logcat.txt"] = logcat(root)
         zip(entries)
     }
@@ -43,16 +45,49 @@ internal object DiagnosticsBundle {
     fun defaultFileName(nowMillis: Long = System.currentTimeMillis()): String =
         "Eta-诊断包-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date(nowMillis)) + ".zip"
 
+    /** 装的是哪一包：大小、安装时间、版本号，比版本名可靠。 */
+    private fun apkIdentity(context: Context): String = runCatching {
+        val pkg = context.packageManager.getPackageInfo(context.packageName, 0)
+        val info = context.packageManager.getApplicationInfo(context.packageName, 0)
+        val file = java.io.File(info.sourceDir)
+        val installed = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date(file.lastModified()))
+        "包名：${context.packageName}\nversionName：${pkg.versionName}\nversionCode：${pkg.versionCode}\n" +
+            "APK 大小：${file.length()} 字节\n安装时间：$installed"
+    }.getOrElse { "读取 APK 信息失败：" + it.javaClass.simpleName }
+
+    /** 日志分两段：先按 Eta 自己的进程精确采集（排查并发/中断就看这段），再补一段系统样本。 */
     private fun logcat(root: Boolean): String {
-        val args = if (root) {
+        val pid = android.os.Process.myPid()
+        val etaLog = runCatching {
+            command(listOf("logcat", "-d", "-v", "threadtime", "--pid=$pid", "-t", "20000"), 90)
+        }.getOrElse { "读取失败：" + it.javaClass.simpleName }
+        val systemArgs = if (root) {
             listOf("su", "-c", "logcat -d -v threadtime -t 4000")
         } else {
             // 无 root 时系统只交出本应用自己的日志，仍然保留现场的一部分。
             listOf("logcat", "-d", "-v", "threadtime", "-t", "2000")
         }
-        return runCatching { command(args, 60) }
-            .getOrElse { "读取日志失败：" + it.javaClass.simpleName }
-            .ifBlank { "日志为空：缓冲区可能已被系统刷掉或刚重启。" }
+        val systemLog = runCatching { command(systemArgs, 60) }
+            .getOrElse { "读取失败：" + it.javaClass.simpleName }
+        return buildString {
+            appendLine("== Eta 进程日志（pid=$pid，-t 20000）==")
+            appendLine("实际覆盖：${window(etaLog)}")
+            appendLine(etaLog.ifBlank { "（空）日志缓冲区可能已被刷掉。" })
+            appendLine()
+            appendLine("== 系统日志样本 ==")
+            appendLine("实际覆盖：${window(systemLog)}")
+            appendLine(systemLog.ifBlank { "（空）" })
+        }.take(MAX_LOG_BYTES)
+    }
+
+    /** 从 threadtime 行取首末时间戳，如实标注实际覆盖的窗口，不再写死「最近 10 分钟」。 */
+    private fun window(text: String): String {
+        val stamps = Regex("^(\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d\\d\\d)")
+            .findAll(text)
+            .map { it.groupValues[1] }
+            .toList()
+        return if (stamps.isEmpty()) "无时间戳（可能为空）" else "${stamps.first()} → ${stamps.last()}"
     }
 
     private fun command(args: List<String>, timeoutSeconds: Long): String {
@@ -129,6 +164,14 @@ internal object DiagnosticsBundle {
         }.getOrDefault(-1)
         append("电量：").append(if (battery in 0..100) "$battery%" else "未知").append('\n')
         append("进程内存上限：").append(Runtime.getRuntime().maxMemory() / 1024 / 1024).append(" MB\n")
+
+        append("\n[运行与无障碍]\n")
+        val accessibility = runCatching {
+            io.github.mangi.eta.agent.accessibility.AgentAccessibilityService.isAvailable()
+        }.getOrDefault(false)
+        append("无障碍服务：").append(if (accessibility) "已连接" else "未连接（点屏幕类工具会失败）")
+            .append('\n')
+        append("自留日志：").append(EtaTrace.summary(context)).append('\n')
     }
 
     private fun versionName(context: Context): String = runCatching {
@@ -157,6 +200,7 @@ internal object DiagnosticsBundle {
         - state.txt：设备、虚拟屏、语音与运行状态快照
         - helper-exit.txt：虚拟屏服务进程（root helper）的 stderr 尾部与退出码
         - crash/*.txt：崩溃现场（每次崩溃一份，最多 10 份，含调用栈与日志尾部）
+        - trace.txt：Eta 自留运行日志（会话启停、取消原因、并发槽位、无障碍连接、虚拟屏服务启停）
         - logcat.txt：最近日志。已授权 root 时为全量日志，否则只有 Eta 自己的日志
 
         不含语音凭据、模型密钥与会话正文。排查完成后可直接删除。

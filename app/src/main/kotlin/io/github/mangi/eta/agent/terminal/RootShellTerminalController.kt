@@ -39,6 +39,19 @@ internal class RootShellTerminalController(
     private val cleanupStarted = AtomicBoolean(false)
 
     fun runCommand(command: String, cwd: String?, timeoutSeconds: Int): String {
+        val notices = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val result = HeavyCommandGate.guarded(
+            command = command,
+            waitMs = HeavyCommandGate.TOOL_WAIT_MS,
+            onNotice = { notice -> notices.add(notice) },
+        ) {
+            runCommandUnguarded(command, cwd, timeoutSeconds)
+        }
+        // 排过队就把提示摆在输出最前面，别让人以为是命令没反应。
+        return if (notices.isEmpty()) result else notices.joinToString("\n") + "\n" + result
+    }
+
+    private fun runCommandUnguarded(command: String, cwd: String?, timeoutSeconds: Int): String {
         return runCommand(
             command = command,
             cwd = cwd,

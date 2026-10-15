@@ -51,6 +51,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         Prefs.initLocal(this)
         // 崩溃留证：任何进程一启动就装好，写入失败也不影响原有崩溃流程。
         runCatching { CrashRecorder.install(this) }
+        // 自留日志：任何进程启动就落盘，诊断包不再依赖 logcat 的 2 分钟缓冲。
+        runCatching { io.github.mangi.eta.core.EtaTrace.init(this) }
         if (!AppProcessPolicy.shouldInitializeFullRuntime(Application.getProcessName(), packageName)) {
             return
         }

@@ -8,6 +8,8 @@ data class ConversationPaneUiState(
     val selectedConversationId: String?,
     val searchQuery: String,
     val categories: List<Pair<String, String>> = emptyList(),
+    /** 最近打开过的会话 id（最新在前）：侧栏最上面一栏用它，最多显示 3 条。 */
+    val recentOpenedIds: List<String> = emptyList(),
 )
 
 @Immutable

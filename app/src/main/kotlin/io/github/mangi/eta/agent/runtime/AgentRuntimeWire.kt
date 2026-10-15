@@ -93,6 +93,8 @@ internal object AgentRuntimeWire {
     private const val KEY_TYPE = "type"
     private const val KEY_EVENT_VIRTUAL_SCREEN = "virtual_screen"
     private const val KEY_RUN_ID = "run_id"
+    /** 多开时全部活跃 runId 的列表键；KEY_RUN_ID 保留第一个，兼容旧调用方。 */
+    private const val KEY_ACTIVE_RUN_IDS = "active_run_ids"
     const val KEY_PROMPT: String = "prompt"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
     private const val KEY_MODEL_SESSION_ID = "model_session_id"
@@ -606,6 +608,17 @@ internal object AgentRuntimeWire {
     fun ackBundle(runId: String): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
     }
+
+    /** 多开时在跑的会话不止一个：把全部活跃 runId 一起回给 UI，避免其余会话被误判为中断。 */
+    fun activeRunBundle(runIds: List<String>): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runIds.firstOrNull().orEmpty())
+        putStringArrayList(KEY_ACTIVE_RUN_IDS, ArrayList(runIds))
+    }
+
+    fun activeRunIdsFromBundle(bundle: Bundle): List<String> =
+        bundle.getStringArrayList(KEY_ACTIVE_RUN_IDS)
+            ?.filter { runId -> runId.isNotBlank() }
+            .orEmpty()
 
     fun attachRunResponseBundle(runId: String, attached: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)

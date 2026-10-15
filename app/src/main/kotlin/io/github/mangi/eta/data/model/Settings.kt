@@ -32,6 +32,13 @@ data class Settings(
     val autoBackupDirectory: String = "",
     /** 打开 Eta 后悬浮胶囊常驻显示：没有任务时也留在屏幕上，点它看运行中会话。 */
     val overlayCapsulePinned: Boolean = false,
+
+    /** 小胶囊上次停的位置（像素，收起态坐标系）；-1 表示还没拖过，按默认居中偏上。 */
+    val overlayCapsulePosX: Int = -1,
+    val overlayCapsulePosY: Int = -1,
+
+    /** 最近打开过的会话 id（逗号分隔，最新在前）：重启后侧栏那一栏还在。 */
+    val recentOpenedConversationIds: String = "",
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
 

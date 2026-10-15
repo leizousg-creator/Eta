@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -107,6 +108,8 @@ private val InputContainerShape = RoundedCornerShape(20.dp)
 @Composable
 internal fun AgentChatInputBar(
     input: String,
+    /** 草稿键（会话 id）：未发送的输入按它单独存，切走再回来文字还在。 */
+    draftKey: String? = null,
     modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
     contextUsage: AgentContextUsageUi,
@@ -139,7 +142,16 @@ internal fun AgentChatInputBar(
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
-    val textFieldState = rememberTextFieldState(initialText = input)
+    val textFieldState = rememberTextFieldState(
+        initialText = input.ifEmpty { draftKey?.let(AgentInputDrafts::get).orEmpty() },
+    )
+    if (draftKey != null) {
+        // 只记录到草稿仓库，不把每个字符推回业务状态，聊天舞台不会被拖着重组成。
+        LaunchedEffect(textFieldState, draftKey) {
+            snapshotFlow { textFieldState.text.toString() }
+                .collect { text -> AgentInputDrafts.set(draftKey, text) }
+        }
+    }
     val dictation = rememberSpeechInput { recognized ->
         textFieldState.edit {
             val range = selection
