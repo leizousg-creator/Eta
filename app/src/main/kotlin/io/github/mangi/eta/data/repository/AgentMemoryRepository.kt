@@ -61,6 +61,14 @@ internal class AgentMemoryException(
 ) : IllegalStateException(message, cause)
 
 /** 单一 MEMORY.md 的有界、原子文件存储。 */
+private data class CompactCandidate(
+    val position: Int,
+    val start: Int,
+    val end: Int,
+    val bodyBytes: Int,
+    val date: String,
+)
+
 internal class AgentMemoryStore(
     rootDir: File,
 ) {
@@ -274,11 +282,22 @@ internal class AgentMemoryStore(
 
     fun isAutoCompactEnabled(): Boolean = autoCompactEnabled
 
-    /** 写入后若热区超限，就把最旧的、非保护的段落正文移入冷区，只留标题与说明。 */
+    /** 写入后若热区超限，就把最旧的段落正文移入冷区。保护段落热区保留标题 + 一行摘要，其余只留归档标记。 */
     private fun maybeCompact(content: String): String {
         if (!autoCompactEnabled) return content
-        if (content.toByteArray(Charsets.UTF_8).size <= MAX_HOT_BYTES) return content
+        var current = content
+        if (current.toByteArray(Charsets.UTF_8).size <= MAX_HOT_BYTES) return current
+        repeat(MAX_COMPACT_ROUNDS) {
+            if (current.toByteArray(Charsets.UTF_8).size <= TARGET_HOT_BYTES) return current
+            val next = compactOnce(current)
+            if (next == current) return current
+            current = next
+        }
+        return current
+    }
 
+    /** 单轮压缩：把最旧、正文最大的段落正文移入冷区，直到降到目标值或没有可搬段落。 */
+    private fun compactOnce(content: String): String {
         val lines = content.memoryLines()
         val headings = lines.indices.filter { index -> lines[index].startsWith(SECTION_PREFIX) }
         if (headings.size < 2) return content
@@ -288,33 +307,40 @@ internal class AgentMemoryStore(
             start to (next - 1)
         }
 
-        var totalBytes = content.toByteArray(Charsets.UTF_8).size
-        val movedPositions = mutableSetOf<Int>()
-        val archive = StringBuilder()
-        ranges.forEachIndexed { position, range ->
-            if (totalBytes <= TARGET_HOT_BYTES) return@forEachIndexed
+        val candidates = ranges.mapIndexedNotNull { position, range ->
             val (start, end) = range
-            if (isProtectedHeading(lines[start])) return@forEachIndexed
             val bodyLines = (start + 1)..end
-            if (bodyLines.count() < 2) return@forEachIndexed
             var bodyBytes = 0
             bodyLines.forEach { index -> bodyBytes += lines[index].toByteArray(Charsets.UTF_8).size + 1 }
-            if (bodyBytes < MIN_SECTION_BYTES) return@forEachIndexed
-            movedPositions += position
-            totalBytes -= bodyBytes
-            if (archive.isNotEmpty()) archive.append('\n')
-            archive.append(lines[start]).append('\n')
-            bodyLines.forEach { index -> archive.append(lines[index]).append('\n') }
+            if (bodyBytes < MIN_SECTION_BYTES) return@mapIndexedNotNull null
+            val date = Regex("20\\d{2}-\\d{2}").find(lines[start])?.value.orEmpty()
+            CompactCandidate(position, start, end, bodyBytes, date)
         }
-        if (movedPositions.isEmpty()) return content
+        if (candidates.isEmpty()) return content
+
+        var hotBytes = content.toByteArray(Charsets.UTF_8).size
+        val moved = mutableSetOf<Int>()
+        val archive = StringBuilder()
+        val ordered = candidates.sortedWith(compareBy({ it.date.ifEmpty { "9999-99" } }, { -it.bodyBytes }))
+        for (candidate in ordered) {
+            if (hotBytes <= TARGET_HOT_BYTES) break
+            moved += candidate.position
+            hotBytes -= candidate.bodyBytes
+            if (archive.isNotEmpty()) archive.append('\n')
+            archive.append(lines[candidate.start]).append('\n')
+            for (index in (candidate.start + 1)..candidate.end) archive.append(lines[index]).append('\n')
+        }
+        if (moved.isEmpty()) return content
 
         val rebuilt = ArrayList<String>(lines.size)
         if (headings.first() > 0) rebuilt += lines.subList(0, headings.first())
         ranges.forEachIndexed { position, range ->
             val (start, end) = range
             rebuilt += lines[start]
-            if (movedPositions.contains(position)) {
-                rebuilt += ""
+            if (moved.contains(position)) {
+                if (isProtectedHeading(lines[start])) {
+                    summarizeBody(lines, start, end)?.let { rebuilt += "- $it" }
+                }
                 rebuilt += ARCHIVE_SENTINEL
             } else {
                 for (index in (start + 1)..end) rebuilt += lines[index]
@@ -322,6 +348,18 @@ internal class AgentMemoryStore(
         }
         appendArchive(archive.toString().trimEnd('\n') + "\n")
         return rebuilt.joinToString("\n")
+    }
+
+    /** 取段落正文首个有意义的行作为热区摘要，超长截断。 */
+    private fun summarizeBody(lines: List<String>, start: Int, end: Int): String? {
+        for (index in (start + 1)..end) {
+            val line = lines[index].trim()
+            if (line.isEmpty()) continue
+            val text = line.removePrefix("- ").trim()
+            if (text.isEmpty() || text.startsWith("正文已归档")) continue
+            return if (text.length <= SUMMARY_MAX_CHARS) text else text.take(SUMMARY_MAX_CHARS) + "…"
+        }
+        return null
     }
 
     private fun isProtectedHeading(heading: String): Boolean =
@@ -437,6 +475,8 @@ internal class AgentMemoryStore(
         const val ARCHIVE_FILE_NAME = "MEMORY-ARCHIVE.md"
         private const val SECTION_PREFIX = "## "
         private const val MIN_SECTION_BYTES = 600
+        private const val MAX_COMPACT_ROUNDS = 20
+        private const val SUMMARY_MAX_CHARS = 96
         private const val ARCHIVE_SENTINEL =
             "- 正文已归档到 MEMORY-ARCHIVE.md（检索记忆时自动命中冷区）。"
         private val PROTECTED_HEADING_KEYWORDS = listOf(
