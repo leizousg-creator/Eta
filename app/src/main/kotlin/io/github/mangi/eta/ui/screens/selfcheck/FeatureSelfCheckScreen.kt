@@ -256,6 +256,31 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         detail = backupDetail,
     )
 
+    // 诊断包每周自动导出：清单里注册了接收器才可能跑；顺便报出自动目录里已有几份。
+    val autoExportReady = runCatching {
+        @Suppress("DEPRECATION")
+        context.packageManager.getReceiverInfo(
+            android.content.ComponentName(
+                context,
+                "io.github.mangi.eta.core.DiagnosticsAutoExportReceiver",
+            ),
+            0,
+        )
+    }.isSuccess
+    val autoCount = runCatching {
+        File("/storage/emulated/0/ai共享文件夹/诊断包备份/自动")
+            .listFiles()?.count { it.name.endsWith(".zip") } ?: 0
+    }.getOrDefault(0)
+    storage += SelfCheckItem(
+        name = "诊断包自动导出",
+        state = if (autoExportReady) STATE_OK else STATE_MISSING,
+        detail = if (autoExportReady) {
+            "接收器已注册 · 每周一次 · 落到 诊断包备份/自动（只留最近 4 份）· 该目录现有 $autoCount 份"
+        } else {
+            "接收器未注册，自动导出不会跑"
+        },
+    )
+
     val builtin = listOf(
         SelfCheckItem("多会话并发", STATE_BUILTIN, "最多 3 个会话同时跑任务；悬浮胶囊列出运行中会话，点一条跳回"),
         SelfCheckItem("工具串行锁", STATE_BUILTIN, "点按/输入/终端等独占工具全局排队，只读工具仍并行"),
@@ -267,6 +292,76 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem("离线朗读", STATE_BUILTIN, "系统 TTS 离线档位，设置 → 语音朗读 可试听"),
         SelfCheckItem("会话分类与自动任务", STATE_BUILTIN, "抽屉一级「自动任务」「会话分类」都在"),
         SelfCheckItem("用量统计 / 诊断包 / 环境包快照", STATE_BUILTIN, "统计 30 天用量、导出诊断包、整机快照一键还原"),
+        SelfCheckItem(
+            "无障碍断连提醒",
+            STATE_BUILTIN,
+            "服务被解绑或中断时，8 秒确认后发通知说明原因，点通知直达无障碍设置；重连自动撤销，5 分钟内不重复提醒",
+        ),
+        SelfCheckItem(
+            "运行进度通知",
+            STATE_BUILTIN,
+            "跑任务时通知栏显示经过时间与当前动作；并发归 0 立刻撤销，不留残条",
+        ),
+        SelfCheckItem(
+            "自动任务重试与立刻重试",
+            STATE_BUILTIN,
+            "失败先自动重试（通知写明第几次、约多久后再试、原因），可点「立刻重试」提前；只有不再重试才发失败通知",
+        ),
+        SelfCheckItem(
+            "内存闸门与降档说明",
+            STATE_BUILTIN,
+            "内存紧张时新会话排队或冻结；并发上限被压低时进度通知里写明「内存紧张，并发上限 N/6」",
+        ),
+        SelfCheckItem(
+            "行为核查与账目",
+            STATE_BUILTIN,
+            "行为核查含十多项探针，并给出账目：开始/结束、失败率、平均会话时长、重试与收场次数",
+        ),
+        SelfCheckItem(
+            "诊断包按天与分享",
+            STATE_BUILTIN,
+            "诊断包含 7 天按天日志；设置 → 关于 可导出到「诊断包备份」或直接分享",
+        ),
+        SelfCheckItem(
+            "中断续跑横幅",
+            STATE_BUILTIN,
+            "被中断的对话回合给出「继续 / 忽略」，并写明上次停在哪一步、有没有动过手机（当时做了什么动作）",
+        ),
+        SelfCheckItem(
+            "上下文超限自动降档",
+            STATE_BUILTIN,
+            "请求超出上下文时自动降到更低档位重试，不直接失败",
+        ),
+        SelfCheckItem(
+            "请求侧裁历史",
+            STATE_BUILTIN,
+            "超长会话在请求侧裁剪，顶栏显示已裁掉的提示；本机历史不受影响",
+        ),
+        SelfCheckItem(
+            "工具档",
+            STATE_BUILTIN,
+            "设置 → 工具档 五档可选，每档带说明文案；档位跟随所选模型",
+        ),
+        SelfCheckItem(
+            "设置项搜索",
+            STATE_BUILTIN,
+            "设置页顶部可搜索设置项，直接跳到目标项",
+        ),
+        SelfCheckItem(
+            "小窗动作条与两档缩放",
+            STATE_BUILTIN,
+            "小窗动作条含应用直通车；点按在最小/放大两档之间切，长按关闭并连应用一起关",
+        ),
+        SelfCheckItem(
+            "虚拟屏与横竖屏稳定性",
+            STATE_BUILTIN,
+            "打开虚拟屏不再闪退；横竖屏切换的 native 越界与竞态已修",
+        ),
+        SelfCheckItem(
+            "开机续跑提示",
+            STATE_BUILTIN,
+            "设备重启后如有被打断的自动任务，开机提示一次是否续跑（不自动重跑）",
+        ),
     )
 
     return SelfCheckReport(permissions = permissions, storage = storage, builtin = builtin)

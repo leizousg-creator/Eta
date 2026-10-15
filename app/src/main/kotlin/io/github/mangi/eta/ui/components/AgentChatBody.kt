@@ -398,6 +398,7 @@ private fun AgentChatScaffold(
                 AgentResumableRunBanner(
                     onResume = onResumeInterruptedRun,
                     onDismiss = onDismissInterruptedRun,
+                    summary = resumableRun.summary,
                 )
             }
             if (!hasMessages) {

@@ -549,6 +549,9 @@ internal class AgentAppState(
                         resumableRun = ResumableRunUiState(
                             runId = runId,
                             interruptedAt = checkpoint.updatedAt,
+                            summary = io.github.mangi.eta.ui.model.resumableRunSummary(
+                                checkpoint.transcript,
+                            ),
                         ),
                     ),
                 )
@@ -1536,6 +1539,19 @@ internal class AgentAppState(
             appContext.getString(R.string.state_ui_the_earlier_context_has_been_compressed_and_will_cf6c86),
             Toast.LENGTH_LONG,
         ).show()
+    }
+
+    /**
+     * 分享进来的文字：走输入框的注入通道（文本框自己有状态，只改业务 input 显示不出来），
+     * 同时同步业务状态，用户改好自己发。
+     */
+    fun applySharedText(text: String) {
+        io.github.mangi.eta.ui.components.AgentInputDrafts.inject(text)
+        val current = homeState.input
+        val merged = if (current.isBlank()) text else current.trimEnd() + "\n" + text
+        updateCurrentConversation(homeState.copy(input = merged))
+        io.github.mangi.eta.core.EtaTrace.log("share.apply", "注入输入框 ${text.length} 字")
+        Toast.makeText(appContext, "分享的内容已填入输入框，改好就发。", Toast.LENGTH_SHORT).show()
     }
 
     fun attachImage(uri: String) {

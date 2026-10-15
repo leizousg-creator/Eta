@@ -21,6 +21,9 @@ internal object CrashRecorder {
     /** 最多保留的崩溃记录份数，超出的按文件名（时间）从旧到新删除。 */
     const val MAX_KEPT = 10
 
+    /** 崩溃记录最长保留天数：份数和天数谁先到就按谁删。 */
+    private const val RETENTION_DAYS = 7
+
     private const val DIR_NAME = "crash"
     private const val EXTENSION = ".txt"
     private const val MAX_LOGCAT_BYTES = 256 * 1024
@@ -66,11 +69,14 @@ internal object CrashRecorder {
     }
 
     private fun prune(dir: File) {
+        val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(RETENTION_DAYS.toLong())
         dir.listFiles { file: File -> file.isFile && file.name.endsWith(EXTENSION) }
             ?.sortedByDescending { it.name }
             .orEmpty()
-            .drop(MAX_KEPT)
-            .forEach { it.delete() }
+            .forEachIndexed { index, file ->
+                // 份数超了，或者超过 7 天，都删；两者谁先到算谁。
+                if (index >= MAX_KEPT || file.lastModified() < cutoff) file.delete()
+            }
     }
 
     private fun report(context: Context, thread: Thread, error: Throwable): String = buildString {

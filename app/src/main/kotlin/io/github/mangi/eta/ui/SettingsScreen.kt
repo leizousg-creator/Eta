@@ -122,6 +122,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 开关默认值由 [Prefs.Keys.BOOLEAN_DEFAULTS] 统一定义。Eta Runtime 自己消费的开关写入
  * App 本地配置；仅 Hook 消费的开关通过 RemotePreferences 提交到 LSPosed。
  */
+/** 诊断包默认落盘目录：共享文件夹里的「诊断包备份」，省得每次挑位置。 */
+private const val DIAGNOSTICS_BACKUP_DIR = "/storage/emulated/0/ai共享文件夹/诊断包备份"
+
 @Composable
 internal fun SettingsScreen(
     context: Context,
@@ -212,8 +215,26 @@ private fun SettingsPageContent(
                         Toast.LENGTH_SHORT,
                     ).show()
                 } else {
-                    diagnosticsPayload = bytes
-                    diagnosticsSaver.launch(DiagnosticsBundle.defaultFileName())
+                    val name = DiagnosticsBundle.defaultFileName()
+                    // 先直接落到「诊断包备份」目录，不用每次挑位置；目录不可写（没给所有文件访问权限等）时退回文件选择器。
+                    val saved = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val dir = File(DIAGNOSTICS_BACKUP_DIR).apply { mkdirs() }
+                            val target = File(dir, name)
+                            target.writeBytes(bytes)
+                            target
+                        }.getOrNull()
+                    }
+                    if (saved != null) {
+                        Toast.makeText(
+                            context.applicationContext,
+                            context.getString(R.string.ui_about_diagnostics_saved_at, saved.absolutePath),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        diagnosticsPayload = bytes
+                        diagnosticsSaver.launch(name)
+                    }
                 }
             }
         }

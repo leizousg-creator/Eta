@@ -152,6 +152,18 @@ internal fun AgentChatInputBar(
                 .collect { text -> AgentInputDrafts.set(draftKey, text) }
         }
     }
+    // 外部塞进来的文字（分享到 Eta 等）：直接灌进当前文本框，不依赖草稿键。
+    val inputInjectVersion = AgentInputDrafts.injectVersion
+    LaunchedEffect(inputInjectVersion) {
+        if (inputInjectVersion == 0) return@LaunchedEffect
+        val injected = AgentInputDrafts.takeInjection() ?: return@LaunchedEffect
+        if (injected == textFieldState.text.toString()) return@LaunchedEffect
+        textFieldState.edit {
+            val range = selection
+            replace(range.min, range.max, injected)
+            selection = TextRange(range.min + injected.length)
+        }
+    }
     val dictation = rememberSpeechInput { recognized ->
         textFieldState.edit {
             val range = selection

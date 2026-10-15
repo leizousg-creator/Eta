@@ -665,6 +665,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     current.virtualUiRouted.set(true)
                 }
                 val virtualScreen = current?.let { usesVirtualUi(it) } == true
+                RunProgressNotifier.note(event)
                 islandBridge.update(request.runId, event, virtualScreen)
                 sendEventTo(replyTo, event, virtualScreen)
             },
@@ -687,10 +688,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             return
         }
         sessions[request.runId] = session
+        RunProgressNotifier.start(this)
+        RunProgressNotifier.noteSessionLimit(sessionLimit, MAX_CONCURRENT_RUNS)
+        if (sessionLimit < MAX_CONCURRENT_RUNS) {
+            // 上限被内存压低时留一条：事后能看出「为什么只能同时跑这么少」。
+            io.github.mangi.eta.core.EtaTrace.log(
+                "run.gate",
+                "内存闸门 剩余=${AgentMemoryGate.availableMb()}MB 并发上限=$sessionLimit/" +
+                    "$MAX_CONCURRENT_RUNS",
+            )
+        }
         io.github.mangi.eta.core.EtaTrace.log(
             "run.start",
-            "runId=${request.runId} 并发=${runningSessionCount()}/" +
-                "${AgentMemoryGate.sessionLimit()} " +
+            "runId=${request.runId} 并发=${runningSessionCount()}/$sessionLimit " +
                 " operation=${request.operation} 自动=${automated}",
         )
         val handoffPayload = request.handoff?.payload?.let { raw -> AgentUiHandoffPayload.from(raw) }
@@ -849,10 +859,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         completedContext: CompletedRunContext? = null,
     ) {
         mainHandler.post {
-            if (sessionFor(session.runId) !== session) return@post
+            // 收尾与「撤进度通知」必须无条件执行：会话被替换或重复收尾时若直接 return，
+            // 通知会一直挂在通知栏（实测 start 12 次只 stop 1 次）。
+            val needsOverlay = sessionFor(session.runId) === session
             lastCompletedRunContext = completedContext
             rememberFinishedSession(session.runId)
             sessions.remove(session.runId)
+            if (sessions.isEmpty()) RunProgressNotifier.stop(this)
+            if (!needsOverlay) return@post
             io.github.mangi.eta.core.EtaTrace.log(
                 "run.end",
                 "runId=${session.runId} 剩余并发=${runningSessionCount()}/" +

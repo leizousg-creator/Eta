@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun AgentResumableRunBanner(
     onResume: () -> Unit,
     onDismiss: () -> Unit,
+    summary: String? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -35,13 +37,24 @@ internal fun AgentResumableRunBanner(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = stringResource(R.string.agent_run_interrupted_resume_hint),
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurface,
-            maxLines = 2,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.agent_run_interrupted_resume_hint),
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurface,
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (!summary.isNullOrBlank()) {
+                Text(
+                    text = summary,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         Text(
             text = stringResource(R.string.agent_run_interrupted_dismiss),
             style = MiuixTheme.textStyles.body2,

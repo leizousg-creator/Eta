@@ -416,6 +416,7 @@
   <string name="settings_search_empty">没有匹配的设置项</string>
   <string name="ui_about_diagnostics_collecting">正在收集…</string>
   <string name="ui_about_diagnostics_saved">诊断包已保存：%1$s</string>
+  <string name="ui_about_diagnostics_saved_at">诊断包已存到：%1$s</string>
   <string name="ui_about_diagnostics_failed">诊断包生成失败</string>
   <string name="ui_click_to_reinstall_dc60de">点击重新安装</string>
   <string name="ui_environmental_status_5b32a1">环境状态</string>
@@ -1359,6 +1360,12 @@
     <string name="auto_skills_title">自动学习操作技能</string>
     <string name="auto_skills_summary">应用操作经过反复尝试并成功后，总结可复用技能。可在技能页查看、禁用或删除；会产生额外 API 请求。</string>
     <string name="automation_title">自动任务</string>
+  <string name="automation_failed_title">自动任务失败：%1$s</string>
+  <string name="automation_retry_title">自动任务重试中：%1$s</string>
+  <string name="automation_retry_now">立刻重试</string>
+  <string name="automation_retry_text">第 %1$d/%2$d 次自动重试，约 %3$d 秒后再试 · %4$s</string>
+  <string name="accessibility_lost_title">无障碍已断开，点屏幕的能力暂时不可用</string>
+  <string name="accessibility_lost_body">%1$s\n\n怎么修：点这条通知直接进无障碍设置，把 Eta 重新打开；回到 Eta 后随便让它读一次屏幕（比如让我看下当前界面）就能确认恢复。</string>
     <string name="automation_run_count">已运行 %1$d / %2$d 次</string>
     <string name="automation_trigger_label">触发方式</string>
     <string name="automation_filters_label">筛选条件</string>

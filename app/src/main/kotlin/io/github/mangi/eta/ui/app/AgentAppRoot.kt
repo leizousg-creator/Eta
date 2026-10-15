@@ -146,6 +146,13 @@ fun AgentAppRoot(
     val skills = appViewModel.skills
     val memory = appViewModel.memory
     val permissionHealth = appViewModel.permissionHealth
+    // 分享进来的内容：界面就绪后回到首页，填进当前会话输入框并附图。
+    LaunchedEffect(ShareIntake.version) {
+        val payload = ShareIntake.consume() ?: return@LaunchedEffect
+        if (backStack.lastOrNull() != AppRoute.Home) backStack.add(AppRoute.Home)
+        payload.text?.let { text -> agentState.applySharedText(text) }
+        payload.images.forEach { uri -> agentState.attachImage(uri) }
+    }
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
     val communityCatalogStore = viewModel<CommunityCatalogViewModel>().store

@@ -21,6 +21,8 @@ internal class AgentTaskReceiver : BroadcastReceiver() {
                         "device_boot",
                         System.currentTimeMillis().toString()
                     )
+                    // 开机续跑提示：检查点里还有没跑完的会话就提醒一句，点开走现成的恢复流程。
+                    io.github.mangi.eta.agent.runtime.InterruptedRunNotifier.notifyIfAny(context)
                 }
                 AgentTaskScheduler.enqueueDue(context)
                 AgentTaskScheduler.refresh(context)

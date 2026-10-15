@@ -125,6 +125,9 @@ internal object AgentTaskScheduler {
         } else context.stopService(Intent(context, AgentTriggerMonitorService::class.java))
     }
 
+    /** 「重试中」通知上的「立刻重试」：把等着的重试提前到现在，不改动原本的重试节奏。 */
+    fun retryNow(context: Context) = requestJob(context, 0)
+
     fun requestJob(context: Context, delayMs: Long = 0) = synchronized(jobLock) {
         if (jobRunning.get()) return
         val scheduler = context.getSystemService(JobScheduler::class.java)

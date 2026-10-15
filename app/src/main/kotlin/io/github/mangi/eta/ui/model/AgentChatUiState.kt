@@ -12,7 +12,63 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 internal data class ResumableRunUiState(
     val runId: String,
     val interruptedAt: Long,
+    /** 「上次停在哪 + 有没有动过手」；算不出来时为 null，横幅只显示原来的提示。 */
+    val summary: String? = null,
 )
+
+/**
+ * 给续跑横幅补一句实话：上次停在哪一步、有没有真的动过手机。
+ * 只从检查点的对话记录里读，不做推断——没有记录就返回 null，不硬编一句。
+ */
+internal fun resumableRunSummary(transcript: List<AgentModelClient.ConversationMessage>): String? {
+    if (transcript.isEmpty()) return null
+    val last = transcript.lastOrNull { it.content.isNotBlank() || it.toolCallsJson.isNotBlank() }
+    val stop = when {
+        last == null -> "上次停在中间某一步"
+        last.toolCallsJson.isNotBlank() -> "上次停在工具调用这一步"
+        last.role == "user" -> "上次停在你的提问之后、还没开始回答"
+        last.role == "assistant" -> "上次停在回复输出中途"
+        else -> "上次停在中间某一步"
+    }
+    return "$stop，" + describeTouch(transcript.joinToString("\n") { it.toolCallsJson }) + "。"
+}
+
+/** 工具名 → 说人话的动作分组；摘要里最多说三组，多了省略。 */
+private val RESUMABLE_TOOL_GROUPS = listOf(
+    "点屏幕" to listOf(
+        "tap", "tap_element", "tap_area", "long_press", "long_press_element", "swipe", "press_key",
+    ),
+    "输入或发送" to listOf("type_text", "set_clipboard"),
+    "读写文件" to listOf(
+        "read_file", "write_file", "edit_file", "stat_file", "list_directory", "glob_files", "grep_files",
+    ),
+    "跑命令" to listOf("terminal"),
+    "打开应用" to listOf("launch_app", "open_uri"),
+)
+
+/** 数某个工具在工具调用 JSON 里出现几次；按带引号的完整名字匹配，tap 不会算进 tap_area。 */
+private fun countToolCalls(text: String, tool: String): Int {
+    if (text.isBlank()) return 0
+    val token = "\"" + tool + "\""
+    var count = 0
+    var index = text.indexOf(token)
+    while (index >= 0) {
+        count++
+        index = text.indexOf(token, index + token.length)
+    }
+    return count
+}
+
+/** 「有没有动过手」尽量说具体：分得出动作就点名，分不出就直说没认出来，不编。 */
+private fun describeTouch(toolText: String): String {
+    if (toolText.isBlank()) return "还没动过手机"
+    val groups = RESUMABLE_TOOL_GROUPS
+        .map { (label, tools) -> label to tools.sumOf { countToolCalls(toolText, it) } }
+        .filter { it.second > 0 }
+    if (groups.isEmpty()) return "已经动过手机（动作没认出来）"
+    val head = groups.take(3).joinToString("、") { "${it.first} ${it.second} 次" }
+    return "已经动过手机（" + head + (if (groups.size > 3) " 等" else "") + "）"
+}
 
 @Immutable
 internal data class AgentChatUiState(

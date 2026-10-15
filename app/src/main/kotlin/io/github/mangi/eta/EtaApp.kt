@@ -89,6 +89,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
                 // 自动备份：先排下一次唤醒（闹钟可能已被系统清掉），再补一次到期检查。
                 AutoBackupAlarm.refresh(this@EtaApp)
                 AutoBackupRunner.maybeRun(this@EtaApp)
+                // 诊断包每周自动导出一次，直接落到「诊断包备份」。
+                io.github.mangi.eta.core.DiagnosticsAutoExport.refresh(this@EtaApp)
             }.onFailure { AndroidAgentLogger.warn("Automation recovery unavailable") }
         }
         XposedServiceHelper.registerListener(this)

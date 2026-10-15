@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         installStartupSplash { contentReady }
         enableEdgeToEdge()
         updateAssistantHandoff(intent)
+        handleShareIntent(intent)
         lifecycleScope.launch {
             val initialAppearance = AppearanceSettingsRepository.settings()
             appliedPredictiveBackEnabled = initialAppearance.predictiveBackEnabled
@@ -92,6 +93,35 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         updateAssistantHandoff(intent)
+        handleShareIntent(intent)
+    }
+
+    /** 系统分享面板送进来的文字／图片，先暂存起来，界面就绪后由 AgentAppRoot 取走。 */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val images = mutableListOf<String>()
+        val stream = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri
+        }
+        stream?.let { uri ->
+            runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            images += uri.toString()
+        }
+        io.github.mangi.eta.core.EtaTrace.log(
+            "share.intent",
+            "收到分享：文字=${text?.length ?: 0} 字，图片=${images.size} 张",
+        )
+        io.github.mangi.eta.ui.app.ShareIntake.offer(text, images)
+        intent.action = null
     }
 
     private fun updateAssistantHandoff(intent: Intent?) {

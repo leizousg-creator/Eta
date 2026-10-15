@@ -38,6 +38,8 @@ internal object DiagnosticsBundle {
             entries["crash/" + file.name] = text.take(MAX_CRASH_CHARS)
         }
         entries["trace.txt"] = EtaTrace.dump(context)
+        // 行为核查：把「隐形功能有没有真的跑起来」自动算好，用户不用自己盯。
+        entries["行为核查.txt"] = BehaviorAudit.report(context)
         entries["logcat.txt"] = logcat(root)
         zip(entries)
     }
@@ -200,7 +202,8 @@ internal object DiagnosticsBundle {
         - state.txt：设备、虚拟屏、语音与运行状态快照
         - helper-exit.txt：虚拟屏服务进程（root helper）的 stderr 尾部与退出码
         - crash/*.txt：崩溃现场（每次崩溃一份，最多 10 份，含调用栈与日志尾部）
-        - trace.txt：Eta 自留运行日志（会话启停、取消原因、并发槽位、无障碍连接、虚拟屏服务启停）
+        - trace.txt：Eta 自留运行日志（按天保留最近 7 天；会话启停、取消原因、并发槽位、无障碍连接、虚拟屏服务启停）
+        - 行为核查.txt：把「隐形功能有没有真的跑起来」自动算好（多开会话、并发排队、重任务互斥、进度通知、开机续跑、分享入口等），不用自己盯
         - logcat.txt：最近日志。已授权 root 时为全量日志，否则只有 Eta 自己的日志
 
         不含语音凭据、模型密钥与会话正文。排查完成后可直接删除。
