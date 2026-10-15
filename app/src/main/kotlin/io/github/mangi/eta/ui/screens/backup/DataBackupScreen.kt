@@ -76,6 +76,10 @@ internal fun DataBackupScreen(
     var autoNote by remember { mutableStateOf<String?>(null) }
     var showDirDialog by remember { mutableStateOf(false) }
     var dirInput by remember { mutableStateOf("") }
+    var showIntervalDialog by remember { mutableStateOf(false) }
+    var intervalInput by remember { mutableStateOf("") }
+    var showKeepDialog by remember { mutableStateOf(false) }
+    var keepInput by remember { mutableStateOf("") }
 
     fun showFailure(throwable: Throwable) {
         if (throwable is CancellationException) throw throwable
@@ -194,15 +198,13 @@ internal fun DataBackupScreen(
                 EtaPreferenceDivider(hasLeading = true)
                 EtaArrowPreference(
                     title = stringResource(R.string.data_backup_auto_interval),
-                    summary = stringResource(intervalLabelRes(settings.autoBackupIntervalHours)),
+                    summary = intervalLabel(context, settings.autoBackupIntervalMinutes),
                     enabled = settings.autoBackupEnabled,
                     onClick = {
-                        val options = AutoBackupInterval.options
-                        val next = options[(options.indexOf(settings.autoBackupIntervalHours) + 1) % options.size]
-                        scope.launch(Dispatchers.IO) {
-                            SettingsDataStore.updateSettings { it.copy(autoBackupIntervalHours = next) }
-                            AutoBackupAlarm.refresh(context)
-                        }
+                        intervalInput = AutoBackupInterval
+                            .effectiveMinutes(settings.autoBackupIntervalMinutes, settings.autoBackupIntervalHours)
+                            .toString()
+                        showIntervalDialog = true
                     },
                 )
                 EtaPreferenceDivider(hasLeading = true)
@@ -211,11 +213,8 @@ internal fun DataBackupScreen(
                     summary = stringResource(R.string.data_backup_auto_keep_value, settings.autoBackupKeepCount),
                     enabled = settings.autoBackupEnabled,
                     onClick = {
-                        val options = AutoBackupKeepCount.options
-                        val next = options[(options.indexOf(settings.autoBackupKeepCount) + 1) % options.size]
-                        scope.launch(Dispatchers.IO) {
-                            SettingsDataStore.updateSettings { it.copy(autoBackupKeepCount = next) }
-                        }
+                        keepInput = settings.autoBackupKeepCount.toString()
+                        showKeepDialog = true
                     },
                 )
                 EtaPreferenceDivider(hasLeading = true)
@@ -317,6 +316,103 @@ internal fun DataBackupScreen(
         }
     }
 
+    if (showIntervalDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.data_backup_interval_dialog_title),
+            summary = stringResource(
+                R.string.data_backup_interval_dialog_summary,
+                AutoBackupInterval.MIN_MINUTES,
+                AutoBackupInterval.MAX_MINUTES,
+            ),
+            onDismissRequest = { showIntervalDialog = false },
+        ) {
+            Column {
+                TextField(
+                    value = intervalInput,
+                    onValueChange = { intervalInput = it },
+                    label = stringResource(R.string.data_backup_interval_dialog_label),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MiuixDialogActions(
+                    confirmText = stringResource(R.string.action_confirm),
+                    onCancel = { showIntervalDialog = false },
+                    onConfirm = {
+                        val minutes = intervalInput.trim().toIntOrNull()
+                        showIntervalDialog = false
+                        if (minutes == null) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.data_backup_interval_invalid),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            val value = AutoBackupInterval.normalize(minutes)
+                            scope.launch {
+                                SettingsDataStore.updateSettings { it.copy(autoBackupIntervalMinutes = value) }
+                                AutoBackupAlarm.refresh(context)
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.data_backup_interval_saved, minutesText(context, value)),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    if (showKeepDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.data_backup_keep_dialog_title),
+            summary = stringResource(
+                R.string.data_backup_keep_dialog_summary,
+                AutoBackupKeepCount.MIN,
+                AutoBackupKeepCount.MAX,
+            ),
+            onDismissRequest = { showKeepDialog = false },
+        ) {
+            Column {
+                TextField(
+                    value = keepInput,
+                    onValueChange = { keepInput = it },
+                    label = stringResource(R.string.data_backup_keep_dialog_label),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MiuixDialogActions(
+                    confirmText = stringResource(R.string.action_confirm),
+                    onCancel = { showKeepDialog = false },
+                    onConfirm = {
+                        val count = keepInput.trim().toIntOrNull()
+                        showKeepDialog = false
+                        if (count == null) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.data_backup_keep_invalid),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            val value = AutoBackupKeepCount.normalize(count)
+                            scope.launch {
+                                SettingsDataStore.updateSettings { it.copy(autoBackupKeepCount = value) }
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.data_backup_keep_saved, value),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+
     if (showImportDialog) {
         EtaWindowDialog(
             show = true,
@@ -394,10 +490,18 @@ private fun BackupIcon(icon: ImageVector, loading: Boolean) {
     }
 }
 
-private fun intervalLabelRes(hours: Int): Int = when (AutoBackupInterval.normalize(hours)) {
-    72 -> R.string.data_backup_auto_interval_72
-    168 -> R.string.data_backup_auto_interval_168
-    else -> R.string.data_backup_auto_interval_24
+private fun intervalLabel(context: Context, minutes: Int): String =
+    context.getString(R.string.data_backup_auto_interval_value, minutesText(context, minutes))
+
+/** 把分钟数写成「10 分钟 / 2 小时 / 1 天 / 1 小时 30 分钟」。 */
+private fun minutesText(context: Context, minutes: Int): String {
+    val value = AutoBackupInterval.normalize(minutes)
+    return when {
+        value % 1440 == 0 -> context.getString(R.string.data_backup_unit_day, value / 1440)
+        value % 60 == 0 -> context.getString(R.string.data_backup_unit_hour, value / 60)
+        value < 60 -> context.getString(R.string.data_backup_unit_minute, value)
+        else -> context.getString(R.string.data_backup_unit_hour_minute, value / 60, value % 60)
+    }
 }
 
 private fun defaultBackupFileName(): String =

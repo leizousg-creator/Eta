@@ -34,13 +34,18 @@ internal object AutoBackupAlarm {
             cancel(app)
             return@withContext
         }
-        val intervalMs = AutoBackupInterval.normalize(settings.autoBackupIntervalHours) * 3_600_000L
+        val intervalMs = AutoBackupInterval.millis(settings.autoBackupIntervalMinutes, settings.autoBackupIntervalHours)
         val now = System.currentTimeMillis()
         val due = if (settings.autoBackupLastAt > 0L) settings.autoBackupLastAt + intervalMs else now
         val triggerAt = maxOf(due, now + MIN_DELAY_MS)
         runCatching {
-            app.getSystemService(AlarmManager::class.java)
-                .setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent(app))
+            val manager = app.getSystemService(AlarmManager::class.java)
+            val exact = runCatching { manager.canScheduleExactAlarms() }.getOrDefault(false)
+            if (exact) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent(app))
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent(app))
+            }
         }.onFailure {
             AndroidAgentLogger.warn("Auto backup alarm unavailable: type=${it.safeLogType()}")
         }

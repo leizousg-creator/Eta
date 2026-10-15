@@ -24,6 +24,9 @@ data class Settings(
     val virtualScreenFloatWindowPosX: Int = 16,
     val virtualScreenFloatWindowPosY: Int = 120,
     val autoBackupEnabled: Boolean = false,
+    /** 自动备份周期（分钟）：支持 10 分钟这种短周期；0 表示沿用老的小时字段。 */
+    val autoBackupIntervalMinutes: Int = 0,
+    /** 老字段（小时），仅作历史设置/老备份的兼容回退。 */
     val autoBackupIntervalHours: Int = 24,
     val autoBackupKeepCount: Int = 5,
     val autoBackupLastAt: Long = 0L,
@@ -48,16 +51,50 @@ internal object VirtualScreenIdleTimeout {
     fun normalize(minutes: Int): Int = minutes.takeIf { it in options } ?: 20
 }
 
-/** 自动备份周期（小时）。 */
+/** 自动备份周期：统一按分钟存，支持「每 10 分钟一次」这类短周期。 */
 internal object AutoBackupInterval {
-    val options = listOf(24, 72, 168)
-    fun normalize(hours: Int): Int = hours.takeIf { it in options } ?: 24
+
+    /** 最短 5 分钟，再短会和闹钟重排互相打架。 */
+    const val MIN_MINUTES = 5
+
+    /** 最长 30 天。 */
+    const val MAX_MINUTES = 30 * 24 * 60
+
+    /** 默认 24 小时。 */
+    const val DEFAULT_MINUTES = 24 * 60
+
+    /** 周期不超过这个值时，每次都真的写一份备份（不按内容指纹跳过）。 */
+    const val ALWAYS_WRITE_MAX_MINUTES = 60
+
+    /** 常用预设（分钟）：10 分钟到 7 天。 */
+    val presets = listOf(10, 30, 60, 180, 360, 720, 1440, 4320, 10080)
+
+    /** 老设置里的小时预设，只用于兼容历史值。 */
+    val legacyHourOptions = listOf(24, 72, 168)
+
+    fun normalize(minutes: Int): Int = minutes.takeIf { it in MIN_MINUTES..MAX_MINUTES } ?: DEFAULT_MINUTES
+
+    /** 把老的小时字段换算成分钟。 */
+    fun fromLegacyHours(hours: Int): Int = normalize(hours * 60)
+
+    /** 生效周期（分钟）：分钟字段优先，缺失或非法时回落到老的小时字段。 */
+    fun effectiveMinutes(storedMinutes: Int, legacyHours: Int): Int =
+        if (storedMinutes in MIN_MINUTES..MAX_MINUTES) storedMinutes else fromLegacyHours(legacyHours)
+
+    /** 生效周期的毫秒数，供闹钟与到点判断使用。 */
+    fun millis(storedMinutes: Int, legacyHours: Int): Long = effectiveMinutes(storedMinutes, legacyHours) * 60_000L
 }
 
-/** 自动备份保留份数，超出的删最旧。 */
+/** 自动备份保留份数，超出的删最旧；上限 60 份，够放 20~30 份这种短周期。 */
 internal object AutoBackupKeepCount {
-    val options = listOf(3, 5, 10)
-    fun normalize(count: Int): Int = count.takeIf { it in options } ?: 5
+
+    const val MIN = 1
+    const val MAX = 60
+
+    /** 常用预设。 */
+    val presets = listOf(3, 5, 10, 20, 30, 50)
+
+    fun normalize(count: Int): Int = count.takeIf { it in MIN..MAX } ?: 5
 }
 
 /** 虚拟屏出帧目标帧率；越低越省电，越高越跟手。 */

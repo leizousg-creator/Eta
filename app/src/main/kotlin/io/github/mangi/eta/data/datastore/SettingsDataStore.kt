@@ -75,6 +75,8 @@ internal object SettingsDataStore {
     private val OVERLAY_CAPSULE_POS_Y = intPreferencesKey("overlay_capsule_pos_y")
     private val RECENT_OPENED_IDS = stringPreferencesKey("recent_opened_conversation_ids")
     private val AUTO_BACKUP_INTERVAL = intPreferencesKey("auto_backup_interval_hours")
+    /** 周期（分钟）：与老的小时键并存，分钟 > 0 时优先。 */
+    private val AUTO_BACKUP_INTERVAL_MINUTES = intPreferencesKey("auto_backup_interval_minutes")
     private val AUTO_BACKUP_KEEP = intPreferencesKey("auto_backup_keep_count")
     private val AUTO_BACKUP_LAST_AT = longPreferencesKey("auto_backup_last_at")
     private val AUTO_BACKUP_FINGERPRINT = stringPreferencesKey("auto_backup_fingerprint")
@@ -189,7 +191,10 @@ internal object SettingsDataStore {
             prefs[OVERLAY_CAPSULE_POS_X] = updated.overlayCapsulePosX
             prefs[OVERLAY_CAPSULE_POS_Y] = updated.overlayCapsulePosY
             prefs[RECENT_OPENED_IDS] = updated.recentOpenedConversationIds
-            prefs[AUTO_BACKUP_INTERVAL] = io.github.mangi.eta.data.model.AutoBackupInterval.normalize(updated.autoBackupIntervalHours)
+            prefs[AUTO_BACKUP_INTERVAL] = updated.autoBackupIntervalHours
+                .coerceIn(1, io.github.mangi.eta.data.model.AutoBackupInterval.MAX_MINUTES / 60)
+            prefs[AUTO_BACKUP_INTERVAL_MINUTES] =
+                io.github.mangi.eta.data.model.AutoBackupInterval.normalize(updated.autoBackupIntervalMinutes)
             prefs[AUTO_BACKUP_KEEP] = io.github.mangi.eta.data.model.AutoBackupKeepCount.normalize(updated.autoBackupKeepCount)
             prefs[AUTO_BACKUP_LAST_AT] = updated.autoBackupLastAt
             prefs.putOrRemove(AUTO_BACKUP_FINGERPRINT, updated.autoBackupFingerprint)
@@ -364,7 +369,13 @@ internal object SettingsDataStore {
         overlayCapsulePosX = this[OVERLAY_CAPSULE_POS_X] ?: -1,
         overlayCapsulePosY = this[OVERLAY_CAPSULE_POS_Y] ?: -1,
         recentOpenedConversationIds = this[RECENT_OPENED_IDS] ?: "",
-        autoBackupIntervalHours = io.github.mangi.eta.data.model.AutoBackupInterval.normalize(this[AUTO_BACKUP_INTERVAL] ?: 24),
+        autoBackupIntervalMinutes = io.github.mangi.eta.data.model.AutoBackupInterval.effectiveMinutes(
+            this[AUTO_BACKUP_INTERVAL_MINUTES] ?: 0,
+            this[AUTO_BACKUP_INTERVAL] ?: 24,
+        ),
+        autoBackupIntervalHours = io.github.mangi.eta.data.model.AutoBackupInterval.fromLegacyHours(
+            this[AUTO_BACKUP_INTERVAL] ?: 24,
+        ) / 60,
         autoBackupKeepCount = io.github.mangi.eta.data.model.AutoBackupKeepCount.normalize(this[AUTO_BACKUP_KEEP] ?: 5),
         autoBackupLastAt = this[AUTO_BACKUP_LAST_AT] ?: 0L,
         autoBackupFingerprint = this[AUTO_BACKUP_FINGERPRINT].orEmpty(),

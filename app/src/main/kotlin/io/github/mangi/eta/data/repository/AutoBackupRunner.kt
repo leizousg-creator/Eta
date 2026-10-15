@@ -71,13 +71,19 @@ internal object AutoBackupRunner {
             if (!force && !settings.autoBackupEnabled) {
                 return@withContext AutoBackupResult.Skipped("未开启自动备份")
             }
-            val intervalMs = AutoBackupInterval.normalize(settings.autoBackupIntervalHours) * 3_600_000L
+            val intervalMinutes = AutoBackupInterval.effectiveMinutes(
+                settings.autoBackupIntervalMinutes,
+                settings.autoBackupIntervalHours,
+            )
+            val intervalMs = intervalMinutes * 60_000L
             val now = System.currentTimeMillis()
             if (!force && settings.autoBackupLastAt > 0L && now - settings.autoBackupLastAt < intervalMs) {
                 return@withContext AutoBackupResult.Skipped("未到备份周期")
             }
             val fingerprint = fingerprint(context)
-            if (!force && fingerprint.isNotEmpty() && fingerprint == settings.autoBackupFingerprint) {
+            // 短周期（≤ 60 分钟）时每次都写一份，保证「每 10 分钟一份」不会被内容指纹挡掉。
+            val alwaysWrite = intervalMinutes <= AutoBackupInterval.ALWAYS_WRITE_MAX_MINUTES
+            if (!force && !alwaysWrite && fingerprint.isNotEmpty() && fingerprint == settings.autoBackupFingerprint) {
                 runCatching {
                     SettingsDataStore.setAutoBackupState(
                         lastAt = now,
