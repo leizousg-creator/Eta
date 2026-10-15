@@ -423,7 +423,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AgentRuntimeWire.MSG_RESUME -> requestResume()
                 AgentRuntimeWire.MSG_STEER -> {
                     val text = msg.data?.getString(AgentRuntimeWire.KEY_PROMPT).orEmpty().trim()
-                    if (text.isNotBlank()) requestSupplement(text)
+                    val conversationId = msg.data
+                        ?.getString(AgentRuntimeWire.KEY_CONVERSATION_ID)
+                        .orEmpty()
+                    if (text.isNotBlank()) requestSupplement(text, conversationId)
                 }
 
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
@@ -1166,31 +1169,60 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         )
     }
 
-    private fun requestSupplement(text: String) {
+    /** 某个 run 属于哪个会话；插话靠它做精确匹配。 */
+    private fun conversationIdOfRun(runId: String): String =
+        runningSessionInfo[runId]?.conversationId.orEmpty()
+
+    /** 「上一次跑完的运行」属于哪个会话；续跑前也要核对，否则会拿别的会话的上下文续跑。 */
+    private fun conversationIdOfCompletedRun(completed: CompletedRunContext?): String =
+        completed?.request?.handoff
+            ?.takeIf { handoff -> handoff.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
+            ?.let { handoff -> AgentUiHandoffPayload.from(handoff.payload).conversationId }
+            .orEmpty()
+
+    private fun requestSupplement(text: String, conversationId: String = "") {
         val supplementText = text.trim()
         if (supplementText.isBlank()) return
         setCapsuleInputMode(focusable = false)
-        sessions.values.lastOrNull { it -> !it.isTerminal }?.let { session ->
-            val event = session.steer(supplementText) {
+        val activeSessions = sessions.values.filter { session -> !session.isTerminal }
+        val target = if (conversationId.isNotBlank()) {
+            // 只投给同会话的 run；以前取「最后一个未结束的 run」，本机在跑长任务时
+            // 别的会话发的内容会被吸进来（串回复），所以必须有会话标识才算匹配。
+            activeSessions.lastOrNull { session -> conversationIdOfRun(session.runId) == conversationId }
+        } else {
+            // 调用方没给会话信息（旧客户端）：只有唯一候选时才敢投，避免误伤别的会话。
+            activeSessions.singleOrNull()
+        }
+        if (target != null) {
+            val event = target.steer(supplementText) {
                 recordSupplementEvent(supplementText)
             }
-            if (event == null) {
-                if (!session.isTerminal) {
-                    state.value = state.value.copy(
-                        status = AgentOverlayStatus.Finishing,
-                    )
-                    return
-                }
-            } else {
+            if (event != null) {
                 AndroidAgentLogger.info(
                     "Agent runtime supplement received: index=${event.index}, chars=${event.text.length}"
                 )
                 state.value = state.value.applyEvent(event)
                 return
             }
+            if (!target.isTerminal) {
+                state.value = state.value.copy(
+                    status = AgentOverlayStatus.Finishing,
+                )
+                return
+            }
         }
 
-        val completed = lastCompletedRunContext ?: return
+        val completed = lastCompletedRunContext
+        if (conversationId.isNotBlank() &&
+            conversationIdOfCompletedRun(completed) != conversationId
+        ) {
+            io.github.mangi.eta.core.EtaTrace.log(
+                "run.steer.reject",
+                "插话无同会话运行 会话=$conversationId 在跑=${activeSessions.size}",
+            )
+            return
+        }
+        if (completed == null) return
         if (completed.request.operation != AgentRuntimeWire.OP_CHAT ||
             completed.request.handoff?.source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
             state.value = state.value.copy(status = AgentOverlayStatus.ContinuationUnavailable)
@@ -1245,7 +1277,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onResume = ::requestResume,
                 onStop = ::requestStop,
                 onSupplementModeChange = ::setCapsuleInputMode,
-                onSupplement = ::requestSupplement,
+                onSupplement = { supplementText ->
+                    requestSupplement(
+                        supplementText,
+                        state.value.runningSessions.firstOrNull()?.conversationId.orEmpty(),
+                    )
+                },
                 onOpenConversation = ::openConversation,
                 onDragBy = ::moveCapsuleBy,
                 onDragFinished = ::snapCapsuleToEdge,

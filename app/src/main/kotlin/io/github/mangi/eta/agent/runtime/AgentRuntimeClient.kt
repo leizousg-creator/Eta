@@ -140,12 +140,15 @@ internal class AgentRuntimeClient(
     }
 
     /** 运行中插话：steering 通道，在下一个 turn 注入，不取消当前请求或工具批次。 */
-    fun steerRun(text: String) {
+    fun steerRun(text: String, conversationId: String = "") {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         withRuntimeMessenger(Unit) { serviceMessenger ->
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_STEER)
-            msg.data = android.os.Bundle().apply { putString(AgentRuntimeWire.KEY_PROMPT, trimmed) }
+            msg.data = android.os.Bundle().apply {
+                putString(AgentRuntimeWire.KEY_PROMPT, trimmed)
+                putString(AgentRuntimeWire.KEY_CONVERSATION_ID, conversationId)
+            }
             serviceMessenger.send(msg)
         }
     }

@@ -1065,8 +1065,10 @@ internal class AgentAppState(
         if (homeState.isStreaming) {
             // 运行中插话：走 steering 通道，在下一个 turn 注入，不取消当前模型请求或工具批次。
             updateCurrentConversation(homeState.copy(input = ""))
+            val conversationId = selectedConversationId.orEmpty()
             scope.launch(Dispatchers.IO) {
-                AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(prompt)
+                AgentRuntimeClient(appContext, AndroidAgentLogger)
+                    .steerRun(prompt, conversationId)
             }
             return
         }

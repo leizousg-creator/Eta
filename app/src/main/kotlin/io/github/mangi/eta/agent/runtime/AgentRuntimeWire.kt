@@ -96,6 +96,8 @@ internal object AgentRuntimeWire {
     /** 多开时全部活跃 runId 的列表键；KEY_RUN_ID 保留第一个，兼容旧调用方。 */
     private const val KEY_ACTIVE_RUN_IDS = "active_run_ids"
     const val KEY_PROMPT: String = "prompt"
+    /** 插话目标会话：带上它表示「只投给这个会话正在跑的 run」；空白＝调用方没有会话信息（旧客户端）。 */
+    const val KEY_CONVERSATION_ID: String = "conversation_id"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
     private const val KEY_MODEL_SESSION_ID = "model_session_id"
     private const val KEY_PROVIDER_ID = "provider_id"
