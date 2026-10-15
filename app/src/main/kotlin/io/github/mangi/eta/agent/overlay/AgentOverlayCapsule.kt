@@ -20,9 +20,14 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,12 +48,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,6 +86,7 @@ import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
@@ -89,6 +97,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 位置固定在状态栏下方居中，不随 Agent 的点击位置移动，避免和目标控件重叠。
  * 状态文字只在语义变化时以上滑淡入切换，流式正文不进入胶囊。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AgentOverlayCapsule(
     state: AgentOverlayState,
@@ -102,6 +111,8 @@ internal fun AgentOverlayCapsule(
     onSupplement: (String) -> Unit,
     /** 点列表里的某条运行中会话 → 跳回该会话。 */
     onOpenConversation: (String) -> Unit,
+    /** 长按胶囊、或点面板底部的「回到 Eta 主页」按钮 → 打开 Eta 主界面。 */
+    onOpenHome: () -> Unit = {},
     /** 收起态拖动：把手指位移交给窗口层，实现自由拖动。 */
     onDragBy: (Float, Float) -> Unit = { _, _ -> },
     /** 松手：吸附到更近的一侧边缘。 */
@@ -124,6 +135,9 @@ internal fun AgentOverlayCapsule(
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    // 长按回主页的时间戳：长按抬手紧接着的那次 onClick 要吃掉，免得回家后胶囊又被展开。
+    var lastLongPressAt by remember { mutableLongStateOf(0L) }
 
     fun setSupplementMode(enabled: Boolean) {
         onSupplementModeChange(enabled)
@@ -247,10 +261,12 @@ internal fun AgentOverlayCapsule(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(
+                        .combinedClickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = {
+                                // 长按刚触发过：这次抬手不当作点击，免得回家后又被展开一次。
+                                if (System.currentTimeMillis() - lastLongPressAt < 700L) return@combinedClickable
                                 // 展开态且有没看过的结果：点一下直接跳回那条会话。
                                 val target = if (expanded && state.finishedBadge > 0) {
                                     unreadSessions.firstOrNull()?.conversationId
@@ -266,6 +282,30 @@ internal fun AgentOverlayCapsule(
                             },
                         )
                         .semantics { contentDescription = expandDescription }
+                        // 长按回主页：单独一条手势检测，只认「原地按满长按时长」。
+                        // 手指提前抬起、或被拖动抢走手势（change 被消费）都不算长按。
+                        .pointerInput(expanded) {
+                            if (expanded) return@pointerInput
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                val finishedEarly = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                    var consumed = false
+                                    var pressed = true
+                                    while (pressed && !consumed) {
+                                        val event = awaitPointerEvent()
+                                        consumed = event.changes.any { it.isConsumed }
+                                        pressed = event.changes.any { it.pressed }
+                                    }
+                                    consumed
+                                }
+                                android.util.Log.i("EtaOverlay", "capsule longPress finishedEarly=" + finishedEarly)
+                                if (finishedEarly == null) {
+                                    lastLongPressAt = System.currentTimeMillis()
+                                    onOpenHome()
+                                    waitForUpOrCancellation()
+                                }
+                            }
+                        }
                         .pointerInput(expanded) {
                             // 只有收起态能拖：展开态是要点会话的，别被拖动抢走手势。
                             if (expanded) return@pointerInput
@@ -408,6 +448,17 @@ internal fun AgentOverlayCapsule(
                                     label = stringResource(R.string.action_stop),
                                     tint = MiuixTheme.colorScheme.error,
                                     onClick = onStop,
+                                )
+                                // 常驻「回主页」按钮：和上面三个按钮同一行，任何状态下都在。
+                                CapsuleAction(
+                                    icon = Icons.Rounded.Home,
+                                    label = "回到 Eta 主页",
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                    onClick = {
+                                        android.util.Log.i("EtaOverlay", "panel home button tapped")
+                                        onCollapseRequest()
+                                        onOpenHome()
+                                    },
                                 )
                             }
                         }

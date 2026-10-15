@@ -197,6 +197,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     /** 从悬浮胶囊跳回某个会话：复用 MainActivity 已有的“打开指定会话”入口。 */
+    /** 回到 Eta 主界面：不带会话参数，等同于点应用图标。 */
+    private fun openHome() {
+        capsuleExpanded.value = false
+        val result = runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+        }
+        android.util.Log.i("EtaOverlay", "openHome err=" + result.exceptionOrNull())
+    }
+
     private fun openConversation(conversationId: String) {
         noteRecentOpened(conversationId)
         markConversationRead(conversationId)
@@ -1311,6 +1323,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     )
                 },
                 onOpenConversation = ::openConversation,
+                onOpenHome = ::openHome,
                 onDragBy = ::moveCapsuleBy,
                 onDragFinished = ::snapCapsuleToEdge,
                 onCollapseRequest = ::collapseCapsule,
