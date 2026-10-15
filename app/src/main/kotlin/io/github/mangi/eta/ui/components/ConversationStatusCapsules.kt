@@ -54,7 +54,7 @@ internal fun ConversationStatusCapsules(
     val speedText = speed?.let {
         NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }.format(it)
     } ?: "—"
-    Row(Modifier.widthIn(max = 420.dp).padding(horizontal = 4.dp),
+    Row(Modifier.widthIn(max = 420.dp).padding(start = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         StatusCapsule(contextText, Modifier.weight(1f, fill = false), contextDescription)
         MemoryUsageCapsule()

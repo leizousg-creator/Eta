@@ -248,6 +248,9 @@ private fun AgentTopBar(
             scrollBehavior = scrollBehavior,
             navigationIcon = navigationIcon,
             actions = actions,
+            // miuix 的 actions 行本身是 Arrangement.End（靠右），右边原来有 16dp 默认留白，
+            // 收到 6dp：胶囊组、＋、⋯ 一起往右贴，行尾也不空。
+            actionIconPadding = 6.dp,
         )
     } else {
         AdaptiveTopAppBar(
