@@ -23,6 +23,7 @@ import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.display.VirtualScreenViewerActivity
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.model.Settings
+import io.github.mangi.eta.data.model.VirtualScreenFrameRate
 import io.github.mangi.eta.data.model.VirtualScreenIdleTimeout
 import io.github.mangi.eta.ui.app.rememberExecutionNotificationRequest
 import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
@@ -47,8 +48,12 @@ internal fun VirtualScreenSettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val requestNotifications = rememberExecutionNotificationRequest()
     var timeoutDraft by remember { mutableFloatStateOf(1f) }
+    var frameDraft by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(settings.virtualScreenIdleTimeoutMinutes) {
         timeoutDraft = VirtualScreenIdleTimeout.options.indexOf(settings.virtualScreenIdleTimeoutMinutes).coerceAtLeast(0).toFloat()
+    }
+    LaunchedEffect(settings.virtualScreenFrameRate) {
+        frameDraft = VirtualScreenFrameRate.options.indexOf(VirtualScreenFrameRate.normalize(settings.virtualScreenFrameRate)).coerceAtLeast(0).toFloat()
     }
     MiuixScaffoldPage(title = stringResource(R.string.virtual_screen_title), onBack = onBack) {
         item {
@@ -135,6 +140,39 @@ internal fun VirtualScreenSettingsScreen(onBack: () -> Unit) {
                                 VirtualScreenIdleTimeout.options.forEach { minutes ->
                                     Text(stringResource(if (minutes == 0) R.string.virtual_screen_idle_never else R.string.virtual_screen_idle_minutes, minutes),
                                         modifier = Modifier.weight(1f), textAlign = TextAlign.Center,
+                                        style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                                }
+                            }
+                        }
+                    },
+                    onClick = {},
+                )
+                EtaPreferenceDivider(hasLeading = false)
+                EtaArrowPreference(
+                    title = stringResource(R.string.virtual_screen_frame_rate),
+                    summary = stringResource(R.string.virtual_screen_frame_rate_summary),
+                    endActions = {
+                        val fps = VirtualScreenFrameRate.options[frameDraft.roundToInt().coerceIn(0, 2)]
+                        Text("$fps fps", style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                    },
+                    bottomAction = {
+                        Column {
+                            Slider(value = frameDraft, onValueChange = { frameDraft = it },
+                                valueRange = 0f..2f, modifier = Modifier.fillMaxWidth(),
+                                showKeyPoints = true, keyPoints = listOf(0f, 1f, 2f),
+                                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                onValueChangeFinished = {
+                                    frameDraft = frameDraft.roundToInt().coerceIn(0, 2).toFloat()
+                                    val fps = VirtualScreenFrameRate.options[frameDraft.toInt()]
+                                    scope.launch(Dispatchers.IO) {
+                                        SettingsDataStore.updateSettings { it.copy(virtualScreenFrameRate = fps) }
+                                        // 会话已在运行时就地改出帧节奏，不用重建 display。
+                                        VirtualScreenSession.updateIdleTimeout()
+                                    }
+                                })
+                            Row(Modifier.fillMaxWidth()) {
+                                VirtualScreenFrameRate.options.forEach { fps ->
+                                    Text("$fps fps", modifier = Modifier.weight(1f), textAlign = TextAlign.Center,
                                         style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                                 }
                             }

@@ -46,6 +46,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,6 +62,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
+import io.github.mangi.eta.core.DiagnosticsBundle
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
@@ -151,6 +154,55 @@ private fun SettingsPageContent(
     val appVersionSummary = "${appPackageInfo.versionName} (${appPackageInfo.longVersionCode})"
     val openUrl: (String) -> Unit = { url ->
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+    // 诊断包：先后台只读采集，再交给系统文件选择器落盘；字节只在内存里留到保存完成。
+    var diagnosticsPending by remember { mutableStateOf(false) }
+    var diagnosticsPayload by remember { mutableStateOf<ByteArray?>(null) }
+    val diagnosticsSaver = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        val payload = diagnosticsPayload
+        diagnosticsPayload = null
+        if (uri == null || payload == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val saved = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(payload)
+                    } ?: error("诊断包输出流不可用")
+                }
+            }.isSuccess
+            Toast.makeText(
+                context.applicationContext,
+                if (saved) {
+                    context.getString(R.string.ui_about_diagnostics_saved, DiagnosticsBundle.defaultFileName())
+                } else {
+                    context.getString(R.string.ui_about_diagnostics_failed)
+                },
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+    val exportDiagnostics: () -> Unit = {
+        if (!diagnosticsPending) {
+            diagnosticsPending = true
+            coroutineScope.launch {
+                val bytes = runCatching {
+                    withContext(Dispatchers.IO) { DiagnosticsBundle.collect(context.applicationContext) }
+                }.getOrNull()
+                diagnosticsPending = false
+                if (bytes == null) {
+                    Toast.makeText(
+                        context.applicationContext,
+                        context.getString(R.string.ui_about_diagnostics_failed),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else {
+                    diagnosticsPayload = bytes
+                    diagnosticsSaver.launch(DiagnosticsBundle.defaultFileName())
+                }
+            }
+        }
     }
     var checkingUpdate by remember { mutableStateOf(false) }
     var availableUpdate by remember { mutableStateOf<AppLatestRelease?>(null) }
@@ -534,98 +586,6 @@ private fun SettingsPageContent(
                 }
             }
 
-            if (prefs != null || hasConnectedFramework || capabilities.root.isGranted || hasUsedSystemizer) {
-                // ── Gemini ─────────────────────────────────────────────────
-                item(key = "section_gemini") {
-                    EtaPreferenceGroupTitle("Gemini")
-                    EtaPreferenceGroup {
-                        if (prefs != null || hasConnectedFramework) {
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_maintain_hey_google_detection_after_screen_rest_9d6877),
-                                key = Prefs.Keys.HOTWORD_SELF_HEAL,
-                                icon = Icons.Rounded.Hearing,
-                                iconTint = EtaPreferenceColors.Green,
-                            )
-
-                            EtaPreferenceDivider()
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_lock_screen_evokes_automatic_voice_input_1cde18),
-                                key = Prefs.Keys.LOCKSCREEN_VOICE_COMMAND,
-                                icon = Icons.Rounded.Lock,
-                                iconTint = EtaPreferenceColors.Blue,
-                            )
-
-                            EtaPreferenceDivider()
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_bright_screen_evokes_automatic_voice_input_4358fe),
-                                key = Prefs.Keys.SCREEN_ON_VOICE_COMMAND,
-                                icon = Icons.Rounded.SettingsVoice,
-                                iconTint = EtaPreferenceColors.Green,
-                            )
-
-                        }
-                        if (capabilities.root.isGranted || hasUsedSystemizer) {
-                            if (prefs != null || hasConnectedFramework) {
-                                EtaPreferenceDivider()
-                            }
-                            EtaArrowPreference(
-                                title = stringResource(R.string.ui_convert_google_apps_to_system_apps_0f6d89),
-                                startAction = {
-                                    EtaPreferenceIcon(
-                                        icon = Icons.Rounded.Inventory,
-                                        tint = EtaPreferenceColors.Orange,
-                                        enabled = !installingSystemizer,
-                                    )
-                                },
-                                summary = if (capabilities.root.isGranted) null else stringResource(R.string.capability_root_required),
-                                enabled = !installingSystemizer,
-                                holdDownState = showSystemizerDialog,
-                                onClick = {
-                                    if (!capabilities.root.isGranted) {
-                                        onNavigate(AppRoute.SystemEnhance)
-                                    } else if (!installingSystemizer) {
-                                        showSystemizerDialog = true
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (prefs != null || hasConnectedFramework) {
-                // ── 一圈即搜 ────────────────────────────────────────────────
-                item(key = "section_circle_to_search") {
-                    EtaPreferenceGroupTitle(stringResource(R.string.ui_search_in_one_turn_179584))
-                    EtaPreferenceGroup {
-                        SwitchPref(
-                            context = context,
-                            prefs = prefs,
-                            title = stringResource(R.string.ui_long_press_on_the_gesture_bar_triggers_a_circle_to_s_b80117),
-                            key = Prefs.Keys.GESTURE_BAR_CIRCLE_TO_SEARCH,
-                            icon = Icons.Rounded.SwipeUp,
-                            iconTint = EtaPreferenceColors.Blue,
-                        )
-
-                        EtaPreferenceDivider()
-                        SwitchPref(
-                            context = context,
-                            prefs = prefs,
-                            title = stringResource(R.string.ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
-                            key = Prefs.Keys.DOUBLE_FINGER_CIRCLE_TO_SEARCH,
-                            icon = Icons.Rounded.TouchApp,
-                            iconTint = EtaPreferenceColors.Blue,
-                        )
-                    }
-                }
-            }
-
             // ── 通用 ────────────────────────────────────────────────────
             item(key = "section_general") {
                 EtaPreferenceGroupTitle(stringResource(R.string.settings_general))
@@ -837,6 +797,23 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { openUrl("https://github.com/Mangi-11/Eta") },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.ui_about_diagnostics_title),
+                        summary = stringResource(
+                            if (diagnosticsPending) R.string.ui_about_diagnostics_collecting
+                            else R.string.ui_about_diagnostics_summary,
+                        ),
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.BugReport,
+                                tint = EtaPreferenceColors.Orange,
+                            )
+                        },
+                        enabled = !diagnosticsPending,
+                        onClick = exportDiagnostics,
                     )
                 }
             }

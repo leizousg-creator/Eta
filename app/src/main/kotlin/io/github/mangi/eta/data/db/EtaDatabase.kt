@@ -11,6 +11,7 @@ import androidx.room.migration.Migration
     entities = [
         AgentTextChunkEntity::class,
         ConversationEntity::class,
+        ConversationCategoryEntity::class,
         ConversationContextCheckpointEntity::class,
         ConversationMessageEntity::class,
         ConversationStateEntity::class,
@@ -28,7 +29,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 25,
+    version = 27,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -71,6 +72,8 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_22_23,
                         MIGRATION_23_24,
                         MIGRATION_24_25,
+                        MIGRATION_25_26,
+                        MIGRATION_26_27,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -98,6 +101,17 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 found
             }
             if (!hasModelId) database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
+        }
+
+        /** 26：会话收藏置顶。新列默认 0，旧库升级后全部为非置顶。 */
+        internal val MIGRATION_25_26 = Migration(25, 26) { database ->
+            database.execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        }
+
+        /** 27：会话分类。新增分类表与会话归属列，旧会话全部留在未分类。 */
+        internal val MIGRATION_26_27 = Migration(26, 27) { database ->
+            database.execSQL("CREATE TABLE IF NOT EXISTS conversation_categories (id TEXT NOT NULL, name TEXT NOT NULL, sort_order INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(id))")
+            database.execSQL("ALTER TABLE conversations ADD COLUMN category_id TEXT")
         }
 
         internal val MIGRATION_23_24 = Migration(23, 24) { database ->

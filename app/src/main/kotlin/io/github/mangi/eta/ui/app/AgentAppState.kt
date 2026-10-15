@@ -39,6 +39,7 @@ import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.data.db.ConversationCategoryEntity
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -97,6 +98,12 @@ internal class AgentAppState(
     private val runEventFlushJobs = mutableMapOf<String, Job>()
     private var currentRunId: String? = null
     private var currentRunJob: Job? = null
+    /** 最近一次请求被裁掉的轮次/条数：只用于顶栏提示，界面与数据库都不删。 */
+    var historyTrimNotice by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
+    /** 最近一次因上下文超限自动降低工具档：只用于顶栏提示。 */
+    var overflowDowngradeNotice by mutableStateOf<String?>(null)
+        private set
     private val persistenceLock = Any()
     private var persistenceJob: Job? = null
     // 导入期间暂停保存：旧状态的增量保存会删除刚导入的会话；导入成功后整体重载，失败时数据库已回滚。
@@ -115,6 +122,15 @@ internal class AgentAppState(
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
     private var conversationTitles: Map<String, String> = initialConversations.titles
     private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
+    private var conversationPinned: Map<String, Boolean> = initialConversations.pinned
+
+    /** 用户自建的会话分类；数据库为唯一真源。 */
+    var conversationCategories by mutableStateOf(initialConversations.categories)
+        private set
+
+    /** 会话归属分类（id → categoryId）。 */
+    var conversationCategoryIds by mutableStateOf(initialConversations.categoryIds)
+        private set
 
     var homeState by mutableStateOf(
         selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultThinkingEnabled)
@@ -277,6 +293,9 @@ internal class AgentAppState(
             conversationsById = snapshot.conversationsById
             conversationTitles = snapshot.titles
             conversationUpdatedAt = snapshot.updatedAt
+            conversationPinned = snapshot.pinned
+            conversationCategories = snapshot.categories
+            conversationCategoryIds = snapshot.categoryIds
             conversationPersistence = AgentConversationPersistence(snapshot)
             fileAttachmentOwnerVersion += 1
             homeState = selectedConversationId
@@ -754,6 +773,7 @@ internal class AgentAppState(
         conversationsById = conversationsById - conversationId
         conversationTitles = conversationTitles - conversationId
         conversationUpdatedAt = conversationUpdatedAt - conversationId
+        conversationPinned = conversationPinned - conversationId
         if (wasSelected) {
             fileAttachmentOwnerVersion += 1
             val nextId = conversationsById.keys.firstOrNull()
@@ -778,6 +798,102 @@ internal class AgentAppState(
         conversationUpdatedAt = conversationUpdatedAt + (conversationId to System.currentTimeMillis())
         refreshConversationSummaries()
         persistConversations()
+    }
+
+    /** 收藏置顶：最多同时置顶 MAX_PINNED_CONVERSATIONS 条；置顶会话排到列表最前；直写数据库单列，不触发整段会话保存。
+     *  返回 false 表示已达上限、本次未写入。 */
+    fun setConversationPinned(conversationId: String, pinned: Boolean): Boolean {
+        if (conversationPinned[conversationId] == pinned) return true
+        if (pinned && conversationPinned.count { it.key != conversationId && it.value } >= MAX_PINNED_CONVERSATIONS) {
+            return false
+        }
+        conversationPinned = conversationPinned + (conversationId to pinned)
+        refreshConversationSummaries()
+        scope.launch {
+            runCatching {
+                AgentConversationStore.setPinned(appContext, conversationId, pinned)
+            }.onFailure { error ->
+                AndroidAgentLogger.warn("Conversation pin persist failed: type=${error.safeLogType()}")
+            }
+        }
+        return true
+    }
+
+    /** 新建分类；名字为空或重名时返回 null。 */
+    fun createConversationCategory(name: String): String? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || conversationCategories.any { it.name == trimmed }) return null
+        val category = ConversationCategoryEntity(
+            id = UUID.randomUUID().toString(),
+            name = trimmed,
+            sortOrder = (conversationCategories.maxOfOrNull { it.sortOrder } ?: 0) + 1,
+            createdAt = System.currentTimeMillis(),
+        )
+        conversationCategories = conversationCategories + category
+        refreshConversationSummaries()
+        scope.launch {
+            runCatching { AgentConversationStore.saveCategory(appContext, category) }
+                .onFailure { error -> AndroidAgentLogger.warn("Conversation category create failed: type=${error.safeLogType()}") }
+        }
+        return category.id
+    }
+
+    /** 重命名分类；名字为空、未变化或与其它分类重名时忽略。 */
+    fun renameConversationCategory(categoryId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val target = conversationCategories.firstOrNull { it.id == categoryId } ?: return
+        if (target.name == trimmed || conversationCategories.any { it.id != categoryId && it.name == trimmed }) return
+        val updated = target.copy(name = trimmed)
+        conversationCategories = conversationCategories.map { if (it.id == categoryId) updated else it }
+        refreshConversationSummaries()
+        scope.launch {
+            runCatching { AgentConversationStore.saveCategory(appContext, updated) }
+                .onFailure { error -> AndroidAgentLogger.warn("Conversation category rename failed: type=${error.safeLogType()}") }
+        }
+    }
+
+    /** 会话归属分类；categoryId 为 null 表示移回未分类。 */
+    fun setConversationCategory(conversationId: String, categoryId: String?) {
+        val normalized = categoryId?.takeIf { candidate -> conversationCategories.any { it.id == candidate } }
+        if (conversationCategoryIds[conversationId] == normalized) return
+        conversationCategoryIds = if (normalized == null) {
+            conversationCategoryIds - conversationId
+        } else {
+            conversationCategoryIds + (conversationId to normalized)
+        }
+        refreshConversationSummaries()
+        scope.launch {
+            runCatching { AgentConversationStore.setCategory(appContext, conversationId, normalized) }
+                .onFailure { error -> AndroidAgentLogger.warn("Conversation category assign failed: type=${error.safeLogType()}") }
+        }
+    }
+
+    /** 删除分类：其下会话回到未分类，会话本身保留。 */
+    fun deleteConversationCategory(categoryId: String) {
+        if (conversationCategories.none { it.id == categoryId }) return
+        conversationCategories = conversationCategories.filterNot { it.id == categoryId }
+        conversationCategoryIds = conversationCategoryIds.filterValues { it != categoryId }
+        refreshConversationSummaries()
+        scope.launch {
+            runCatching { AgentConversationStore.removeCategory(appContext, categoryId) }
+                .onFailure { error -> AndroidAgentLogger.warn("Conversation category delete failed: type=${error.safeLogType()}") }
+        }
+    }
+
+    /** 上移或下移分类；delta 为 -1 或 1，越界不动。 */
+    fun moveConversationCategory(categoryId: String, delta: Int) {
+        val ordered = conversationCategories.sortedWith(compareBy({ it.sortOrder }, { it.createdAt })).toMutableList()
+        val index = ordered.indexOfFirst { it.id == categoryId }
+        val target = index + delta
+        if (index < 0 || target < 0 || target >= ordered.size) return
+        ordered.add(target, ordered.removeAt(index))
+        conversationCategories = ordered.mapIndexed { position, category -> category.copy(sortOrder = position) }
+        refreshConversationSummaries()
+        scope.launch {
+            runCatching { conversationCategories.forEach { AgentConversationStore.saveCategory(appContext, it) } }
+                .onFailure { error -> AndroidAgentLogger.warn("Conversation category reorder failed: type=${error.safeLogType()}") }
+        }
     }
 
     fun exportConversationMarkdown(conversationId: String): String? {
@@ -1030,6 +1146,7 @@ internal class AgentAppState(
             conversationsById = conversationsById - conversationId
             conversationTitles = conversationTitles - conversationId
             conversationUpdatedAt = conversationUpdatedAt - conversationId
+            conversationPinned = conversationPinned - conversationId
             fileAttachmentOwnerVersion += 1
             selectedConversationId = null
             homeState = emptyChatState(defaultThinkingEnabled)
@@ -1554,6 +1671,16 @@ internal class AgentAppState(
             }
             return
         }
+        // 请求侧裁剪提示：新一轮开始清空，本次确实裁了才显示。
+        when (event) {
+            is AgentEvent.RunStarted -> {
+                historyTrimNotice = null
+                overflowDowngradeNotice = null
+            }
+            is AgentEvent.HistoryTrimmed -> historyTrimNotice = event.omittedUserRounds to event.omittedMessages
+            is AgentEvent.ContextOverflowDowngrade -> overflowDowngradeNotice = event.profileId
+            else -> Unit
+        }
         when (event) {
             is AgentEvent.UserSupplementReceived ->
                 insertSupplementMessage(runId, event.index, event.text, persist = persistSupplement)
@@ -1774,9 +1901,10 @@ internal class AgentAppState(
 
     private fun refreshConversationSummaries() {
         val summaries = conversationsById.entries
-            .sortedByDescending { (id, _) ->
-                conversationUpdatedAt[id] ?: 0L
-            }
+            .sortedWith(
+                compareByDescending<Map.Entry<String, AgentChatHomeUiState>> { conversationPinned[it.key] == true }
+                    .thenByDescending { conversationUpdatedAt[it.key] ?: 0L },
+            )
             .map { (id, state) ->
                 val lastMessage = state.messages.lastOrNull()
                 ConversationSummaryUi(
@@ -1820,12 +1948,16 @@ internal class AgentAppState(
                     updatedAtMillis = conversationUpdatedAt[id] ?: 0L,
                     mode = ConversationModeUi.Chat,
                     characterName = state.roleplay?.characterName,
+                    isPinned = conversationPinned[id] == true,
+                    categoryId = conversationCategoryIds[id],
+                    categoryName = conversationCategoryIds[id]?.let { cid -> conversationCategories.firstOrNull { it.id == cid }?.name },
                     isActiveRun = state.isStreaming,
                 )
             }
         val query = conversationPaneState.searchQuery.trim()
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = selectedConversationId,
+            categories = conversationCategories.sortedWith(compareBy({ it.sortOrder }, { it.createdAt })).map { it.id to it.name },
             conversations = if (query.isBlank()) {
                 summaries
             } else {
@@ -1883,6 +2015,7 @@ internal class AgentAppState(
     }
 
     private companion object {
+        const val MAX_PINNED_CONVERSATIONS = 3
         const val MAX_TITLE_CHARS = 24
         const val MAX_PREVIEW_CHARS = 48
         const val LEGACY_STOPPED_ERROR = "已停止"

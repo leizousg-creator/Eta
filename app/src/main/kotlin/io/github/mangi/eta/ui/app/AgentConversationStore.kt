@@ -6,6 +6,7 @@ import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
+import io.github.mangi.eta.data.db.ConversationCategoryEntity
 import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
 import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMetadata
@@ -48,6 +49,12 @@ internal object AgentConversationStore {
         val conversationsById: Map<String, AgentChatHomeUiState>,
         val titles: Map<String, String>,
         val updatedAt: Map<String, Long>,
+        /** 会话收藏置顶状态（id → pinned）。数据库为唯一真源，仅从加载路径填充。 */
+        val pinned: Map<String, Boolean> = emptyMap(),
+        /** 用户自建的会话分类；数据库为唯一真源，仅从加载路径填充。 */
+        val categories: List<ConversationCategoryEntity> = emptyList(),
+        /** 会话归属分类（id → categoryId）；未归属的会话不在表内。 */
+        val categoryIds: Map<String, String> = emptyMap(),
         /**
          * 列表下标与 sort_index 不一致，或加载时修复过外部历史的会话。流式占位会留下空洞，
          * 重启后列表被压紧；增量保存按下标截断后缀，这些会话必须先整段重写一次。
@@ -71,6 +78,41 @@ internal object AgentConversationStore {
     ) = AgentConversationPersistence().save(
         context, Snapshot(selectedConversationId, conversationsById, titles, updatedAt),
     )
+
+    /** 收藏置顶写入：直写数据库单列，独立事务，与整段会话保存互不覆盖。 */
+    suspend fun setPinned(context: Context, conversationId: String, pinned: Boolean) {
+        withContext(Dispatchers.IO) {
+            EtaDatabase.get(context.applicationContext).conversationDao()
+                .setConversationPinned(conversationId, pinned)
+        }
+    }
+
+    /** 会话分类归属：直写数据库单列，独立事务，与整段会话保存互不覆盖。 */
+    suspend fun setCategory(context: Context, conversationId: String, categoryId: String?) {
+        withContext(Dispatchers.IO) {
+            EtaDatabase.get(context.applicationContext).conversationDao()
+                .setConversationCategory(conversationId, categoryId)
+        }
+    }
+
+    /** 新建或重命名分类。 */
+    suspend fun saveCategory(context: Context, category: ConversationCategoryEntity) {
+        withContext(Dispatchers.IO) {
+            EtaDatabase.get(context.applicationContext).conversationDao().upsertCategory(category)
+        }
+    }
+
+    /** 删除分类并解散其下会话归属，会话本身保留。 */
+    suspend fun removeCategory(context: Context, categoryId: String) {
+        withContext(Dispatchers.IO) {
+            val database = EtaDatabase.get(context.applicationContext)
+            database.withTransaction {
+                val dao = database.conversationDao()
+                dao.clearCategoryAssignments(categoryId)
+                dao.deleteCategory(categoryId)
+            }
+        }
+    }
 
     internal suspend fun saveChanges(
         context: Context,
@@ -104,6 +146,8 @@ internal object AgentConversationStore {
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     modelId = state.modelId,
+                                    pinned = stored[id]?.pinned ?: false,
+                                    categoryId = stored[id]?.categoryId,
                                 )
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
@@ -173,6 +217,8 @@ internal object AgentConversationStore {
         val states = linkedMapOf<String, AgentChatHomeUiState>()
         val titles = mutableMapOf<String, String>()
         val updatedAt = mutableMapOf<String, Long>()
+        val pinned = mutableMapOf<String, Boolean>()
+        val categoryIds = mutableMapOf<String, String>()
         val unaligned = mutableSetOf<String>()
 
         conversations.forEach { conversation ->
@@ -220,6 +266,8 @@ internal object AgentConversationStore {
                 .let(RoleplayConversationReducer::decorate)
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
+            if (conversation.pinned) pinned[conversation.id] = true
+            conversation.categoryId?.let { cid -> categoryIds[conversation.id] = cid }
         }
 
         val selected = dao.state()?.selectedConversationId
@@ -231,6 +279,9 @@ internal object AgentConversationStore {
             conversationsById = states,
             titles = titles,
             updatedAt = updatedAt,
+            pinned = pinned,
+            categories = dao.categories(),
+            categoryIds = categoryIds,
             unalignedConversationIds = unaligned,
         )
     }

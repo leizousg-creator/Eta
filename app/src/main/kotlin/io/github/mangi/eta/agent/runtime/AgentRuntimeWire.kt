@@ -655,6 +655,17 @@ internal object AgentRuntimeWire {
                 putInt("message_count", event.messageCount)
             }
 
+            is AgentEvent.HistoryTrimmed -> {
+                putString(KEY_TYPE, "history_trimmed")
+                putInt("omitted_messages", event.omittedMessages)
+                putInt("omitted_rounds", event.omittedUserRounds)
+            }
+
+            is AgentEvent.ContextOverflowDowngrade -> {
+                putString(KEY_TYPE, "context_overflow_downgrade")
+                putString("profile_id", event.profileId)
+            }
+
             is AgentEvent.ContextCompaction -> {
                 putString(KEY_TYPE, "context_compaction")
                 putString("operation_id", event.operationId)
@@ -791,6 +802,15 @@ internal object AgentRuntimeWire {
 
     /** 将 [Bundle] 还原为 [AgentEvent]，无法识别时返回 null。 */
     fun eventFromBundle(bundle: Bundle): AgentEvent? = when (bundle.getString(KEY_TYPE)) {
+        "history_trimmed" -> AgentEvent.HistoryTrimmed(
+            omittedMessages = bundle.getInt("omitted_messages"),
+            omittedUserRounds = bundle.getInt("omitted_rounds"),
+        )
+
+        "context_overflow_downgrade" -> AgentEvent.ContextOverflowDowngrade(
+            profileId = bundle.getString("profile_id").orEmpty(),
+        )
+
         "run_started" -> AgentEvent.RunStarted(
             initialImages = bundle.getInt("initial_images"),
             initialImageBytes = bundle.getInt("initial_image_bytes"),

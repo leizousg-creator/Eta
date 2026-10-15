@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.SpeechCredentials
 import io.github.mangi.eta.data.model.SpeechSettings
+import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import java.io.Closeable
 import kotlinx.coroutines.CancellationException
@@ -21,7 +22,16 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-internal data class SpeechPlaybackState(val messageId: String? = null, val loading: Boolean = false, val error: String? = null)
+internal data class SpeechPlaybackState(
+    val messageId: String? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
+    /** 正在朗读片段在原文中的位置；null 表示这一段没能定位回原文。 */
+    val highlight: IntRange? = null,
+    /** 已开始朗读的片段序号（从 1 开始）与总片段数。 */
+    val spokenChunks: Int = 0,
+    val totalChunks: Int = 0,
+)
 
 internal class SpeechPlaybackController(
     private val context: Context,
@@ -52,12 +62,43 @@ internal class SpeechPlaybackController(
                 val readable = withContext(Dispatchers.Default) { SpeechText.readable(text) }
                 if (readable.isBlank()) throw SpeechFailure(SpeechErrorCode.NO_SPEECH, "这条消息没有可朗读的正文")
                 if (readable.length > 30_000) throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "正文过长，请选择较短的回答朗读")
+                val chunks = SpeechText.chunks(readable)
+                // 片段定位失败时只丢高亮，不影响朗读本身。
+                val ranges = withContext(Dispatchers.Default) { SpeechSegmentLocator.locate(text, chunks) }
+                fun announce(index: Int) {
+                    if (index !in chunks.indices) return
+                    scope.launch(Dispatchers.Main.immediate) {
+                        if (session != generation) return@launch
+                        mutableState.value = SpeechPlaybackState(
+                            messageId = messageId,
+                            highlight = ranges.getOrNull(index),
+                            spokenChunks = index + 1,
+                            totalChunks = chunks.size,
+                        )
+                    }
+                }
+                if (config.tts == TtsProvider.SYSTEM) {
+                    lease?.requestPlaybackFocus { beforePlayback(); playbackActive = true }
+                    // 系统语音没有分段进度回调：逐段朗读，读到哪一段亮哪一段。
+                    chunks.forEachIndexed { index, chunk ->
+                        announce(index)
+                        SystemTtsSpeaker.speak(context, chunk, config.speechRate, config.speechPitch)
+                    }
+                    if (session == generation) stop()
+                    return@launch
+                }
                 lease?.requestPlaybackFocus { beforePlayback(); playbackActive = true }
                 val player = createOutput()
                 output = player
-                playChunks(config, secrets, SpeechText.chunks(readable), player) {
+                playChunks(config, secrets, chunks, player, onChunk = { index -> announce(index) }) {
                     scope.launch(Dispatchers.Main.immediate) {
-                        if (session == generation) mutableState.value = SpeechPlaybackState(messageId)
+                        if (session == generation) {
+                            mutableState.value = SpeechPlaybackState(
+                                messageId,
+                                spokenChunks = chunks.size,
+                                totalChunks = chunks.size,
+                            )
+                        }
                     }
                 }
                 player.finish()
@@ -88,16 +129,19 @@ internal class SpeechPlaybackController(
         secrets: SpeechCredentials,
         chunks: List<String>,
         player: SpeechAudioOutput,
+        onChunk: (Int) -> Unit,
         onFirstAudio: () -> Unit,
     ) = coroutineScope {
         val queue = Channel<SpeechQueueItem>(Channel.UNLIMITED)
         val ahead = Semaphore(PREFETCH_CHUNKS)
         launch {
             try {
-                for (chunk in chunks) {
+                chunks.forEachIndexed { index, chunk ->
                     ahead.acquire()
+                    // 合成端先亮起这一段：播放还在预取时，界面已经指到当前朗读位置。
+                    onChunk(index)
                     synthesize(config, secrets, chunk) { bytes -> queue.trySend(SpeechQueueItem.Audio(bytes)) }
-                    queue.send(SpeechQueueItem.ChunkEnd)
+                    queue.send(SpeechQueueItem.ChunkEnd(index))
                 }
                 queue.close()
             } catch (error: Throwable) {
@@ -117,9 +161,11 @@ internal class SpeechPlaybackController(
                     if (!announced) { announced = true; onFirstAudio() }
                     play(fade.write(item.bytes))
                 }
-                SpeechQueueItem.ChunkEnd -> {
+                is SpeechQueueItem.ChunkEnd -> {
                     play(fade.end())
                     ahead.release()
+                    // 本段读完，高亮交给下一段；最后一段越界时保持不动，直到朗读结束。
+                    onChunk(item.index + 1)
                 }
             }
         }
@@ -138,7 +184,7 @@ internal class SpeechPlaybackController(
 
 private sealed interface SpeechQueueItem {
     class Audio(val bytes: ByteArray) : SpeechQueueItem
-    data object ChunkEnd : SpeechQueueItem
+    data class ChunkEnd(val index: Int) : SpeechQueueItem
 }
 
 private const val PREFETCH_CHUNKS = 2

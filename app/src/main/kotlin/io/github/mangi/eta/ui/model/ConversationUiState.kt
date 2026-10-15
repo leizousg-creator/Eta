@@ -7,6 +7,7 @@ data class ConversationPaneUiState(
     val conversations: List<ConversationSummaryUi>,
     val selectedConversationId: String?,
     val searchQuery: String,
+    val categories: List<Pair<String, String>> = emptyList(),
 )
 
 @Immutable
@@ -20,6 +21,9 @@ data class ConversationSummaryUi(
     val isPinned: Boolean = false,
     val isActiveRun: Boolean = false,
     val characterName: String? = null,
+    /** 所属会话分类；null 表示未分类。 */
+    val categoryId: String? = null,
+    val categoryName: String? = null,
 )
 
 @Immutable

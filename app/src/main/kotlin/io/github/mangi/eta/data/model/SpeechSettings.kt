@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 enum class AsrProvider { SYSTEM, QWEN_REALTIME, QWEN_FLASH, QWEN_FILE, DOUBAO }
 
 @Serializable
-enum class TtsProvider { NONE, QWEN, DOUBAO }
+enum class TtsProvider { NONE, SYSTEM, QWEN, DOUBAO }
 
 @Serializable
 enum class SpeechRegion { BEIJING, SINGAPORE }
@@ -41,7 +41,7 @@ data class SpeechOssConfig(
 @Serializable
 data class SpeechSettings(
     val asr: AsrProvider = AsrProvider.SYSTEM,
-    val tts: TtsProvider = TtsProvider.NONE,
+    val tts: TtsProvider = TtsProvider.SYSTEM,
     val autoSpeak: Boolean = false,
     val language: String = "",
     val qwenAsr: QwenSpeechConfig = QwenSpeechConfig(),
@@ -55,10 +55,18 @@ data class SpeechSettings(
     val autoSendSilenceMs: Int = DEFAULT_AUTO_SEND_SILENCE_MS,
     /** 识别结果交付前使用当前对话模型保守纠错。 */
     val refineTranscript: Boolean = false,
+    /** 语速倍率，1.0 为正常。云端服务商暂不支持，只有手机自带语音会用到。 */
+    val speechRate: Float = 1.0f,
+    /** 音调倍率，1.0 为正常。同上，只有手机自带语音会用到。 */
+    val speechPitch: Float = 1.0f,
+    /** 熄屏后继续朗读，而不是被系统息屏打断。 */
+    val speakOnScreenOff: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_AUTO_SEND_SILENCE_MS = 2_000
         val AUTO_SEND_SILENCE_OPTIONS = listOf(1_000, 1_500, 2_000, 3_000, 0)
+        /** 语速与音调取值；与系统语音引擎的实际可用范围对齐。 */
+        val SPEECH_TONE_OPTIONS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
     }
 }
 

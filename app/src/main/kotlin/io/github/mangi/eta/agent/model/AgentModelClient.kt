@@ -109,6 +109,8 @@ internal object AgentModelClient {
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
+        // 上下文超限时自动降一档：只影响本次运行，不写用户设置。
+        var activeProfileOverride: LocalToolProfile? = null
         val initialCapabilities = capabilitiesProvider()
         val messages = AgentPromptBuilder.buildInitialMessages(
             config,
@@ -140,6 +142,9 @@ internal object AgentModelClient {
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities): JSONArray {
             if (rewriteReply) return JSONArray()
+            val activeProfile = activeProfileOverride ?: LocalToolProfileStore.current(config.providerId, config.model)
+            // 纯聊天档不声明任何工具，请求里也不会带 tools 字段。
+            if (activeProfile == LocalToolProfile.CHAT) return JSONArray()
             val tools = AgentToolCatalog.build(
                 terminalTools = config.terminalTools,
                 browserTools = config.browserTools,
@@ -152,6 +157,7 @@ internal object AgentModelClient {
                 memoryWritable = roleplayContext == null,
                 capabilities = capabilities,
                 localWebSearch = !config.usesHostedWebSearch,
+                localProfile = activeProfile,
             )
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
@@ -164,6 +170,17 @@ internal object AgentModelClient {
             }
         }
         val tools = toolsFor(initialCapabilities)
+        // 只在请求侧丢最老轮次：数据库与界面一条不删；系统提示、记忆与当前输入永不裁。
+        val trimOutcome = if (rewriteReply || compactOnly) AgentHistoryTrimmer.Outcome() else
+            AgentHistoryTrimmer.trimInPlace(
+                messages = messages,
+                systemCount = systemCount,
+                contextWindow = config.knownContextWindow,
+                reservedTokens = AgentHistoryTrimmer.estimateTokens(tools.toString()),
+            )
+        if (trimOutcome.omittedMessages > 0) {
+            onEvent(AgentEvent.HistoryTrimmed(trimOutcome.omittedMessages, trimOutcome.omittedUserRounds))
+        }
         onEvent(
             AgentEvent.RunStarted(
                 initialImages = images.size,
@@ -195,6 +212,23 @@ internal object AgentModelClient {
             traceFormatter = traceFormatter,
             onEvent = onEvent,
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
+            onContextOverflow = if (rewriteReply) {
+                null
+            } else {
+                val callback: () -> LocalToolProfile? = {
+                    val current = activeProfileOverride
+                        ?: LocalToolProfileStore.current(config.providerId, config.model)
+                    val leaner = current.leaner()
+                    if (leaner == null) {
+                        null
+                    } else {
+                        activeProfileOverride = leaner
+                        onEvent(AgentEvent.ContextOverflowDowngrade(leaner.id))
+                        leaner
+                    }
+                }
+                callback
+            },
             roleplayContext = roleplayContext,
             initialSupplementIndex = initialSupplementIndex,
             toolsForRound = {

@@ -17,34 +17,42 @@ internal object AgentToolCatalog {
         memoryWritable: Boolean = true,
         capabilities: AgentToolCapabilities = AgentToolCapabilities(rootAvailable = true),
         localWebSearch: Boolean = true,
+        localProfile: LocalToolProfile = LocalToolProfile.FULL,
     ): JSONArray =
         capabilities.project(JSONArray().also { tools ->
+            val keepAll = localProfile == LocalToolProfile.LIGHT || localProfile == LocalToolProfile.FULL
+            val minimal = localProfile == LocalToolProfile.MINIMAL
             AgentContextAppToolCatalog.appendTo(tools)
-            AgentGestureToolCatalog.appendTo(tools)
-            AgentTextSystemToolCatalog.appendTo(tools)
-            AgentDeviceToolCatalog.appendTo(
-                tools,
-                directTools = deviceDirectTools,
-                sensitiveReadTools = deviceSensitiveReadTools,
-                sensitiveActionTools = deviceSensitiveActionTools,
-            )
+            if (!minimal) AgentGestureToolCatalog.appendTo(tools)
+            if (!minimal) AgentTextSystemToolCatalog.appendTo(tools)
+            if (keepAll) {
+                AgentDeviceToolCatalog.appendTo(
+                    tools,
+                    directTools = deviceDirectTools,
+                    sensitiveReadTools = deviceSensitiveReadTools,
+                    sensitiveActionTools = deviceSensitiveActionTools,
+                )
+            }
             if (browserTools) {
                 AgentWebToolCatalog.appendTo(tools, includeSearch = localWebSearch)
-                AgentBrowserToolCatalog.appendTo(tools)
+                if (keepAll) AgentBrowserToolCatalog.appendTo(tools)
             }
-            AgentSkillToolCatalog.appendTo(
-                tools,
-                githubDiscovery = skillGitHubDiscovery,
-                githubInstall = skillGitHubInstall,
-                authoring = memoryWritable,
-            )
-            if (memoryTools) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
-            if (memoryWritable) AgentTaskToolCatalog.appendTo(tools)
-            if (deviceDirectTools) AgentVirtualScreenToolCatalog.appendTo(tools)
+            if (keepAll) {
+                AgentSkillToolCatalog.appendTo(
+                    tools,
+                    githubDiscovery = skillGitHubDiscovery,
+                    githubInstall = skillGitHubInstall,
+                    authoring = memoryWritable,
+                )
+            }
+            if (memoryTools && !minimal) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
+            if (memoryWritable && keepAll) AgentTaskToolCatalog.appendTo(tools)
+            if (deviceDirectTools && keepAll) AgentVirtualScreenToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)
                 AgentFileToolCatalog.appendTo(tools)
             }
+            AgentToolSchemaCompactor.compact(tools, localProfile)
         })
 }

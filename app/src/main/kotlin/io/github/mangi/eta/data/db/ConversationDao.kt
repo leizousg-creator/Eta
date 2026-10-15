@@ -11,8 +11,8 @@ import androidx.room.Upsert
 internal interface ConversationDao : ChunkedTextDao {
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, last_model_usage_json, created_at, updated_at, model_id " +
-            "FROM conversations ORDER BY updated_at DESC"
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, last_model_usage_json, created_at, updated_at, model_id, pinned, category_id " +
+            "FROM conversations ORDER BY pinned DESC, updated_at DESC"
     )
     suspend fun conversationMetadataRows(): List<ConversationMetadata>
 
@@ -21,8 +21,8 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, last_model_usage_json, created_at, updated_at, model_id " +
-            "FROM conversations ORDER BY updated_at DESC LIMIT :limit OFFSET :offset"
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, last_model_usage_json, created_at, updated_at, model_id, pinned, category_id " +
+            "FROM conversations ORDER BY pinned DESC, updated_at DESC LIMIT :limit OFFSET :offset"
     )
     suspend fun conversationMetadataPage(limit: Int, offset: Int): List<ConversationMetadata>
 
@@ -169,6 +169,24 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query("DELETE FROM conversations")
     suspend fun deleteConversations()
+
+    @Query("UPDATE conversations SET pinned = :pinned WHERE id = :conversationId")
+    suspend fun setConversationPinned(conversationId: String, pinned: Boolean)
+
+    @Query("SELECT * FROM conversation_categories ORDER BY sort_order ASC, created_at ASC")
+    suspend fun categories(): List<ConversationCategoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCategory(category: ConversationCategoryEntity)
+
+    @Query("DELETE FROM conversation_categories WHERE id = :categoryId")
+    suspend fun deleteCategory(categoryId: String)
+
+    @Query("UPDATE conversations SET category_id = NULL WHERE category_id = :categoryId")
+    suspend fun clearCategoryAssignments(categoryId: String)
+
+    @Query("UPDATE conversations SET category_id = :categoryId WHERE id = :conversationId")
+    suspend fun setConversationCategory(conversationId: String, categoryId: String?)
 
     @Query("DELETE FROM conversations WHERE id = :conversationId")
     suspend fun deleteConversation(conversationId: String)

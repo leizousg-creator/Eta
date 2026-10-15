@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.model.LocalToolProfile
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.AgentModelOptionUi
@@ -26,7 +27,13 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-internal fun ConversationStatusCapsules(messages: List<AgentChatMessageUi>, model: AgentModelOptionUi?, lastUsage: TokenUsageUi?) {
+internal fun ConversationStatusCapsules(
+    messages: List<AgentChatMessageUi>,
+    model: AgentModelOptionUi?,
+    lastUsage: TokenUsageUi?,
+    trimmed: Pair<Int, Int>? = null,
+    downgradedProfileId: String? = null,
+) {
     val usage = latestContextUsage(messages, model).let { it.copy(contextTokens = lastUsage?.contextTokens ?: it.contextTokens) }
     val count = usage.contextTokens?.let { formatCompactTokenCount(it) } ?: "—"
     val limit = usage.contextWindow?.takeIf { it > 0 }?.let { formatCompactTokenCount(it) }
@@ -42,15 +49,30 @@ internal fun ConversationStatusCapsules(messages: List<AgentChatMessageUi>, mode
     val speedText = speed?.let {
         NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }.format(it)
     } ?: "—"
-    Row(Modifier.widthIn(max = 232.dp).padding(horizontal = 4.dp),
+    Row(Modifier.widthIn(max = 420.dp).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         StatusCapsule(contextText, Modifier.weight(1f, fill = false), contextDescription)
         StatusCapsule("$speedText tok/s", Modifier, stringResource(R.string.conversation_speed_description, speedText))
+        VirtualScreenTopBarCapsule()
+        LocalProfileTopBarCapsule(model)
+        trimmed?.let { (rounds, count) ->
+            StatusCapsule(
+                stringResource(R.string.conversation_trimmed_capsule, count), Modifier,
+                stringResource(R.string.conversation_trimmed_description, rounds),
+            )
+        }
+        downgradedProfileId?.let { id ->
+            val label = stringResource(profileLabel(LocalToolProfile.fromId(id)))
+            StatusCapsule(
+                stringResource(R.string.conversation_downgrade_capsule, label), Modifier,
+                stringResource(R.string.conversation_downgrade_description, label),
+            )
+        }
     }
 }
 
 @Composable
-private fun StatusCapsule(text: String, modifier: Modifier, description: String = text) {
+internal fun StatusCapsule(text: String, modifier: Modifier, description: String = text) {
     Text(text,
         modifier = modifier.background(MiuixTheme.colorScheme.surfaceContainer, CircleShape)
             .semantics { contentDescription = description }.padding(horizontal = 8.dp, vertical = 5.dp),

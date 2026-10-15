@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
@@ -57,6 +58,8 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_FALLBACK_ENABLED = booleanPreferencesKey("virtual_screen_fallback_enabled")
     private val VIRTUAL_SCREEN_AUTO_RESTART_APPS = booleanPreferencesKey("virtual_screen_auto_restart_apps")
     private val VIRTUAL_SCREEN_IDLE_TIMEOUT = intPreferencesKey("virtual_screen_idle_timeout_minutes")
+    private val VIRTUAL_SCREEN_FRAME_RATE = intPreferencesKey("virtual_screen_frame_rate")
+    private val VIRTUAL_SCREEN_FAVORITE_APPS = stringSetPreferencesKey("virtual_screen_favorite_apps")
     private val VIRTUAL_SCREEN_FLOAT_WINDOW = booleanPreferencesKey("virtual_screen_float_window")
     private val VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE = booleanPreferencesKey("virtual_screen_float_edge_collapse")
     private val VIRTUAL_SCREEN_FLOAT_WIDTH = intPreferencesKey("virtual_screen_float_width_dp")
@@ -105,6 +108,25 @@ internal object SettingsDataStore {
 
     suspend fun settings(): Settings = settingsFlow().first()
 
+    /** 虚拟屏应用菜单的收藏（按包名保存，跨会话保留）。 */
+    suspend fun favoriteApps(): Set<String> {
+        ensureInitialized()
+        return dataStore.data.first()[VIRTUAL_SCREEN_FAVORITE_APPS] ?: emptySet()
+    }
+
+    fun favoriteAppsFlow(): Flow<Set<String>> {
+        ensureInitialized()
+        return dataStore.data.map { it[VIRTUAL_SCREEN_FAVORITE_APPS] ?: emptySet() }
+    }
+
+    suspend fun setFavoriteApps(packages: Set<String>) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            if (packages.isEmpty()) prefs.remove(VIRTUAL_SCREEN_FAVORITE_APPS)
+            else prefs[VIRTUAL_SCREEN_FAVORITE_APPS] = packages
+        }
+    }
+
     suspend fun officialModelCatalogRevision(): Int {
         ensureInitialized()
         return dataStore.data.first()[OFFICIAL_MODEL_CATALOG_REVISION] ?: 0
@@ -132,6 +154,7 @@ internal object SettingsDataStore {
             prefs[VIRTUAL_SCREEN_FALLBACK_ENABLED] = updated.virtualScreenFallbackEnabled
             prefs[VIRTUAL_SCREEN_AUTO_RESTART_APPS] = updated.virtualScreenAutoRestartApps
             prefs[VIRTUAL_SCREEN_IDLE_TIMEOUT] = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(updated.virtualScreenIdleTimeoutMinutes)
+            prefs[VIRTUAL_SCREEN_FRAME_RATE] = io.github.mangi.eta.data.model.VirtualScreenFrameRate.normalize(updated.virtualScreenFrameRate)
             prefs[VIRTUAL_SCREEN_FLOAT_WINDOW] = updated.virtualScreenFloatWindowEnabled
             prefs[VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE] = updated.virtualScreenFloatEdgeCollapseEnabled
             prefs[VIRTUAL_SCREEN_FLOAT_WIDTH] = updated.virtualScreenFloatWindowWidthDp
@@ -273,6 +296,7 @@ internal object SettingsDataStore {
         virtualScreenFallbackEnabled = this[VIRTUAL_SCREEN_FALLBACK_ENABLED] ?: false,
         virtualScreenAutoRestartApps = this[VIRTUAL_SCREEN_AUTO_RESTART_APPS] ?: false,
         virtualScreenIdleTimeoutMinutes = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(this[VIRTUAL_SCREEN_IDLE_TIMEOUT] ?: 20),
+        virtualScreenFrameRate = io.github.mangi.eta.data.model.VirtualScreenFrameRate.normalize(this[VIRTUAL_SCREEN_FRAME_RATE] ?: 60),
         virtualScreenFloatWindowEnabled = this[VIRTUAL_SCREEN_FLOAT_WINDOW] ?: false,
         virtualScreenFloatEdgeCollapseEnabled = this[VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE] ?: true,
         virtualScreenFloatWindowWidthDp = this[VIRTUAL_SCREEN_FLOAT_WIDTH] ?: 0,

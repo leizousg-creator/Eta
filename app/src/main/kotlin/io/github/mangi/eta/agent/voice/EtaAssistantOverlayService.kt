@@ -6,6 +6,7 @@ import io.github.mangi.eta.ui.voice.openSpeechSettings
 import io.github.mangi.eta.ui.voice.SpeechPlaybackErrors
 import io.github.mangi.eta.ui.voice.LocalSpeechPlayback
 import io.github.mangi.eta.ui.voice.LocalSpeechPlaybackEnabled
+import io.github.mangi.eta.ui.voice.LocalSpeechPlaybackProgress
 import android.os.PowerManager
 import android.Manifest
 import android.app.ActivityOptions
@@ -292,9 +293,11 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                 // 无法在该画布绘制，因此浮窗统一使用 Miuix 的圆角回退路径。
                 val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }
                     .collectAsState(initial = null)
+                val playbackState = playback.state.collectAsState()
                 CompositionLocalProvider(LocalSquircleEnabled provides false,
                     LocalSpeechPlayback provides playback,
-                    LocalSpeechPlaybackEnabled provides (speechSettings?.let { it.tts != TtsProvider.NONE } == true)) {
+                    LocalSpeechPlaybackEnabled provides (speechSettings?.let { it.tts != TtsProvider.NONE } == true),
+                    LocalSpeechPlaybackProgress provides playbackState) {
                     SpeechPlaybackErrors(playback)
                     EtaVoicePanel(
                         state = uiState,
@@ -484,8 +487,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                         messages = finishRunMessages(runId, result),
                     )
                 }
+                // 熄屏不再拦掉自动播报：配合"熄屏继续朗读"，耳机里也能听完这一轮回答。
                 if (!hiddenForForegroundOperation && windowView?.isShown == true && result.ok &&
-                    getSystemService(PowerManager::class.java).isInteractive &&
                     speechConfig?.autoSpeak == true && speechConfig.tts != TtsProvider.NONE) {
                     val messageId = uiState.messages.filterIsInstance<AgentMessageUi>().lastOrNull()?.id ?: runId
                     playback.speak(messageId, result.content, settings = speechConfig)

@@ -77,8 +77,10 @@ fun AgentAppShell(
     onOpenBrowser: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
+    onMoveToCategory: (ConversationSummaryUi) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onConversationPin: (ConversationSummaryUi) -> Unit,
     onBatchDelete: (List<ConversationSummaryUi>) -> Unit,
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
@@ -89,6 +91,7 @@ fun AgentAppShell(
     onOpenAccessibilitySettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
     onOpenTasks: () -> Unit,
+    onOpenCategories: () -> Unit,
     conversationStatus: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     content: @Composable (PaddingValues) -> Unit,
@@ -148,8 +151,10 @@ fun AgentAppShell(
                 onNewConversation = onNewConversation,
                 onConversationSelected = onSelectConversation,
                 onConversationRename = onConversationRename,
+                onMoveToCategory = onMoveToCategory,
                 onConversationExport = onConversationExport,
                 onConversationDelete = onConversationDelete,
+                onConversationPin = onConversationPin,
                 onBatchDelete = onBatchDelete,
                 onOpenSettings = onOpenSettings,
                 onOpenRootSettings = onOpenRootSettings,
@@ -160,6 +165,7 @@ fun AgentAppShell(
                 onOpenCharacters = onOpenCharacters,
                 onOpenPermissions = onOpenPermissions,
                 onOpenTasks = onOpenTasks,
+                onOpenCategories = onOpenCategories,
             ) {
                 pageContent()
             }
@@ -360,6 +366,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.CharacterPersona -> "我的人设"
     is AppRoute.CharacterMemory -> "剧情记忆"
     is AppRoute.Permissions -> stringResource(R.string.route_permissions)
+    is AppRoute.ConversationCategories -> stringResource(R.string.conversation_categories_title)
     is AppRoute.SystemEnhance -> stringResource(R.string.route_system_enhancements)
     is AppRoute.Settings -> stringResource(R.string.route_settings)
     is AppRoute.SpeechSettings -> stringResource(R.string.speech_settings_title)

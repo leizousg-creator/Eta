@@ -24,6 +24,8 @@ internal class AgentLoop(
     private val onEvent: (AgentEvent) -> Unit,
     private val toolsForRound: (() -> JSONArray)? = null,
     private val modelRetry: AgentModelRetry = AgentModelRetry(),
+    /** 上下文超限时尝试降一档工具档；返回 null 表示已降到最低。 */
+    private val onContextOverflow: (() -> LocalToolProfile?)? = null,
     private val sessionId: String = java.util.UUID.randomUUID().toString(),
     private val transcript: JSONArray = JSONArray(),
     private val systemCount: Int = 0,
@@ -108,7 +110,7 @@ internal class AgentLoop(
             val completedRound = try {
                 modelRetry.complete(
                     initialRound = round,
-                    request = ProviderRequest(config, requestMessages, roundTools, sessionId, purpose),
+                    initialRequest = ProviderRequest(config, requestMessages, roundTools, sessionId, purpose),
                     provider = provider,
                     controller = runController,
                     onEvent = { event ->
@@ -131,6 +133,37 @@ internal class AgentLoop(
                         providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
                     },
                     discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
+                    downgradeRequest = { _ ->
+                        val applied = onContextOverflow?.invoke()
+                        if (applied == null) {
+                            null
+                        } else {
+                            val nextTools = if (AnthropicEphemeralState.hasPendingToolResponse(messages)) {
+                                precedingTools ?: tools
+                            } else if (purpose.allowsTools) {
+                                toolsForRound?.invoke() ?: tools
+                            } else {
+                                JSONArray()
+                            }
+                            precedingTools = nextTools
+                            toolCallValidator = AgentToolCallValidator(nextTools)
+                            AgentHistoryTrimmer.trimInPlace(
+                                messages = messages,
+                                systemCount = systemCount,
+                                contextWindow = config.knownContextWindow,
+                                reservedTokens = AgentHistoryTrimmer.estimateTokens(nextTools.toString()),
+                            )
+                            ProviderRequest(
+                                config,
+                                AssistantScreenContextProjection.project(
+                                    roleplayContext?.projectMessages(messages) ?: messages,
+                                ),
+                                nextTools,
+                                sessionId,
+                                purpose,
+                            )
+                        }
+                    },
                 ).also { response ->
                     rejectContentFilter(response.response)
                     if (purpose == ProviderRequestPurpose.CHAT) validateChatResponse(response.response)

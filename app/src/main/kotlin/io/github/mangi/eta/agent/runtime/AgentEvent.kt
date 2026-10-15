@@ -34,6 +34,20 @@ internal sealed interface AgentEvent {
         }
     }
 
+    /** 请求侧裁掉了最老轮次：只在本次请求里生效，界面与数据库都不删。 */
+    data class HistoryTrimmed(
+        val omittedMessages: Int,
+        val omittedUserRounds: Int,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "history_trimmed rounds=$omittedUserRounds, messages=$omittedMessages"
+    }
+
+    /** 上下文超限后自动降档重试：只在本次运行内生效，不改用户设置。 */
+    data class ContextOverflowDowngrade(val profileId: String) : AgentEvent {
+        override fun toLogLine(): String = "context_overflow_downgrade profile=$profileId"
+    }
+
     data class RunStarted(
         val initialImages: Int,
         val initialImageBytes: Int,

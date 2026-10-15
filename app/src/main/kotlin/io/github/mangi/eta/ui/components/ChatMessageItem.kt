@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -80,6 +81,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.ui.markdown.MarkdownTone
+import io.github.mangi.eta.ui.voice.LocalSpeechPlaybackProgress
 import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.ui.markdown.StreamingMarkdown
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownState
@@ -533,7 +535,11 @@ private fun AgentMessageBlock(
 ) {
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
+    // 只有正在朗读的这条消息才进入高亮分支，其余消息不产生额外重组。
+    val speechProgress = LocalSpeechPlaybackProgress.current.value
+    val speechHighlight = speechProgress.highlight.takeIf { speechProgress.messageId == message.id }
     var copied by remember(message.id) { mutableStateOf(false) }
+    var showSelectionCopy by remember(message.id) { mutableStateOf(false) }
     val keepStreamingMarkdown = remember(message.id) { message.isStreaming }
     var streamingRevealComplete by remember(message.id) {
         mutableStateOf(!keepStreamingMarkdown)
@@ -589,6 +595,7 @@ private fun AgentMessageBlock(
                         content = message.content,
                         tone = MarkdownTone.Answer,
                         parsed = completedDocument,
+                        highlight = speechHighlight,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -602,6 +609,13 @@ private fun AgentMessageBlock(
                     )
                 }
             }
+        }
+
+        if (showSelectionCopy) {
+            SelectionCopyDialog(
+                text = message.content,
+                onDismiss = { showSelectionCopy = false },
+            )
         }
 
         if (
@@ -639,6 +653,18 @@ private fun AgentMessageBlock(
                         } else {
                             MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f)
                         },
+                    )
+                }
+                IconButton(
+                    onClick = { showSelectionCopy = true },
+                    minWidth = 30.dp,
+                    minHeight = 30.dp,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.TextFields,
+                        contentDescription = stringResource(R.string.selection_copy_entry),
+                        modifier = Modifier.size(15.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
                     )
                 }
                 if (allowSpeech) SpeechReadAloudButton(message.id, message.content)

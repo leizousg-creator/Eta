@@ -70,3 +70,7 @@
 -keep class io.github.mangi.eta.agent.display.VirtualScreenRootTextInput {
     public static void main(java.lang.String[]);
 }
+
+# 虚拟屏幕悬浮小窗
+-keep class io.github.mangi.eta.agent.display.VirtualScreenFloatWindow { *; }
+-keepclassmembers class io.github.mangi.eta.agent.display.VirtualScreenFloatWindow$* { *; }

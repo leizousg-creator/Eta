@@ -21,8 +21,12 @@ internal object AgentPromptBuilder {
         virtualScreenFallbackEnabled: Boolean = false,
     ): JSONArray {
         val messages = buildSystemMessages(config, skillContext, memoryContext, rootAvailable, roleplayContext, virtualScreenEnabled, virtualScreenFallbackEnabled)
+        val chatOnly = LocalToolProfileStore.current(config.providerId, config.model) == LocalToolProfile.CHAT
         history.forEach { item ->
-            runCatching { AgentConversationCodec.toJsonObject(item) }.getOrNull()?.let(messages::put)
+            val json = runCatching { AgentConversationCodec.toJsonObject(item) }.getOrNull() ?: return@forEach
+            // 纯聊天档不声明工具，历史里的工具调用记录必须一并跳过，否则部分服务商会拒绝请求。
+            if (chatOnly && (json.optString("role") == "tool" || json.has("tool_calls"))) return@forEach
+            messages.put(json)
         }
         messages.put(AgentConversationCodec.userMessage(prompt, images))
         return messages
@@ -38,6 +42,21 @@ internal object AgentPromptBuilder {
         virtualScreenFallbackEnabled: Boolean = false,
     ): JSONArray {
         val messages = JSONArray()
+        if (LocalToolProfileStore.current(config.providerId, config.model) == LocalToolProfile.CHAT) {
+            // 纯聊天档：不声明工具、不注入记忆与技能索引，避免模型去调用不存在的工具。
+            if (config.systemPrompt.isNotBlank()) messages.put(systemMessage(config.systemPrompt))
+            messages.put(
+                systemMessage(
+                    "当前配置的模型：${JSONObject.quote(config.model)}。询问所用模型时按当前配置的模型回答。\n" +
+                        "当前是纯聊天模式：本轮不提供任何工具，也不要尝试调用、模拟或描述工具调用，" +
+                        "不要输出 tool_calls、<tool_call> 或工具参数的 JSON。" +
+                        "直接自然对话，回答日常问题；用户发来的图片可以正常阅读并回应其中的内容。" +
+                        "遇到必须读取手机数据、联网查询或实际执行操作才能回答的问题时，" +
+                        "直接说明当前模式下无法获取，不要编造结果，也不要假装已经查到。"
+                )
+            )
+            return messages
+        }
         if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
             messages.put(systemMessage(config.systemPrompt))
         }

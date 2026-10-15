@@ -43,6 +43,8 @@ internal class AgentRunMessageProjector(
             AgentEvent.AssistantBlockKind.TOOL_CALL -> messages
         }
         is AgentEvent.UsageReceived -> attachUsage(runId, event.round, event.usage.toUi(), messages)
+        is AgentEvent.HistoryTrimmed -> messages
+        is AgentEvent.ContextOverflowDowngrade -> messages
         is AgentEvent.ToolStarted ->
             startTool(runId, event, finalizeTextRound(runId, event.round, finalizeThinkingRound(runId, event.round, messages)))
         is AgentEvent.ToolFinished -> finishTool(runId, event, messages)

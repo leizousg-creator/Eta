@@ -25,6 +25,10 @@ internal data class ConversationEntity(
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     /** 会话最近使用的本地 Model.id；null 表示跟随默认模型。 */
     @ColumnInfo(name = "model_id") val modelId: String? = null,
+    /** 收藏置顶：置顶会话排在最前，批量删除时跳过，避免误删。 */
+    @ColumnInfo(name = "pinned", defaultValue = "0") val pinned: Boolean = false,
+    /** 所属会话分类；null 表示未分类，分类被删除后回落到未分类。 */
+    @ColumnInfo(name = "category_id") val categoryId: String? = null,
 )
 
 internal data class ConversationMetadata(
@@ -39,6 +43,9 @@ internal data class ConversationMetadata(
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     @ColumnInfo(name = "model_id") val modelId: String? = null,
+    @ColumnInfo(name = "pinned") val pinned: Boolean = false,
+    /** 所属会话分类；null 表示未分类，分类被删除后回落到未分类。 */
+    @ColumnInfo(name = "category_id") val categoryId: String? = null,
 )
 
 @Serializable

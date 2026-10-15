@@ -113,6 +113,9 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                         surface?.showGesture(state.gesture)
                     }
                 }
+                val frameDelay = (io.github.mangi.eta.data.model.VirtualScreenFrameRate.intervalMs(
+                    io.github.mangi.eta.data.datastore.SettingsDataStore.settings().virtualScreenFrameRate) / 2).toLong().coerceIn(6L, 33L)
+                val idleDelay = frameDelay.coerceAtLeast(120L)
                 while (true) {
                     val info = VirtualScreenSession.state.value.display
                     if (info != null) {
@@ -130,7 +133,10 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                             next?.bitmap?.recycle(); surface?.clearFrame(); hasFrame = false; lastFrameId = 0
                         }
                     }
-                    delay(32)
+                    // 手指刚动过就全速追帧，闲置时降频省电；旧帧不排队，永远画最新的那张。
+                    val touching = android.os.SystemClock.elapsedRealtime() -
+                        (VirtualScreenSession.state.value.gesture?.startedAt ?: 0L) < 900L
+                    delay(if (touching) 4L else idleDelay)
                 }
             }
         }
@@ -147,7 +153,9 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
                 val bitmap = frame.images.firstOrNull()?.reference?.substringAfter("base64,")?.let { encoded ->
                     runCatching {
                         val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply {
+                            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                        })
                     }.getOrNull()
                 }
                 pending.set(bitmap)

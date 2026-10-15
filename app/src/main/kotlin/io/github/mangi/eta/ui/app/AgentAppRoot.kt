@@ -160,6 +160,7 @@ fun AgentAppRoot(
 
     var conversationPaneOpen by remember { mutableStateOf(false) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
+    var categoryMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationBatchDeleteTarget by remember { mutableStateOf<List<ConversationSummaryUi>?>(null) }
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
@@ -273,7 +274,8 @@ fun AgentAppRoot(
             conversationStatus = {
                 io.github.mangi.eta.ui.components.ConversationStatusCapsules(
                     agentState.homeState.messages, agentState.modelPickerState.selectedModel,
-                    agentState.homeState.lastModelUsage,
+                    agentState.homeState.lastModelUsage, agentState.historyTrimNotice,
+                    agentState.overflowDowngradeNotice,
                 )
             },
             onBack = { popRoute() },
@@ -319,6 +321,15 @@ fun AgentAppRoot(
             onConversationDelete = { conversation ->
                 conversationDeleteTarget = conversation
             },
+            onConversationPin = { conversation ->
+                if (!agentState.setConversationPinned(conversation.id, !conversation.isPinned)) {
+                    Toast.makeText(
+                        context,
+                        resources.getString(R.string.conversation_pin_limit),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
             onBatchDelete = { conversations ->
                 conversationBatchDeleteTarget = conversations
             },
@@ -331,6 +342,8 @@ fun AgentAppRoot(
             onOpenAccessibilitySettings = ::openAccessibilitySettings,
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
             onOpenTasks = { pushRoute(AppRoute.Tasks) },
+            onOpenCategories = { pushRoute(AppRoute.ConversationCategories) },
+            onMoveToCategory = { conversation -> categoryMoveTarget = conversation },
         ) { padding ->
             Box(
                 modifier = Modifier
@@ -632,6 +645,18 @@ fun AgentAppRoot(
                     onBack = ::popRoute
                 )
             }
+            entry<AppRoute.ConversationCategories>(swipeDismiss = swipeDismiss) {
+                io.github.mangi.eta.ui.screens.conversations.ConversationCategoriesScreen(
+                    categories = agentState.conversationCategories,
+                    conversationCategoryIds = agentState.conversationCategoryIds,
+                    onBack = ::popRoute,
+                    onCreate = { name -> agentState.createConversationCategory(name) },
+                    onRename = { id, name -> agentState.renameConversationCategory(id, name) },
+                    onDelete = { id -> agentState.deleteConversationCategory(id) },
+                    onMove = { id, delta -> agentState.moveConversationCategory(id, delta) },
+                )
+            }
+
             entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
                 AgentTasksScreen(onBack = { popRoute() })
             }
@@ -766,6 +791,38 @@ fun AgentAppRoot(
             top.yukonga.miuix.kmp.basic.TextButton(
                 text = "知道了", onClick = characterStore::dismissNotice, modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+
+    categoryMoveTarget?.let { conversation ->
+        WindowDialog(
+            show = true,
+            cornerRadius = DialogDefaults.CornerRadius,
+            title = stringResource(R.string.conversation_category_move),
+            onDismissRequest = { categoryMoveTarget = null },
+        ) {
+            Column {
+                agentState.conversationCategories
+                    .sortedWith(compareBy({ it.sortOrder }, { it.createdAt }))
+                    .forEach { category ->
+                        top.yukonga.miuix.kmp.basic.TextButton(
+                            text = category.name,
+                            onClick = {
+                                agentState.setConversationCategory(conversation.id, category.id)
+                                categoryMoveTarget = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                top.yukonga.miuix.kmp.basic.TextButton(
+                    text = stringResource(R.string.conversation_category_uncategorized),
+                    onClick = {
+                        agentState.setConversationCategory(conversation.id, null)
+                        categoryMoveTarget = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 

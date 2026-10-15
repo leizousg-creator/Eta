@@ -23,6 +23,13 @@ internal class AgentModelFailure(
             "api_error", "internal_error", "provider_unavailable", "service_unavailable",
         )
 
+        /** 上下文超限错误码：上层据此自动降档重试。 */
+        const val CONTEXT_OVERFLOW = "CONTEXT_OVERFLOW"
+
+        /** 上下文超限：给一句可操作的中文建议（工具档调低 / 新开会话）。 */
+        private const val CONTEXT_OVERFLOW_HINT =
+            "模型上下文超过容量限制。可把顶栏「工具档」调低（标准或极简），或新开会话继续。"
+
         fun http(status: Int, body: String): AgentModelFailure {
             val error = try {
                 JSONObject(body).optJSONObject("error")
@@ -30,7 +37,7 @@ internal class AgentModelFailure(
                 null
             }
             if (isContextOverflow(error)) return AgentModelFailure(
-                "CONTEXT_OVERFLOW", false, "模型上下文超过容量限制。",
+                CONTEXT_OVERFLOW, false, CONTEXT_OVERFLOW_HINT,
             )
             val permanent = isPermanent(error, body)
             return AgentModelFailure(
@@ -50,7 +57,7 @@ internal class AgentModelFailure(
 
         fun stream(error: JSONObject, message: String): AgentModelFailure {
             if (isContextOverflow(error)) return AgentModelFailure(
-                "CONTEXT_OVERFLOW", false, "模型上下文超过容量限制。",
+                CONTEXT_OVERFLOW, false, CONTEXT_OVERFLOW_HINT,
             )
             val codes = listOf(
                 error.optString("code"),
