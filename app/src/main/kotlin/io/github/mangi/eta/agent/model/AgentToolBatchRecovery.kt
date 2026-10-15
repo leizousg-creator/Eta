@@ -20,8 +20,11 @@ internal object AgentToolBatchRecovery {
             if (message.role != "tool") closeBatch()
             recovered += message
             if (message.toolCallsJson.isNotBlank()) {
-                val calls = JSONArray(message.toolCallsJson)
-                for (index in 0 until calls.length()) open += calls.getJSONObject(index).getString("id")
+                val calls = runCatching { JSONArray(message.toolCallsJson) }.getOrNull()
+                    ?: return@forEach
+                for (index in 0 until calls.length()) {
+                    open += runCatching { calls.getJSONObject(index).getString("id") }.getOrNull() ?: continue
+                }
             }
             if (message.role == "tool") open.remove(message.toolCallId)
         }
