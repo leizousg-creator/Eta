@@ -78,6 +78,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.ReasoningEffort
+import androidx.compose.ui.platform.LocalContext
+import io.github.mangi.eta.ui.app.ChatDraftStore
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
@@ -145,11 +147,16 @@ internal fun AgentChatInputBar(
     val textFieldState = rememberTextFieldState(
         initialText = input.ifEmpty { draftKey?.let(AgentInputDrafts::get).orEmpty() },
     )
+    val draftContext = LocalContext.current
     if (draftKey != null) {
         // 只记录到草稿仓库，不把每个字符推回业务状态，聊天舞台不会被拖着重组成。
+        // 同时落盘一份：内存草稿活不过进程回收，切会话/重启后就贴不回来了。
         LaunchedEffect(textFieldState, draftKey) {
             snapshotFlow { textFieldState.text.toString() }
-                .collect { text -> AgentInputDrafts.set(draftKey, text) }
+                .collect { text ->
+                    AgentInputDrafts.set(draftKey, text)
+                    ChatDraftStore.save(draftContext, draftKey, text)
+                }
         }
     }
     // 外部塞进来的文字（分享到 Eta 等）：直接灌进当前文本框，不依赖草稿键。

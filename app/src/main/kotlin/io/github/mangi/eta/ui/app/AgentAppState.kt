@@ -789,6 +789,23 @@ internal class AgentAppState(
         homeState = homeState.copy(resumableRun = null)
     }
 
+    /** 统一入口：进任意会话都走这里，按盘上的草稿贴回输入框。
+     *  原来只有 selectConversation() 挂着草稿钩子，从别处切走（角色扮演开局、删除后接手、
+     *  回调里直接改 id）既不存盘、切回来也没得贴，所以偶尔会看到"文字不见了"。 */
+    private fun enterConversation(conversationId: String?) {
+        if (conversationId == null) {
+            selectedConversationId = null
+            return
+        }
+        conversationsById[conversationId]?.let { cached ->
+            val draft = ChatDraftStore.load(appContext, conversationId)
+            if (draft != cached.input) {
+                conversationsById = conversationsById + (conversationId to cached.copy(input = draft))
+            }
+        }
+        selectedConversationId = conversationId
+    }
+
     fun selectConversation(conversationId: String) {
         if (homeState.messageEdit != null) cancelMessageEdit()
         // 切换前先把当前会话没发出去的输入写回缓存，切回来时文字还在。
@@ -801,15 +818,11 @@ internal class AgentAppState(
             }
         // 记一笔"最近打开"：侧栏最上面那一栏按这个顺序排。
         noteRecentOpened(conversationId)
-        val cached = conversationsById[conversationId] ?: return
-        // 切回来时把落盘草稿贴回输入框。
-        val state = ChatDraftStore.load(appContext, conversationId)
-            .takeIf { it.isNotBlank() && cached.input.isBlank() }
-            ?.let { draft -> cached.copy(input = draft) }
-            ?: cached
-        if (state !== cached) conversationsById = conversationsById + (conversationId to state)
+        if (conversationsById[conversationId] == null) return
         fileAttachmentOwnerVersion += 1
-        selectedConversationId = conversationId
+        enterConversation(conversationId)
+        // enterConversation 已把盘上草稿贴回，取更新后的那份当当前状态。
+        val state = conversationsById.getValue(conversationId)
         homeState = state
         // 从搜索结果里点开：定位该会话第一条命中消息；只有标题/预览命中时不做跳转。
         state.firstMatchMessageId(conversationPaneState.searchQuery.trim()) { code -> noticeText(code) }
@@ -863,6 +876,12 @@ internal class AgentAppState(
         val transcript = if (text.isBlank()) emptyList() else listOf(
             AgentModelClient.ConversationMessage(role = "assistant", content = text, messageId = greetingId),
         )
+        // 角色扮演开局也算一次会话切换：先把当前草稿落盘，再进新会话。
+        selectedConversationId?.takeIf { it != id }?.let { previous ->
+            conversationsById = conversationsById + (previous to homeState)
+            ChatDraftStore.save(appContext, previous, homeState.input)
+        }
+        ChatDraftStore.save(appContext, id, "")
         selectedConversationId = id
         homeState = emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities().copy(
             roleplay = binding,
@@ -899,7 +918,7 @@ internal class AgentAppState(
             fileAttachmentOwnerVersion += 1
             val nextId = conversationsById.keys.firstOrNull()
             if (nextId != null) {
-                selectedConversationId = nextId
+                enterConversation(nextId)
                 homeState = conversationsById.getValue(nextId)
             } else {
                 selectedConversationId = null
@@ -1126,6 +1145,7 @@ internal class AgentAppState(
 
         val conversationId = selectedConversationId ?: newConversationId().also {
             selectedConversationId = it
+            ChatDraftStore.save(appContext, it, "")
         }
         val runId = "run-${UUID.randomUUID()}"
         val userMessage = UserMessageUi(

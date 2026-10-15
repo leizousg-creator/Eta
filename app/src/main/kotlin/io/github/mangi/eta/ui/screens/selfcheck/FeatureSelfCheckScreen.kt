@@ -369,7 +369,7 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem(
             "输入草稿按会话落盘",
             STATE_BUILTIN,
-            "输入框内容按会话存本地（eta_chat_drafts）：切会话、退到后台、重启后都自动贴回；消息发出去即清空草稿",
+            "输入框每敲一个字就落盘（eta_chat_drafts）；所有进会话的入口统一贴回草稿（角色扮演开局、删除后接手、切会话都算），进会话以盘上内容为准；消息发出去即清草稿",
         ),
         SelfCheckItem("多会话并发", STATE_BUILTIN, "最多 3 个会话同时跑任务；悬浮胶囊列出运行中会话，点一条跳回"),
         SelfCheckItem("工具串行锁", STATE_BUILTIN, "点按/输入/终端等独占工具全局排队，只读工具仍并行"),
