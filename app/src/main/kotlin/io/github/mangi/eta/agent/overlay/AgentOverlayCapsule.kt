@@ -185,16 +185,27 @@ internal fun AgentOverlayCapsule(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (state.runningSessions.size > 1) {
+                    if (state.runningSessions.isNotEmpty()) {
                         Text(
-                            text = "${state.runningSessions.size} 个会话运行中",
+                            text = run {
+                                val running = state.runningSessions.count { it.running }
+                                if (running > 0) {
+                                    "$running 个会话正在运行 · 点开选择"
+                                } else {
+                                    "最近 ${state.runningSessions.size} 个会话 · 点开切回"
+                                }
+                            },
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             fontSize = 11.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    ThoughtLine(thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty())
+                    ThoughtLine(
+                        thought = state.thought.takeIf {
+                            state.phase == AgentOverlayPhase.RUNNING || state.phase == AgentOverlayPhase.FINISHED
+                        }.orEmpty(),
+                    )
                     }
                 }
 
@@ -210,7 +221,7 @@ internal fun AgentOverlayCapsule(
                             .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                             .graphicsLayer { translationY = (1f - expansion) * -6.dp.toPx() },
                     ) {
-                        if (state.runningSessions.size > 1) {
+                        if (state.runningSessions.isNotEmpty()) {
                             OverlayRunningSessionList(
                                 sessions = state.runningSessions,
                                 onOpenConversation = onOpenConversation,
@@ -355,31 +366,49 @@ private fun OverlayRunningSessionList(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Text(
+            text = sessionListTitle(sessions),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         sessions.forEach { session ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
                     .clickable { onOpenConversation(session.conversationId) }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 18.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = session.title.ifBlank { session.conversationId },
                     color = MiuixTheme.colorScheme.onSurface,
-                    fontSize = 13.sp,
-                    maxLines = 1,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                if (!session.running) {
+                    Text(
+                        text = "已完成",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Spacer(Modifier.width(12.dp))
                 Text(
-                    text = "打开",
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    fontSize = 12.sp,
+                    text = "打开 ›",
+                    color = MiuixTheme.colorScheme.primary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
                 )
             }
         }
@@ -400,4 +429,16 @@ private fun CapsuleAction(icon: ImageVector, label: String, tint: Color, onClick
 }
 
 private val CapsuleCorner = 22.dp
-private val CapsuleWidth = 248.dp
+
+/** 展开面板宽度：比收起时更宽，方便点会话条目。 */
+private val CapsuleWidth = 372.dp
+
+/** 展开后的会话列表标题：运行时说"正在运行"，跑完就说"最近会话"。 */
+private fun sessionListTitle(sessions: List<AgentOverlayRunningSession>): String {
+    val running = sessions.count { it.running }
+    return when {
+        running > 0 && running == sessions.size -> "正在运行的会话（$running）· 点一条打开"
+        running > 0 -> "正在运行 $running 个 · 最近共 ${sessions.size} 条 · 点一条打开"
+        else -> "最近会话（${sessions.size}）· 点一条切回"
+    }
+}

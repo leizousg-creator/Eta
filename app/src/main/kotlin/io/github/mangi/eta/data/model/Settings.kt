@@ -30,6 +30,8 @@ data class Settings(
     val autoBackupLastFileName: String = "",
     /** 自定义自动备份目录；空串表示默认的「外部存储/Eta备份」。 */
     val autoBackupDirectory: String = "",
+    /** 打开 Eta 后悬浮胶囊常驻显示：没有任务时也留在屏幕上，点它看运行中会话。 */
+    val overlayCapsulePinned: Boolean = false,
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
 

@@ -1,0 +1,273 @@
+package io.github.mangi.eta.ui.screens.selfcheck
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings as AndroidSettings
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import io.github.mangi.eta.core.CrashRecorder
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.ui.components.EtaArrowPreference
+import io.github.mangi.eta.ui.components.EtaPreference
+import io.github.mangi.eta.ui.components.EtaPreferenceDivider
+import io.github.mangi.eta.ui.components.EtaPreferenceGroup
+import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
+import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private const val STATE_OK = "✔ 正常"
+private const val STATE_MISSING = "✘ 待处理"
+private const val STATE_BUILTIN = "● 已内置"
+
+/** 单项自检结果：权限类项目带一个可跳转的 uri，方便直接去修。 */
+private data class SelfCheckItem(
+    val name: String,
+    val state: String,
+    val detail: String,
+    val actionUri: String? = null,
+)
+
+private data class SelfCheckReport(
+    val permissions: List<SelfCheckItem>,
+    val storage: List<SelfCheckItem>,
+    val builtin: List<SelfCheckItem>,
+) {
+    val total: Int get() = permissions.size + storage.size + builtin.size
+    val okCount: Int get() = (permissions + storage).count { it.state == STATE_OK }
+    val problemCount: Int get() = (permissions + storage).count { it.state != STATE_OK }
+}
+
+/** 设置 → 关于 → 功能自检：一键把已开发功能的运行条件与内置状态过一遍。 */
+@Composable
+internal fun FeatureSelfCheckScreen(onBack: () -> Unit) {
+    val context = LocalContext.current.applicationContext
+    var report by remember { mutableStateOf<SelfCheckReport?>(null) }
+    var round by remember { mutableStateOf(0) }
+    LaunchedEffect(round) {
+        report = withContext(Dispatchers.IO) { runSelfCheck(context) }
+    }
+
+    MiuixScaffoldPage(title = "功能自检", onBack = onBack) {
+        item(key = "selfcheck-head") {
+            val current = report
+            EtaPreferenceGroup {
+                EtaArrowPreference(
+                    title = "重新检测",
+                    summary = when {
+                        current == null -> "正在检测…"
+                        current.problemCount == 0 -> "共 ${current.total} 项，运行条件全部就绪"
+                        else -> "共 ${current.total} 项，有 ${current.problemCount} 项待处理（点条目可跳转处理）"
+                    },
+                    onClick = { round += 1 },
+                )
+            }
+        }
+
+        item(key = "selfcheck-permissions") {
+            EtaPreferenceGroupTitle("① 权限与环境")
+            EtaPreferenceGroup {
+                val items = report?.permissions.orEmpty()
+                if (items.isEmpty()) {
+                    EtaPreference(title = "读取中", summary = "…")
+                } else {
+                    items.forEachIndexed { index, item ->
+                        if (index > 0) EtaPreferenceDivider()
+                        if (item.actionUri != null) {
+                            EtaArrowPreference(
+                                title = "${item.state}  ${item.name}",
+                                summary = item.detail,
+                                onClick = { openUri(context, item.actionUri) },
+                            )
+                        } else {
+                            EtaPreference(title = "${item.state}  ${item.name}", summary = item.detail)
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "selfcheck-storage") {
+            EtaPreferenceGroupTitle("② 数据与存储")
+            EtaPreferenceGroup {
+                val items = report?.storage.orEmpty()
+                if (items.isEmpty()) {
+                    EtaPreference(title = "读取中", summary = "…")
+                } else {
+                    items.forEachIndexed { index, item ->
+                        if (index > 0) EtaPreferenceDivider()
+                        EtaPreference(title = "${item.state}  ${item.name}", summary = item.detail)
+                    }
+                }
+            }
+        }
+
+        item(key = "selfcheck-builtin") {
+            EtaPreferenceGroupTitle("③ 已内置功能（本包确认存在）")
+            EtaPreferenceGroup {
+                val items = report?.builtin.orEmpty()
+                if (items.isEmpty()) {
+                    EtaPreference(title = "读取中", summary = "…")
+                } else {
+                    items.forEachIndexed { index, item ->
+                        if (index > 0) EtaPreferenceDivider()
+                        EtaPreference(title = "${item.state}  ${item.name}", summary = item.detail)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun openUri(context: Context, uri: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
+private suspend fun runSelfCheck(context: Context): SelfCheckReport {
+    val pkg = context.packageName
+    val resolver = context.contentResolver
+    val overlayOk = AndroidSettings.canDrawOverlays(context)
+    val notifyOk = context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") ==
+        PackageManager.PERMISSION_GRANTED
+    val listeners = AndroidSettings.Secure.getString(
+        resolver,
+        "enabled_notification_listeners",
+    ).orEmpty()
+    val listenerOk = listeners.contains(pkg)
+    val a11y = AndroidSettings.Secure.getString(
+        resolver,
+        "enabled_accessibility_services",
+    ).orEmpty()
+    val a11yOk = a11y.contains(pkg)
+    val suPath = listOf(
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/sbin/su",
+        "/debug_ramdisk/su",
+        "/data/adb/ksu/bin/su",
+    ).firstOrNull { File(it).exists() }
+
+    val permissions = listOf(
+        SelfCheckItem(
+            name = "悬浮窗权限",
+            state = if (overlayOk) STATE_OK else STATE_MISSING,
+            detail = if (overlayOk) {
+                "悬浮胶囊、虚拟屏小窗都能显示"
+            } else {
+                "缺这个：悬浮胶囊/小窗不会出现。去 应用详情 → 显示在其他应用上层"
+            },
+            actionUri = if (overlayOk) null else "package:$pkg",
+        ),
+        SelfCheckItem(
+            name = "通知权限",
+            state = if (notifyOk) STATE_OK else STATE_MISSING,
+            detail = if (notifyOk) "可以发运行状态与完成提醒" else "缺这个：任务完成提醒发不出来",
+            actionUri = if (notifyOk) null else "package:$pkg",
+        ),
+        SelfCheckItem(
+            name = "通知使用权",
+            state = if (listenerOk) STATE_OK else STATE_MISSING,
+            detail = if (listenerOk) {
+                "通知历史可用（通知触发任务、近 7 天记录）"
+            } else {
+                "未开：通知触发类任务与通知历史会缺失"
+            },
+            actionUri = if (listenerOk) null else "package:$pkg",
+        ),
+        SelfCheckItem(
+            name = "无障碍服务",
+            state = if (a11yOk) STATE_OK else STATE_MISSING,
+            detail = if (a11yOk) {
+                "界面操作（点击/输入/观察）与虚拟屏控制可用"
+            } else {
+                "未开：所有界面自动化都会失败（不是 Eta 的 bug，是系统没授权）"
+            },
+            actionUri = if (a11yOk) null else "package:$pkg",
+        ),
+        SelfCheckItem(
+            name = "Root 权限",
+            state = if (suPath != null) STATE_OK else STATE_MISSING,
+            detail = if (suPath != null) "su 存在：$suPath（虚拟屏、文件与终端特权可用）" else "未发现 su，虚拟屏与特权功能会受限",
+        ),
+    )
+
+    val storage = mutableListOf<SelfCheckItem>()
+    val shareDir = File("/storage/emulated/0/ai共享文件夹")
+    val shareOk = shareDir.isDirectory && shareDir.canWrite()
+    storage += SelfCheckItem(
+        name = "共享目录",
+        state = if (shareOk) STATE_OK else STATE_MISSING,
+        detail = if (shareOk) "/storage/emulated/0/ai共享文件夹 可读写" else "共享目录不存在或不可写",
+    )
+
+    val database = runCatching { EtaDatabase.get(context) }.getOrNull()
+    val dbVersion = runCatching { database?.openHelper?.readableDatabase?.version }.getOrNull()
+    val conversations = runCatching { database?.conversationDao()?.conversationCount() }.getOrNull()
+    val messages = runCatching { database?.conversationDao()?.messageCount() }.getOrNull()
+    val usageRecords = runCatching { database?.tokenUsageDao()?.recordCount() }.getOrNull()
+    storage += SelfCheckItem(
+        name = "数据库",
+        state = if (dbVersion != null) STATE_OK else STATE_MISSING,
+        detail = if (dbVersion != null) {
+            "结构版本 v$dbVersion（本包预期 28）· 会话 ${conversations ?: 0} · 消息 ${messages ?: 0} · 用量 ${usageRecords ?: 0} 条"
+        } else {
+            "打不开本地数据库"
+        },
+    )
+    val crashCount = runCatching { CrashRecorder.records(context).size }.getOrDefault(0)
+    storage += SelfCheckItem(
+        name = "崩溃留证",
+        state = STATE_OK,
+        detail = if (crashCount == 0) "暂无崩溃记录（正常）" else "已留 ${crashCount} 份，设置 → 关于可查看导出",
+    )
+    val settings = runCatching { SettingsDataStore.settings() }.getOrNull()
+    val backupDetail = if (settings == null) {
+        "读不到设置"
+    } else if (!settings.autoBackupEnabled) {
+        "未开启（设置 → 备份与恢复 里可开）"
+    } else {
+        val ts = settings.autoBackupLastAt
+        val last = if (ts > 0L) {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(ts))
+        } else {
+            "尚未执行"
+        }
+        "已开启 · 每 ${settings.autoBackupIntervalHours} 小时 · 保留 ${settings.autoBackupKeepCount} 份 · 上次 $last"
+    }
+    storage += SelfCheckItem(
+        name = "定时自动备份",
+        state = if (settings?.autoBackupEnabled == true) STATE_OK else STATE_MISSING,
+        detail = backupDetail,
+    )
+
+    val builtin = listOf(
+        SelfCheckItem("多会话并发", STATE_BUILTIN, "最多 3 个会话同时跑任务；悬浮胶囊列出运行中会话，点一条跳回"),
+        SelfCheckItem("工具串行锁", STATE_BUILTIN, "点按/输入/终端等独占工具全局排队，只读工具仍并行"),
+        SelfCheckItem("界面重连文本重复修复", STATE_BUILTIN, "切出去再回来，同一段回复不再重复 2~3 遍"),
+        SelfCheckItem("虚拟屏与顶层浮动", STATE_BUILTIN, "独立 display 执行 GUI 任务；小窗可拖拽/贴边折叠/两档缩放"),
+        SelfCheckItem("内存占用胶囊", STATE_BUILTIN, "顶栏显示内存占用，点开看明细"),
+        SelfCheckItem("图片预览浮层", STATE_BUILTIN, "会话内点图放大预览（JPEG 92、最长边 1920、上限 3.69M 像素）"),
+        SelfCheckItem("Linux 能力探测", STATE_BUILTIN, "终端环境页按实际能力显示可用项"),
+        SelfCheckItem("离线朗读", STATE_BUILTIN, "系统 TTS 离线档位，设置 → 语音朗读 可试听"),
+        SelfCheckItem("会话分类与自动任务", STATE_BUILTIN, "抽屉一级「自动任务」「会话分类」都在"),
+        SelfCheckItem("用量统计 / 诊断包 / 环境包快照", STATE_BUILTIN, "统计 30 天用量、导出诊断包、整机快照一键还原"),
+    )
+
+    return SelfCheckReport(permissions = permissions, storage = storage, builtin = builtin)
+}

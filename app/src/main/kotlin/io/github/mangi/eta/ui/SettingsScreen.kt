@@ -870,6 +870,19 @@ private fun SettingsPageContent(
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
+                        title = "功能自检",
+                        summary = "一键体检：权限、数据、已内置功能",
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.VerifiedUser,
+                                tint = EtaPreferenceColors.Green,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.SelfCheck) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
                         title = stringResource(R.string.ui_about_feedback_title),
                         startAction = {
                             EtaPreferenceIcon(
@@ -1009,6 +1022,40 @@ private fun VirtualScreenFloatWindowPrefs() {
     val scope = rememberCoroutineScope()
     val settings by SettingsDataStore.settingsFlow().collectAsState(initial = null)
     val current = settings ?: return
+
+    EtaSwitchPreference(
+        title = "悬浮胶囊常驻",
+        summary = "打开 Eta 后一直显示悬浮胶囊（没任务时也在），点它看运行中会话",
+        checked = current.overlayCapsulePinned,
+        onCheckedChange = { value ->
+            if (value && !Settings.canDrawOverlays(context)) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+            scope.launch {
+                SettingsDataStore.updateSettings { it.copy(overlayCapsulePinned = value) }
+                runCatching {
+                    context.startService(
+                        Intent(context, io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java)
+                            .setAction(
+                                if (value) {
+                                    io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_PIN_CAPSULE
+                                } else {
+                                    io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_UNPIN_CAPSULE
+                                },
+                            ),
+                    )
+                }
+            }
+        },
+        startAction = { EtaPreferenceIcon(Icons.Rounded.VerifiedUser, tint = EtaPreferenceColors.Green) },
+    )
+
+    EtaPreferenceDivider()
 
     EtaSwitchPreference(
         title = "虚拟屏幕悬浮小窗",
@@ -1161,12 +1208,12 @@ private val SETTINGS_SEARCH_INDEX = listOf(
     SettingsSearchEntry("section_agent", "llm 提供商 模型 服务商 api 密钥 深度思考"),
     SettingsSearchEntry("section_context_extensions", "上下文 扩展 自动压缩 记忆"),
     SettingsSearchEntry("section_tools", "工具 工具档 精简 五档 mcp"),
-    SettingsSearchEntry("system_enhancements", "能力增强 语音 朗读 语速 音调 tts 虚拟屏 小窗 悬浮窗 折叠"),
+    SettingsSearchEntry("system_enhancements", "能力增强 语音 朗读 语速 音调 tts 虚拟屏 小窗 悬浮窗 折叠 胶囊 常驻"),
     SettingsSearchEntry("section_assistant_takeover", "系统助手接管 接管 助手"),
     SettingsSearchEntry("section_oem_assistant_compatibility", "厂商助手兼容 小布 小爱 vivo 蓝心 兼容"),
     SettingsSearchEntry("section_general", "通用 外观 主题 语言"),
     SettingsSearchEntry("section_permissions", "权限 无障碍 悬浮窗 通知"),
-    SettingsSearchEntry("section_about", "关于 版本 用量 token 统计 消耗 数据占用 清理 数据库 大小 诊断包 日志 导出 分享 开源"),
+    SettingsSearchEntry("section_about", "关于 版本 用量 token 统计 消耗 数据占用 清理 数据库 大小 诊断包 日志 导出 分享 开源 功能自检 自检 体检"),
 )
 
 private fun settingsMatched(sectionKey: String, keyword: String): Boolean =

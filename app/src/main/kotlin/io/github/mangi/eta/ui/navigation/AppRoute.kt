@@ -74,6 +74,9 @@ sealed interface AppRoute : NavKey {
     data object DataUsage : AppRoute
 
     @Serializable
+    data object SelfCheck : AppRoute
+
+    @Serializable
     data object ConversationCategories : AppRoute
     @Serializable
     data object VirtualScreen : AppRoute

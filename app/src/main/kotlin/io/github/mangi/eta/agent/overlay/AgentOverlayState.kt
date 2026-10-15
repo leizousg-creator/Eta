@@ -10,11 +10,12 @@ internal enum class AgentOverlayPhase { RUNNING, PAUSED, FINISHED, FAILED }
  * Agent 浮窗的渲染状态。由 [AgentEvent] 流累积而来，[AgentOverlayBubble] 直接消费。
  */
 @Immutable
-/** 悬浮胶囊展开后用于跳转的一条运行中会话。 */
+/** 悬浮胶囊展开后用于跳转的一条会话：running 表示还在跑，false 表示已完成但仍可点回去。 */
 internal data class AgentOverlayRunningSession(
     val runId: String,
     val conversationId: String,
     val title: String,
+    val running: Boolean = true,
 )
 
 internal data class AgentOverlayState(
@@ -27,7 +28,7 @@ internal data class AgentOverlayState(
      * 只保留尾部一小段，供用户扫一眼知道 Agent 在想什么；完整推理仍在会话里。
      */
     val thought: String = "",
-    /** 并发运行时正在跑的会话；只有一条时不显示列表。 */
+    /** 胶囊展开后的会话列表：运行中的在前，其后是最近完成的（最多 3 条）。 */
     val runningSessions: List<AgentOverlayRunningSession> = emptyList(),
 ) {
     companion object {

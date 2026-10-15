@@ -119,6 +119,17 @@ fun AgentAppRoot(
     onAssistantConversationOpened: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    // 用户回到 Eta：清掉悬浮胶囊上的「已完成」未读提示。
+    LaunchedEffect(Unit) {
+        runCatching {
+            context.startService(
+                android.content.Intent(
+                    context,
+                    io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java,
+                ).setAction(io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_CLEAR_READ),
+            )
+        }
+    }
     val resources = LocalResources.current
     val uiScope = rememberCoroutineScope()
     val backStack = rememberNavBackStack<AppRoute>(AppRoute.Home)
@@ -677,6 +688,9 @@ fun AgentAppRoot(
 
             entry<AppRoute.DataUsage>(swipeDismiss = swipeDismiss) {
                 DataUsageScreen(onBack = { popRoute() })
+            }
+            entry<AppRoute.SelfCheck>(swipeDismiss = swipeDismiss) {
+                io.github.mangi.eta.ui.screens.selfcheck.FeatureSelfCheckScreen(onBack = { popRoute() })
             }
             entry<AppRoute.VirtualScreen>(swipeDismiss = swipeDismiss) {
                 io.github.mangi.eta.ui.screens.tasks.VirtualScreenSettingsScreen(onBack = { popRoute() })

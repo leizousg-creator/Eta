@@ -96,20 +96,48 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     /** 运行中会话的展示信息：胶囊展开后点一条就能跳回对应会话。 */
     private val runningSessionInfo = linkedMapOf<String, RunningSessionInfo>()
 
+    /** 已经跑完但仍要在胶囊里可点的会话（按完成顺序，最多 SESSION_LIST_LIMIT 条）。 */
+    private val recentSessionInfo = linkedMapOf<String, RunningSessionInfo>()
+
     /** 按当前 sessions 同步胶囊用的运行中清单（多会话并发时列表会变长）。 */
     private fun syncRunningSessions() {
         runningSessionInfo.keys.retainAll(sessions.keys.toSet())
-        val list = sessions.keys.mapNotNull { runId ->
+        val list = mutableListOf<AgentOverlayRunningSession>()
+        sessions.keys.forEach { runId ->
             runningSessionInfo[runId]?.let { info ->
-                AgentOverlayRunningSession(
+                list += AgentOverlayRunningSession(
                     runId = info.runId,
                     conversationId = info.conversationId,
                     title = info.title,
+                    running = true,
                 )
             }
         }
-        if (state.value.runningSessions == list) return
-        state.value = state.value.copy(runningSessions = list)
+        // 运行中的排前面，后面补最近完成的会话，用户随时能点回去。
+        recentSessionInfo.values.toList().asReversed().forEach { info ->
+            if (list.size >= SESSION_LIST_LIMIT) return@forEach
+            if (list.any { it.runId == info.runId }) return@forEach
+            list += AgentOverlayRunningSession(
+                runId = info.runId,
+                conversationId = info.conversationId,
+                title = info.title,
+                running = false,
+            )
+        }
+        val trimmed = list.take(SESSION_LIST_LIMIT)
+        if (state.value.runningSessions == trimmed) return
+        state.value = state.value.copy(runningSessions = trimmed)
+    }
+
+    /** 会话结束后把它记进「最近会话」，胶囊展开后仍可点回去。 */
+    private fun rememberFinishedSession(runId: String) {
+        val info = runningSessionInfo[runId] ?: return
+        recentSessionInfo.remove(runId)
+        recentSessionInfo[runId] = info
+        while (recentSessionInfo.size > SESSION_LIST_LIMIT) {
+            val oldest = recentSessionInfo.keys.firstOrNull() ?: break
+            recentSessionInfo.remove(oldest)
+        }
     }
 
     /** 从悬浮胶囊跳回某个会话：复用 MainActivity 已有的“打开指定会话”入口。 */
@@ -123,6 +151,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             )
             capsuleExpanded.value = false
+            // 点开就等于看到了，清掉完成提示。
+            unreadFinished = false
+            if (runningSessionCount() == 0) {
+                if (capsulePinned) {
+                    state.value = AgentOverlayState(status = AgentOverlayStatus.Idle)
+                    ensureOverlayVisible()
+                } else {
+                    dismissAndStop()
+                }
+            }
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("overlay_open_conversation_failed") {
                 "Overlay open conversation failed: type=${throwable.safeLogType()}"
@@ -174,6 +212,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var lastCompletedRunContext: CompletedRunContext? = null
     private val hideToken = Any()
 
+    /** 常驻开关：打开 Eta 后胶囊一直在，不随任务结束消失。 */
+    private var capsulePinned = false
+
+    /** 完成后未读：胶囊保留「已完成」提示，直到用户打开 Eta。 */
+    private var unreadFinished = false
+
     override fun onCreate() {
         super.onCreate()
         islandBridge = AgentRuntimeIslandBridge(this, AndroidAgentLogger, ::cancelRun)
@@ -189,8 +233,33 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_KEEP_ALIVE || sessions.isEmpty()) {
-            stopSelf(startId)
+        when (intent?.action) {
+            ACTION_PIN_CAPSULE -> {
+                capsulePinned = true
+                ensureOverlayVisible()
+                if (runningSessionCount() == 0) {
+                    state.value = AgentOverlayState(status = AgentOverlayStatus.Idle)
+                }
+            }
+            ACTION_UNPIN_CAPSULE -> {
+                capsulePinned = false
+                if (runningSessionCount() == 0) dismissAndStop()
+            }
+            ACTION_CLEAR_READ -> {
+                unreadFinished = false
+                if (runningSessionCount() == 0) {
+                    if (capsulePinned) {
+                        state.value = AgentOverlayState(status = AgentOverlayStatus.Idle)
+                        ensureOverlayVisible()
+                    } else {
+                        dismissAndStop()
+                    }
+                }
+            }
+            else -> {
+                val keepAlive = intent?.action == ACTION_KEEP_ALIVE && sessions.isNotEmpty()
+                if (!keepAlive && !capsulePinned && !unreadFinished) stopSelf(startId)
+            }
         }
         return START_NOT_STICKY
     }
@@ -463,7 +532,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         mainHandler.removeCallbacksAndMessages(hideToken)
         if (usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)) {
-            removeOverlayWindows()
+            if (!capsulePinned) removeOverlayWindows()
         }
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
@@ -597,6 +666,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (sessionFor(session.runId) !== session) return@post
             lastCompletedRunContext = completedContext
+            rememberFinishedSession(session.runId)
             sessions.remove(session.runId)
             syncRunningSessions()
             if (session.virtualUiRouted.get()) {
@@ -999,8 +1069,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun toggleCapsule() {
         val expand = !capsuleExpanded.value
         // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) setCapsuleWindowHeight(CAPSULE_CONTROLS_HEIGHT_DP)
+        if (expand) {
+            setCapsuleWindowHeight(capsuleExpandedHeightDp())
+        }
         capsuleExpanded.value = expand
+    }
+
+    /** 展开态窗口高度：有运行中会话时按条数加高，保证每条会话都能完整显示、点得到。 */
+    private fun capsuleExpandedHeightDp(): Int {
+        val count = state.value.runningSessions.size
+        return if (count == 0) {
+            CAPSULE_CONTROLS_HEIGHT_DP
+        } else {
+            (CAPSULE_SESSIONS_BASE_HEIGHT_DP + count * CAPSULE_SESSION_ROW_HEIGHT_DP)
+                .coerceAtMost(CAPSULE_SESSIONS_MAX_HEIGHT_DP)
+        }
     }
 
     private fun onCapsuleCollapsedSettled() {
@@ -1229,7 +1312,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun setCapsuleInputMode(focusable: Boolean) {
         setCapsuleWindowHeight(
             if (focusable) CAPSULE_SUPPLEMENT_HEIGHT_DP
-            else if (capsuleExpanded.value) CAPSULE_CONTROLS_HEIGHT_DP
+            else if (capsuleExpanded.value) capsuleExpandedHeightDp()
             else CAPSULE_COLLAPSED_HEIGHT_DP,
         )
         val wm = windowManager ?: return
@@ -1257,16 +1340,48 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun enterFinalState(finalState: AgentOverlayState, keepVisible: Boolean = false) {
         state.value = finalState
+        // 只要有一个会话输出完成/失败，胶囊就留一条提示，直到用户打开 Eta 或点开会话。
+        unreadFinished = true
 
         if (hasExecutedForegroundTool) {
-            // 撤掉胶囊和边缘光，改显半屏结果卡片，不自动关闭，用户手动关闭
+            // 撤掉边缘光，改显半屏结果卡片，不自动关闭；胶囊保留并给出同样的完成提示。
             capsuleExpanded.value = false
-            removeAmbientWindows()
-            windowManager?.let(::showResultCard)
+            removeGlowWindow()
             mainHandler.removeCallbacksAndMessages(hideToken)
+            setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+            state.value = finishedNoticeState(finalState)
+            ensureOverlayVisible()
+            windowManager?.let(::showResultCard)
+        } else if (capsulePinned) {
+            // 胶囊常驻：收起但保留「已完成」提示，不退回空闲，不退出服务。
+            mainHandler.removeCallbacksAndMessages(hideToken)
+            capsuleExpanded.value = false
+            setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+            state.value = finishedNoticeState(finalState)
+            ensureOverlayVisible()
         } else {
-            dismissAndStop()
+            // 完成提示不自动消失：保留胶囊显示「已完成」，等用户打开 Eta 再收。
+            mainHandler.removeCallbacksAndMessages(hideToken)
+            capsuleExpanded.value = false
+            setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+            state.value = finishedNoticeState(finalState)
+            ensureOverlayVisible()
         }
+    }
+
+    /** 完成/失败后胶囊里保留的一条提示文案。 */
+    private fun finishedNoticeState(finalState: AgentOverlayState): AgentOverlayState {
+        val failed = finalState.phase == io.github.mangi.eta.agent.overlay.AgentOverlayPhase.FAILED
+        return finalState.copy(
+            thought = if (failed) "任务失败，点开查看" else "已完成，点开查看结果",
+            runningSessions = emptyList(),
+        )
+    }
+
+    private fun removeGlowWindow() {
+        glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        glowView = null
+        glowParams = null
     }
 
     private fun removeAmbientWindows() {
@@ -1288,6 +1403,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun dismissAndStop() {
+        unreadFinished = false
+        if (capsulePinned && runningSessionCount() == 0) {
+            // 常驻模式下不撤胶囊，只收回到折叠态。
+            capsuleExpanded.value = false
+            setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+            state.value = AgentOverlayState(status = AgentOverlayStatus.Idle)
+            ensureOverlayVisible()
+            return
+        }
         removeOverlayWindows()
         stopSelf()
     }
@@ -1324,19 +1448,28 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         )
     }
 
-    private companion object {
+    internal companion object {
         /** 同时运行的会话上限：模型推理并行，工具执行在工具层排队。 */
         const val MAX_CONCURRENT_RUNS = 3
 
         const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
+        /** 胶囊展开列表里最多保留几条会话（运行中 + 最近完成）。 */
+        const val SESSION_LIST_LIMIT = 3
+
+        const val ACTION_PIN_CAPSULE = "io.github.mangi.eta.agent.runtime.PIN_CAPSULE"
+        const val ACTION_UNPIN_CAPSULE = "io.github.mangi.eta.agent.runtime.UNPIN_CAPSULE"
+        const val ACTION_CLEAR_READ = "io.github.mangi.eta.agent.runtime.CLEAR_READ"
         const val HIDE_DELAY_MS = 2_500L
         const val RESULT_REVIEW_DELAY_MS = 120_000L
         const val RESULT_CARD_HEIGHT_RATIO = 0.5f
         private const val RESULT_OPEN_REQUEST_CODE = 1108
-        private const val CAPSULE_WINDOW_WIDTH_DP = 272
-        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
-        private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
-        private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
+        private const val CAPSULE_WINDOW_WIDTH_DP = 360
+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 76
+        private const val CAPSULE_CONTROLS_HEIGHT_DP = 152
+        private const val CAPSULE_SESSIONS_BASE_HEIGHT_DP = 152
+        private const val CAPSULE_SESSION_ROW_HEIGHT_DP = 76
+        private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 560
+        private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 320
         private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
     }
