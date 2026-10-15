@@ -24,6 +24,13 @@ internal interface ProviderDao {
     @Query("DELETE FROM model_providers")
     suspend fun deleteAllProviders()
 
+    @Query("DELETE FROM model_providers WHERE is_built_in = 1")
+    suspend fun deleteBuiltInProviders(): Int
+
+    /** 填过 Key 的内置项转成自定义项：定制版不再收预置项，但用户填进去的凭据不能跟着删。 */
+    @Query("UPDATE model_providers SET is_built_in = 0 WHERE is_built_in = 1 AND TRIM(api_key) != ''")
+    suspend fun promoteConfiguredBuiltInProviders(): Int
+
     @Transaction
     @Query("SELECT * FROM model_providers WHERE id = :id")
     suspend fun providerById(id: String): ProviderWithModels?

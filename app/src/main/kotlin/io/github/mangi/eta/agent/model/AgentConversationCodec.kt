@@ -47,6 +47,7 @@ internal object AgentConversationCodec {
                 if (message.contextSummary) target.put("_eta_context_summary", true)
                 if (message.compactedUserTurns > 0) target.put("_eta_compacted_users", message.compactedUserTurns)
                 if (message.summaryThroughUserTurn > 0) target.put("_eta_summary_through_user", message.summaryThroughUserTurn)
+                if (message.compactionRound > 0) target.put("_eta_compaction_round", message.compactionRound)
                 when {
                     message.contentJson.isNotBlank() ->
                         target.put("content", JSONTokener(message.contentJson).nextValue())
@@ -71,6 +72,7 @@ internal object AgentConversationCodec {
             contextSummary = message.optBoolean("_eta_context_summary"),
             compactedUserTurns = message.optInt("_eta_compacted_users"),
             summaryThroughUserTurn = message.optInt("_eta_summary_through_user"),
+            compactionRound = message.optInt("_eta_compaction_round"),
             content = (contentValue as? String).orEmpty(),
             contentJson = if (
                 contentValue == null ||

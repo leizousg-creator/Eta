@@ -794,10 +794,20 @@ internal class AgentAppState(
         // 切换前先把当前会话没发出去的输入写回缓存，切回来时文字还在。
         selectedConversationId
             ?.takeIf { it != conversationId }
-            ?.let { previous -> conversationsById = conversationsById + (previous to homeState) }
+            ?.let { previous ->
+                conversationsById = conversationsById + (previous to homeState)
+                // 同时落盘：只靠内存时，会话重载一次草稿就没了。
+                ChatDraftStore.save(appContext, previous, homeState.input)
+            }
         // 记一笔"最近打开"：侧栏最上面那一栏按这个顺序排。
         noteRecentOpened(conversationId)
-        val state = conversationsById[conversationId] ?: return
+        val cached = conversationsById[conversationId] ?: return
+        // 切回来时把落盘草稿贴回输入框。
+        val state = ChatDraftStore.load(appContext, conversationId)
+            .takeIf { it.isNotBlank() && cached.input.isBlank() }
+            ?.let { draft -> cached.copy(input = draft) }
+            ?: cached
+        if (state !== cached) conversationsById = conversationsById + (conversationId to state)
         fileAttachmentOwnerVersion += 1
         selectedConversationId = conversationId
         homeState = state
@@ -826,7 +836,10 @@ internal class AgentAppState(
         if (homeState.messageEdit != null) cancelMessageEdit()
         // 新建会话前同样把草稿写回，别把没发出去的字丢了。
         selectedConversationId
-            ?.let { previous -> conversationsById = conversationsById + (previous to homeState) }
+            ?.let { previous ->
+                conversationsById = conversationsById + (previous to homeState)
+                ChatDraftStore.save(appContext, previous, homeState.input)
+            }
         fileAttachmentOwnerVersion += 1
         selectedConversationId = null
         homeState = emptyChatState(defaultThinkingEnabled)
@@ -2048,6 +2061,8 @@ internal class AgentAppState(
         updateTimestamp: Boolean = true,
     ) {
         conversationsById = conversationsById + (conversationId to state)
+        // 草稿落盘：输入框每次变化/清空都同步，切会话或重启后还能贴回来。
+        ChatDraftStore.save(appContext, conversationId, state.input)
         if (updateTimestamp) {
             conversationUpdatedAt = conversationUpdatedAt + (conversationId to System.currentTimeMillis())
         }

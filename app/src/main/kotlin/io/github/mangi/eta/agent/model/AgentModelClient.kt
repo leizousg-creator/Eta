@@ -356,6 +356,8 @@ internal object AgentModelClient {
         val contextSummary: Boolean = false,
         val compactedUserTurns: Int = 0,
         val summaryThroughUserTurn: Int = 0,
+        /** 第几次压缩产生的摘要：轮次由它记录，不再靠"数摘要条数"，避免数字回退。 */
+        val compactionRound: Int = 0,
         val messageId: String = "",
     )
 

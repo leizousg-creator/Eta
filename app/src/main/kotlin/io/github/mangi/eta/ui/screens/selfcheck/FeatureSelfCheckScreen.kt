@@ -181,7 +181,13 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         resolver,
         "enabled_notification_listeners",
     ).orEmpty()
-    val listenerOk = listeners.contains(pkg)
+    // 优先问系统官方接口：部分 ROM 不刷新 enabled_notification_listeners，只看字符串会误报"没给权限"。
+    val listenerOk = listeners.contains(pkg) || runCatching {
+        context.getSystemService(android.app.NotificationManager::class.java)
+            ?.isNotificationListenerAccessGranted(
+                android.content.ComponentName(pkg, "$pkg.agent.device.AgentNotificationHistoryService"),
+            ) == true
+    }.getOrDefault(false)
     val a11y = AndroidSettings.Secure.getString(
         resolver,
         "enabled_accessibility_services",
@@ -293,7 +299,30 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         } else {
             "尚未执行"
         }
-        "已开启 · 每 ${settings.autoBackupIntervalHours} 小时 · 保留 ${settings.autoBackupKeepCount} 份 · 上次 $last"
+        run {
+            val minutes = io.github.mangi.eta.data.model.AutoBackupInterval.effectiveMinutes(
+                settings.autoBackupIntervalMinutes,
+                settings.autoBackupIntervalHours,
+            )
+            val period = if (minutes % 60 == 0) "每 ${minutes / 60} 小时" else "每 $minutes 分钟"
+            val keep = io.github.mangi.eta.data.model.AutoBackupKeepCount.normalize(
+                settings.autoBackupKeepCount,
+            )
+            // 把这两轮新做的备份能力并进同一条：最近一个全量包多大、数据库到底进没进包。
+            val packInfo = runCatching {
+                io.github.mangi.eta.data.repository.AutoBackupRunner
+                    .backups(settings.autoBackupDirectory)
+                    .firstOrNull { io.github.mangi.eta.data.repository.EtaFullBackup.isFullBackup(it.name) }
+                    ?.let { file ->
+                        val mb = String.format(java.util.Locale.US, "%.1f", file.length() / 1048576.0)
+                        val hasDb = java.util.zip.ZipFile(file).use { zip ->
+                            zip.getEntry("private/databases/eta.db") != null
+                        }
+                        " · 最新全量包 $mb MB · 数据库${if (hasDb) "已含" else "缺失"}"
+                    }
+            }.getOrNull().orEmpty()
+            "已开启 · $period · 保留 $keep 份 · 上次 $last$packInfo"
+        }
     }
     storage += SelfCheckItem(
         name = "定时自动备份",
@@ -327,6 +356,21 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
     )
 
     val builtin = listOf(
+        SelfCheckItem(
+            "通知使用权判定加固",
+            STATE_BUILTIN,
+            "自检先问系统官方接口（isNotificationListenerAccessGranted）再回退读设置值：部分 ROM 不刷新 enabled_notification_listeners，只读字符串会把「已经给了权限」误报成「没给」",
+        ),
+        SelfCheckItem(
+            "只留自定义模型",
+            STATE_BUILTIN,
+            "定制版不收预置模型提供商：启动时清掉没填 Key 的预置项；填过 Key 的（例如你手填过 Key 的 DeepSeek）自动转成自定义项保留，不会连凭据一起删",
+        ),
+        SelfCheckItem(
+            "输入草稿按会话落盘",
+            STATE_BUILTIN,
+            "输入框内容按会话存本地（eta_chat_drafts）：切会话、退到后台、重启后都自动贴回；消息发出去即清空草稿",
+        ),
         SelfCheckItem("多会话并发", STATE_BUILTIN, "最多 3 个会话同时跑任务；悬浮胶囊列出运行中会话，点一条跳回"),
         SelfCheckItem("工具串行锁", STATE_BUILTIN, "点按/输入/终端等独占工具全局排队，只读工具仍并行"),
         SelfCheckItem("界面重连文本重复修复", STATE_BUILTIN, "切出去再回来，同一段回复不再重复 2~3 遍"),
@@ -392,7 +436,7 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem(
             "对话内三轮压缩",
             STATE_BUILTIN,
-            "同一对话最多压缩 3 轮，顶栏胶囊显示「第 x/3 轮」；到上限提示新开对话继续",
+            "同一对话最多压缩 3 轮，顶栏胶囊显示「已压 x/3 轮」；用量到窗口 75% 即提前压；轮次只增不减（编辑/重生成不会让数字回退）；到上限提示新开对话继续",
         ),
         SelfCheckItem(
             "工具档「开发」档与分组",
@@ -442,7 +486,7 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem(
             "定时自动备份",
             STATE_BUILTIN,
-            "设置 → 数据备份 可选 24 小时／3 天／7 天与保留 3／5／10 份；到点先比指纹，没变化不写文件；产物在共享目录 Eta备份/，无常驻进程",
+            "设置 → 数据备份 可选周期与保留份数（本机当前：每 6 小时／保留 10 份）；到点先比指纹，没变化不写文件；全量包内含数据库（eta.db），单包约 40 MB；每次打包前也会自动备一次；产物在共享目录，无常驻进程",
         ),
         SelfCheckItem(
             "数据占用与清理",

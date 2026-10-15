@@ -51,6 +51,7 @@ internal class AgentContextCompactor(
             .summarize(safe)
         val covered = safe.sumOf { it.compactedUserTurns + if (it.role == "user") 1 else 0 } +
             priorSummaries.sumOf { it.optInt("_eta_compacted_users") }
+        val nextRound = (priorSummaries.maxOfOrNull { it.optInt("_eta_compaction_round") } ?: 0) + 1
         val result = JSONArray()
         for (index in 0 until systemCount) result.put(messages.getJSONObject(index))
         priorSummaries.forEach { result.put(it) }
@@ -60,6 +61,7 @@ internal class AgentContextCompactor(
             contextSummary = true,
             compactedUserTurns = covered,
             summaryThroughUserTurn = covered + if (protectedUser != null) 1 else 0,
+            compactionRound = nextRound,
         )))
         protectedUser?.let(result::put)
         history.drop(end).forEach { message ->

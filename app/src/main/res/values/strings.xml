@@ -1459,7 +1459,7 @@
     <string name="virtual_screen_completion_fail_title">任务失败</string>
     <string name="virtual_screen_completion_ok_body">虚拟屏指令执行完毕</string>
     <string name="conversation_context_capsule">上下文</string>
-    <string name="conversation_compaction_round_capsule">第 %1$d/%2$d 轮</string>
+    <string name="conversation_compaction_round_capsule">已压 %1$d/%2$d 轮</string>
     <string name="context_compaction_limit_reached">本对话已压缩 3 轮，达到上限；请新开对话继续。</string>
     <string name="conversation_speed_description">最近一次模型请求：平均每秒生成 %1$s 个输出 token，包含首字等待时间。</string>
     <string name="conversation_trimmed_capsule">已省略 %1$d 条</string>
@@ -1662,6 +1662,15 @@
   <string name="data_backup_auto_never">还没有自动备份过</string>
   <string name="data_backup_auto_last_file">最近备份：%1$s</string>
   <string name="data_backup_auto_last">上次备份：%1$s</string>
+  <string name="data_backup_restore_title">从整机备份还原</string>
+  <string name="data_backup_restore_summary">选一个全量备份包，把聊天记录、设置与私有数据整体回滚；还原后需要重启 Eta</string>
+  <string name="data_backup_restore_none">还没有全量备份包：先点上面「立即备份一次」</string>
+  <string name="data_backup_restore_pick_title">选择要还原的备份包</string>
+  <string name="data_backup_restore_pick_summary">最新的在最上面，点一下选中</string>
+  <string name="data_backup_restore_confirm_title">确认整机还原？</string>
+  <string name="data_backup_restore_confirm_summary">会用「%1$s」覆盖当前的聊天记录、设置与私有数据，覆盖后旧数据不再保留。</string>
+  <string name="data_backup_restore_confirm_action">开始还原</string>
+  <string name="data_backup_restore_done">还原完成（%1$d 个文件），请重启 Eta</string>
   <string name="data_backup_auto_dir">备份文件夹</string>
   <string name="data_backup_dir_default">默认</string>
   <string name="data_backup_dir_custom">自定义</string>

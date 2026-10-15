@@ -118,33 +118,10 @@ internal object ProviderRepository {
     }
 
     suspend fun ensureBuiltInsMerged(): Unit = builtInMergeMutex.withLock {
-        val current = allProviders()
-        if (current.isEmpty()) {
-            insertProviders(BuiltinProviders.PROVIDERS.map(::seedOfficialModelsIfEmpty))
-            SettingsDataStore.setOfficialModelCatalogRevision(OfficialModelCatalog.CURRENT_REVISION)
-            repairSelection()
-            return@withLock
-        }
-
-        val existingIds = current.mapTo(mutableSetOf()) { it.id }
-        val missing = BuiltinProviders.PROVIDERS.filterNot { it.id in existingIds }
-        if (missing.isNotEmpty()) {
-            insertProviders(missing.map(::seedOfficialModelsIfEmpty))
-        }
-        val appliedRevision = SettingsDataStore.officialModelCatalogRevision()
-        if (appliedRevision < OfficialModelCatalog.CURRENT_REVISION) {
-            current.filter { it.isBuiltIn && BuiltinProviders.providerById(it.id) != null }.forEach { provider ->
-                val additions = OfficialModelCatalog.modelsAddedSince(provider, appliedRevision)
-                dao().appendModelsIfAbsent(
-                    providerId = provider.id,
-                    candidates = provider.withModels(additions).toModelEntities(),
-                )
-                if (appliedRevision < 1) {
-                    refreshLegacyCatalogReasoningCapabilities(provider)
-                }
-            }
-            SettingsDataStore.setOfficialModelCatalogRevision(OfficialModelCatalog.CURRENT_REVISION)
-        }
+        // 定制版：不注入任何内置提供商。没填过 Key 的内置项直接删；填过 Key 的转成自定义项保留。
+        dao().promoteConfiguredBuiltInProviders()
+        dao().deleteBuiltInProviders()
+        SettingsDataStore.setOfficialModelCatalogRevision(OfficialModelCatalog.CURRENT_REVISION)
         repairSelection()
     }
 
