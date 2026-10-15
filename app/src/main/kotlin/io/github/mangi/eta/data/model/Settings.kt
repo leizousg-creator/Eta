@@ -22,12 +22,30 @@ data class Settings(
     val virtualScreenFloatWindowAlpha: Float = 0.85f,
     val virtualScreenFloatWindowPosX: Int = 16,
     val virtualScreenFloatWindowPosY: Int = 120,
+    val autoBackupEnabled: Boolean = false,
+    val autoBackupIntervalHours: Int = 24,
+    val autoBackupKeepCount: Int = 5,
+    val autoBackupLastAt: Long = 0L,
+    val autoBackupFingerprint: String = "",
+    val autoBackupLastFileName: String = "",
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
 
 internal object VirtualScreenIdleTimeout {
     val options = listOf(10, 20, 60, 0)
     fun normalize(minutes: Int): Int = minutes.takeIf { it in options } ?: 20
+}
+
+/** 自动备份周期（小时）。 */
+internal object AutoBackupInterval {
+    val options = listOf(24, 72, 168)
+    fun normalize(hours: Int): Int = hours.takeIf { it in options } ?: 24
+}
+
+/** 自动备份保留份数，超出的删最旧。 */
+internal object AutoBackupKeepCount {
+    val options = listOf(3, 5, 10)
+    fun normalize(count: Int): Int = count.takeIf { it in options } ?: 5
 }
 
 /** 虚拟屏出帧目标帧率；越低越省电，越高越跟手。 */

@@ -82,6 +82,8 @@ import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
+import io.github.mangi.eta.ui.screens.usage.DataUsageScreen
+import io.github.mangi.eta.ui.screens.usage.TokenUsageScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxEnvironmentScreen
@@ -397,6 +399,9 @@ fun AgentAppRoot(
                                     agentState.removePendingFileReference(action.id)
                                 is AgentHomeAction.EditMessage -> agentState.beginMessageEdit(action.id)
                                 AgentHomeAction.CancelMessageEdit -> agentState.cancelMessageEdit()
+                                AgentHomeAction.SearchJumpConsumed -> agentState.consumeSearchJump()
+                                AgentHomeAction.ResumeInterruptedRun -> agentState.resumeInterruptedRun()
+                                AgentHomeAction.DismissInterruptedRun -> agentState.dismissInterruptedRun()
                                 is AgentHomeAction.DeleteMessage -> {
                                     agentState.messageRevisionImpact(action.id)?.let { impact ->
                                         messageDeleteTarget = MessageMutationTarget(action.id, impact.laterTurnCount)
@@ -659,6 +664,14 @@ fun AgentAppRoot(
 
             entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
                 AgentTasksScreen(onBack = { popRoute() })
+            }
+
+            entry<AppRoute.TokenUsage>(swipeDismiss = swipeDismiss) {
+                TokenUsageScreen(onBack = { popRoute() })
+            }
+
+            entry<AppRoute.DataUsage>(swipeDismiss = swipeDismiss) {
+                DataUsageScreen(onBack = { popRoute() })
             }
             entry<AppRoute.VirtualScreen>(swipeDismiss = swipeDismiss) {
                 io.github.mangi.eta.ui.screens.tasks.VirtualScreenSettingsScreen(onBack = { popRoute() })

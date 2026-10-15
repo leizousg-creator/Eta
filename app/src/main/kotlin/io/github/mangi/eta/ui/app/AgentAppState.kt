@@ -28,6 +28,7 @@ import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageLink
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.repository.CharacterRepository
+import io.github.mangi.eta.data.usage.TokenUsageRecorder
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
@@ -65,6 +66,9 @@ import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.contentMatches
+import io.github.mangi.eta.ui.model.SearchJumpUiState
+import io.github.mangi.eta.ui.model.ResumableRunUiState
+import io.github.mangi.eta.ui.model.firstMatchMessageId
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
@@ -490,6 +494,20 @@ internal class AgentAppState(
         if (interrupted && (checkpoint.contextSnapshot != null || checkpoint.transcript.isNotEmpty())) {
             applyConversationHistoryResult(runId, checkpoint.transcript, checkpoint.contextSnapshot, true)
         }
+        // 只对普通对话回合提供中断续跑：改写回复与上下文压缩没有可接着跑的剩余步骤。
+        if (interrupted && checkpoint.operation == AgentRuntimeWire.OP_CHAT) {
+            conversationsById[conversationId]?.let { state ->
+                updateConversation(
+                    conversationId,
+                    state.copy(
+                        resumableRun = ResumableRunUiState(
+                            runId = runId,
+                            interruptedAt = checkpoint.updatedAt,
+                        ),
+                    ),
+                )
+            }
+        }
         conversationsById[conversationId]?.let { state ->
             updateConversation(conversationId, RoleplayConversationReducer.linkRun(state, runId))
         }
@@ -699,12 +717,40 @@ internal class AgentAppState(
         refreshConversationSummaries()
     }
 
+    /** 搜索跳转令牌：让同一条命中消息也能被重复定位。 */
+    private var searchJumpToken = 0L
+
+    /** 搜索跳转已被界面消费（已滚到命中消息）：立即清空，避免重组时反复跳回。 */
+    fun consumeSearchJump() {
+        if (homeState.searchJump != null) homeState = homeState.copy(searchJump = null)
+    }
+
+    /** 中断续跑：用一条继续指令重发，接上 checkpoint 恢复出来的半截上下文。 */
+    fun resumeInterruptedRun() {
+        if (homeState.resumableRun == null) return
+        if (homeState.isStreaming) return
+        homeState = homeState.copy(resumableRun = null)
+        sendCurrentMessage(appContext.getString(R.string.agent_run_resume_prompt))
+    }
+
+    /** 忽略中断续跑提示：只清当前会话里的提示条。 */
+    fun dismissInterruptedRun() {
+        if (homeState.resumableRun == null) return
+        homeState = homeState.copy(resumableRun = null)
+    }
+
     fun selectConversation(conversationId: String) {
         if (homeState.messageEdit != null) cancelMessageEdit()
         val state = conversationsById[conversationId] ?: return
         fileAttachmentOwnerVersion += 1
         selectedConversationId = conversationId
         homeState = state
+        // 从搜索结果里点开：定位该会话第一条命中消息；只有标题/预览命中时不做跳转。
+        state.firstMatchMessageId(conversationPaneState.searchQuery.trim()) { code -> noticeText(code) }
+            ?.let { target ->
+                searchJumpToken += 1
+                homeState = state.copy(searchJump = SearchJumpUiState(target, searchJumpToken))
+            }
         refreshConversationModel()
         if (state.modelId != null && providers.enabledModel(state.modelId) == null) {
             modelPickerState.selectedModel?.let { fallback ->
@@ -1678,7 +1724,15 @@ internal class AgentAppState(
                 overflowDowngradeNotice = null
             }
             is AgentEvent.HistoryTrimmed -> historyTrimNotice = event.omittedUserRounds to event.omittedMessages
-            is AgentEvent.ContextOverflowDowngrade -> overflowDowngradeNotice = event.profileId
+            is AgentEvent.ContextOverflowDowngrade -> {
+                overflowDowngradeNotice = event.profileId
+                conversationIdForRun(runId)?.let { id ->
+                    val modelId = conversationsById[id]?.modelId
+                    scope.launch(Dispatchers.IO) {
+                        TokenUsageRecorder.recordDowngrade(appContext, id, modelId)
+                    }
+                }
+            }
             else -> Unit
         }
         when (event) {
@@ -1695,6 +1749,19 @@ internal class AgentAppState(
                 val usage = event.usage.toUi()
                 if (!usage.isEmpty) conversationIdForRun(runId)?.let { id -> conversationsById[id]?.let {
                     updateConversation(id, it.copy(lastModelUsage = usage))
+                    scope.launch(Dispatchers.IO) {
+                        TokenUsageRecorder.recordUsage(
+                            context = appContext,
+                            conversationId = id,
+                            modelId = it.modelId,
+                            contextTokens = usage.contextTokens,
+                            inputTokens = usage.inputTokens,
+                            outputTokens = usage.outputTokens,
+                            reasoningTokens = usage.reasoningTokens,
+                            cachedTokens = usage.cachedTokens,
+                            durationMs = usage.requestDurationMs,
+                        )
+                    }
                 } }
                 updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
             }

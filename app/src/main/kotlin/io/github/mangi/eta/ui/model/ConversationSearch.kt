@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.model
 
+import androidx.compose.runtime.Immutable
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 
 /**
@@ -44,4 +45,24 @@ private fun AgentChatMessageUi.matches(
             detail?.contains(query, ignoreCase = true) == true
 
     else -> false
+}
+
+/** 会话搜索命中定位：打开会话后滚动到命中消息并临时高亮；消费后由调用方置空。 */
+@Immutable
+internal data class SearchJumpUiState(
+    val messageId: String,
+    /** 递增令牌：同一条消息被反复命中时也要能再次触发跳转。 */
+    val token: Long,
+)
+
+/**
+ * 第一条命中消息的 id。仅标题或预览命中、消息内容未命中时返回 null，
+ * 此时调用方只打开会话、不做跳转。
+ */
+internal fun AgentChatHomeUiState.firstMatchMessageId(
+    query: String,
+    noticeText: (SystemNoticeCode) -> String,
+): String? {
+    if (query.isBlank()) return null
+    return messages.firstOrNull { message -> message.matches(query, noticeText) }?.id
 }

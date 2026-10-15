@@ -28,8 +28,9 @@ import androidx.room.migration.Migration
         UserPersonaEntity::class,
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
+        TokenUsageRecordEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -40,6 +41,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
     abstract fun agentTaskDao(): AgentTaskDao
+    abstract fun tokenUsageDao(): TokenUsageDao
 
     companion object {
         @Volatile
@@ -74,6 +76,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_24_25,
                         MIGRATION_25_26,
                         MIGRATION_26_27,
+                        MIGRATION_27_28,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -112,6 +115,12 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_26_27 = Migration(26, 27) { database ->
             database.execSQL("CREATE TABLE IF NOT EXISTS conversation_categories (id TEXT NOT NULL, name TEXT NOT NULL, sort_order INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(id))")
             database.execSQL("ALTER TABLE conversations ADD COLUMN category_id TEXT")
+        }
+
+        /** 28：用量统计。新表独立存放，旧库升级后统计从空开始。 */
+        internal val MIGRATION_27_28 = Migration(27, 28) { database ->
+            database.execSQL("CREATE TABLE IF NOT EXISTS token_usage_records (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, conversation_id TEXT, model_id TEXT, created_at INTEGER NOT NULL, kind TEXT NOT NULL, context_tokens INTEGER, input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cached_tokens INTEGER, duration_ms INTEGER)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_token_usage_records_created_at ON token_usage_records (created_at)")
         }
 
         internal val MIGRATION_23_24 = Migration(23, 24) { database ->

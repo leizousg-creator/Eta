@@ -32,6 +32,10 @@ internal object DiagnosticsBundle {
         entries["README.txt"] = README
         entries["state.txt"] = state(context, root)
         entries["helper-exit.txt"] = HelperExitLog.dump()
+        CrashRecorder.records(context).forEach { file ->
+            val text = runCatching { file.readText() }.getOrNull() ?: return@forEach
+            entries["crash/" + file.name] = text.take(MAX_CRASH_CHARS)
+        }
         entries["logcat.txt"] = logcat(root)
         zip(entries)
     }
@@ -83,6 +87,12 @@ internal object DiagnosticsBundle {
         append("机型：").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n')
         append("ABI：").append(Build.SUPPORTED_ABIS.joinToString(", ")).append('\n')
         append("Root：").append(if (root) "已授权" else "未授权").append('\n')
+
+        val crashes = CrashRecorder.records(context)
+        append("\n[崩溃记录]\n")
+        append("已记录：").append(crashes.size).append(" 条（最多保留 ")
+            .append(CrashRecorder.MAX_KEPT).append(" 条）\n")
+        append("最近一份：").append(crashes.firstOrNull()?.name ?: "无").append('\n')
 
         val settings = runCatching { SettingsDataStore.settings() }.getOrNull()
         if (settings != null) {
@@ -139,12 +149,14 @@ internal object DiagnosticsBundle {
     }
 
     private const val MAX_LOG_BYTES = 2 * 1024 * 1024
+    private const val MAX_CRASH_CHARS = 200_000
 
     private val README = """
         这是 Eta 生成的诊断包，内容全部只读采集：
 
         - state.txt：设备、虚拟屏、语音与运行状态快照
         - helper-exit.txt：虚拟屏服务进程（root helper）的 stderr 尾部与退出码
+        - crash/*.txt：崩溃现场（每次崩溃一份，最多 10 份，含调用栈与日志尾部）
         - logcat.txt：最近日志。已授权 root 时为全量日志，否则只有 Eta 自己的日志
 
         不含语音凭据、模型密钥与会话正文。排查完成后可直接删除。

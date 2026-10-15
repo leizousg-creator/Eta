@@ -7,6 +7,13 @@ import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.model.ReasoningEffort
 
+/** 上次运行被中断、可以从中断处继续时的提示状态；瞬时状态，不落库。 */
+@Immutable
+internal data class ResumableRunUiState(
+    val runId: String,
+    val interruptedAt: Long,
+)
+
 @Immutable
 internal data class AgentChatUiState(
     val messages: List<AgentChatMessageUi>,
@@ -28,6 +35,10 @@ internal data class AgentChatUiState(
     val lastModelUsage: TokenUsageUi? = null,
     /** 会话最近一次发送使用的本地 Model.id；null 表示尚未绑定，跟随默认模型。 */
     val modelId: String? = null,
+    /** 会话搜索命中定位：打开会话后滚动到命中消息并临时高亮；瞬时状态，不落库。 */
+    val searchJump: SearchJumpUiState? = null,
+    /** 上次对话回合被中断、可以接着跑时的提示；瞬时状态，不落库。 */
+    val resumableRun: ResumableRunUiState? = null,
 ) {
     val canCompactContext: Boolean get() = !isStreaming && messageEdit == null && history.any {
         !it.contextSummary && (it.role == "assistant" || it.role == "tool")

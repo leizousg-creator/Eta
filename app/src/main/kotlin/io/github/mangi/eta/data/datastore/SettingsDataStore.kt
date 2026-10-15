@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -67,6 +68,12 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_FLOAT_ALPHA = floatPreferencesKey("virtual_screen_float_alpha")
     private val VIRTUAL_SCREEN_FLOAT_POS_X = intPreferencesKey("virtual_screen_float_pos_x")
     private val VIRTUAL_SCREEN_FLOAT_POS_Y = intPreferencesKey("virtual_screen_float_pos_y")
+    private val AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
+    private val AUTO_BACKUP_INTERVAL = intPreferencesKey("auto_backup_interval_hours")
+    private val AUTO_BACKUP_KEEP = intPreferencesKey("auto_backup_keep_count")
+    private val AUTO_BACKUP_LAST_AT = longPreferencesKey("auto_backup_last_at")
+    private val AUTO_BACKUP_FINGERPRINT = stringPreferencesKey("auto_backup_fingerprint")
+    private val AUTO_BACKUP_LAST_FILE = stringPreferencesKey("auto_backup_last_file")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -162,8 +169,28 @@ internal object SettingsDataStore {
             prefs[VIRTUAL_SCREEN_FLOAT_ALPHA] = updated.virtualScreenFloatWindowAlpha
             prefs[VIRTUAL_SCREEN_FLOAT_POS_X] = updated.virtualScreenFloatWindowPosX
             prefs[VIRTUAL_SCREEN_FLOAT_POS_Y] = updated.virtualScreenFloatWindowPosY
+            prefs[AUTO_BACKUP_ENABLED] = updated.autoBackupEnabled
+            prefs[AUTO_BACKUP_INTERVAL] = io.github.mangi.eta.data.model.AutoBackupInterval.normalize(updated.autoBackupIntervalHours)
+            prefs[AUTO_BACKUP_KEEP] = io.github.mangi.eta.data.model.AutoBackupKeepCount.normalize(updated.autoBackupKeepCount)
+            prefs[AUTO_BACKUP_LAST_AT] = updated.autoBackupLastAt
+            prefs.putOrRemove(AUTO_BACKUP_FINGERPRINT, updated.autoBackupFingerprint)
+            prefs.putOrRemove(AUTO_BACKUP_LAST_FILE, updated.autoBackupLastFileName)
             prefs.remove(stringPreferencesKey("vivo_atomic_scene"))
             prefs.putAppearance(updated.appearance.normalized())
+        }
+    }
+
+    suspend fun autoBackupLastAt(): Long = settings().autoBackupLastAt
+
+    /** 备份状态单独写，走独立 edit，避免与设置页的表单改动互相覆盖。 */
+    suspend fun setAutoBackupState(lastAt: Long, fingerprint: String, fileName: String) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            prefs[AUTO_BACKUP_LAST_AT] = lastAt
+            if (fingerprint.isBlank()) prefs.remove(AUTO_BACKUP_FINGERPRINT)
+            else prefs[AUTO_BACKUP_FINGERPRINT] = fingerprint
+            if (fileName.isBlank()) prefs.remove(AUTO_BACKUP_LAST_FILE)
+            else prefs[AUTO_BACKUP_LAST_FILE] = fileName
         }
     }
 
@@ -304,6 +331,12 @@ internal object SettingsDataStore {
         virtualScreenFloatWindowAlpha = this[VIRTUAL_SCREEN_FLOAT_ALPHA] ?: 0.85f,
         virtualScreenFloatWindowPosX = this[VIRTUAL_SCREEN_FLOAT_POS_X] ?: 16,
         virtualScreenFloatWindowPosY = this[VIRTUAL_SCREEN_FLOAT_POS_Y] ?: 120,
+        autoBackupEnabled = this[AUTO_BACKUP_ENABLED] ?: false,
+        autoBackupIntervalHours = io.github.mangi.eta.data.model.AutoBackupInterval.normalize(this[AUTO_BACKUP_INTERVAL] ?: 24),
+        autoBackupKeepCount = io.github.mangi.eta.data.model.AutoBackupKeepCount.normalize(this[AUTO_BACKUP_KEEP] ?: 5),
+        autoBackupLastAt = this[AUTO_BACKUP_LAST_AT] ?: 0L,
+        autoBackupFingerprint = this[AUTO_BACKUP_FINGERPRINT].orEmpty(),
+        autoBackupLastFileName = this[AUTO_BACKUP_LAST_FILE].orEmpty(),
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,

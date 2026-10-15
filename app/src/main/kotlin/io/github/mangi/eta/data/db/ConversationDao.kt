@@ -9,6 +9,12 @@ import androidx.room.Upsert
 
 @Dao
 internal interface ConversationDao : ChunkedTextDao {
+    @Query("SELECT COUNT(*) FROM conversations")
+    suspend fun conversationCount(): Int
+
+    @Query("SELECT COUNT(*) FROM conversation_messages")
+    suspend fun messageCount(): Int
+
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
             "applied_runtime_run_ids_json, roleplay_json, revisions_json, last_model_usage_json, created_at, updated_at, model_id, pinned, category_id " +

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
@@ -37,7 +38,6 @@ import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SwipeUp
-import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.VerifiedUser
@@ -53,6 +53,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -62,6 +82,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
+import io.github.mangi.eta.core.CrashRecorder
 import io.github.mangi.eta.core.DiagnosticsBundle
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
@@ -69,8 +90,6 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
-import io.github.mangi.eta.data.update.AppLatestRelease
-import io.github.mangi.eta.data.update.AppUpdateChecker
 import io.github.mangi.eta.systemizer.GoogleAppSystemizerInstaller
 import io.github.mangi.eta.systemizer.RootManager
 import io.github.mangi.eta.systemizer.SystemizerInstallResult
@@ -146,12 +165,7 @@ private fun SettingsPageContent(
         }
     }
 
-    // 关于组：版本信息与更新检查。结果对话框在列表外渲染，状态需要页面级 owner。
-    val appPackageInfo = remember {
-        context.packageManager.getPackageInfo(context.packageName, 0)
-    }
-    val appVersionName = appPackageInfo.versionName.orEmpty()
-    val appVersionSummary = "${appPackageInfo.versionName} (${appPackageInfo.longVersionCode})"
+    // 关于组：反馈与诊断。
     val openUrl: (String) -> Unit = { url ->
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
@@ -204,28 +218,43 @@ private fun SettingsPageContent(
             }
         }
     }
-    var checkingUpdate by remember { mutableStateOf(false) }
-    var availableUpdate by remember { mutableStateOf<AppLatestRelease?>(null) }
-    val checkForUpdate: () -> Unit = {
-        if (!checkingUpdate) {
-            checkingUpdate = true
+    // 崩溃记录：留证文件在 files/crash/ 下，这里只做展示与一次性导出。
+    var crashCount by remember { mutableStateOf(0) }
+    var crashLatest by remember { mutableStateOf<String?>(null) }
+    var crashSharing by remember { mutableStateOf(false) }
+    val shareCrash: () -> Unit = {
+        val latest = CrashRecorder.latest(context.applicationContext)
+        if (latest == null) {
+            Toast.makeText(context.applicationContext, context.getString(R.string.ui_about_crash_none), Toast.LENGTH_SHORT).show()
+        } else if (!crashSharing) {
+            crashSharing = true
             coroutineScope.launch {
-                val release = runCatching {
-                    withContext(Dispatchers.IO) { AppUpdateChecker.fetchLatest() }
+                val shareUri = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val dir = File(context.cacheDir, "diagnostics").apply { mkdirs() }
+                        val target = File(dir, latest.name)
+                        target.writeBytes(latest.readBytes())
+                        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", target)
+                    }
                 }.getOrNull()
-                checkingUpdate = false
-                when {
-                    release == null -> Toast.makeText(
+                crashSharing = false
+                if (shareUri == null) {
+                    Toast.makeText(
                         context.applicationContext,
-                        context.getString(R.string.ui_update_check_failed),
+                        context.getString(R.string.ui_about_crash_failed),
                         Toast.LENGTH_SHORT,
                     ).show()
-                    AppUpdateChecker.isNewer(release.version, appVersionName) -> availableUpdate = release
-                    else -> Toast.makeText(
-                        context.applicationContext,
-                        context.getString(R.string.ui_update_already_latest),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                } else {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, shareUri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    runCatching {
+                        context.startActivity(
+                            Intent.createChooser(send, context.getString(R.string.ui_about_crash_share_title)),
+                        )
+                    }
                 }
             }
         }
@@ -238,6 +267,9 @@ private fun SettingsPageContent(
                 accessibilityGranted = isAgentAccessibilityEnabled(context)
                 accessibilityProtectionEnabled =
                     AccessibilityProtectionClient.isEnabled(context)
+                val crashes = CrashRecorder.records(context)
+                crashCount = crashes.size
+                crashLatest = crashes.firstOrNull()?.name
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -301,12 +333,71 @@ private fun SettingsPageContent(
         DropdownItem(text = target.displayName(context))
     }
 
+    // 设置项搜索：顶部关键字过滤分组，关键词表见文件末尾 SETTINGS_SEARCH_INDEX。
+    var settingsQuery by remember { mutableStateOf("") }
+    val settingsKeyword = settingsQuery.trim().lowercase()
+    val sectionVisible: (String) -> Boolean = { key ->
+        settingsKeyword.isEmpty() || settingsMatched(key, settingsKeyword)
+    }
+    val settingsNoHit = settingsKeyword.isNotEmpty() &&
+        SETTINGS_SEARCH_INDEX.none { it.keywords.lowercase().contains(settingsKeyword) }
+
+    // 诊断包分享：生成到 cache 后交给系统分享面板，字节只在内存里留到写入完成。
+    var diagnosticsSharing by remember { mutableStateOf(false) }
+    val shareDiagnostics: () -> Unit = {
+        if (!diagnosticsSharing && !diagnosticsPending) {
+            diagnosticsSharing = true
+            coroutineScope.launch {
+                val shareUri = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val payload = DiagnosticsBundle.collect(context.applicationContext)
+                        val dir = File(context.cacheDir, "diagnostics").apply { mkdirs() }
+                        val target = File(dir, DiagnosticsBundle.defaultFileName())
+                        target.writeBytes(payload)
+                        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", target)
+                    }
+                }.getOrNull()
+                diagnosticsSharing = false
+                if (shareUri == null) {
+                    Toast.makeText(
+                        context.applicationContext,
+                        context.getString(R.string.ui_about_diagnostics_failed),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/zip"
+                        putExtra(Intent.EXTRA_STREAM, shareUri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    runCatching {
+                        context.startActivity(
+                            Intent.createChooser(
+                                send,
+                                context.getString(R.string.ui_about_diagnostics_share_title),
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_set_up_7debf9),
         onBack = onBack,
     ) {
+            item(key = "settings_search") {
+                SettingsSearchBar(
+                    query = settingsQuery,
+                    onQueryChange = { settingsQuery = it },
+                    emptyResult = settingsNoHit,
+                )
+            }
+
             // ── LLM 提供商 ──────────────────────────────────────────────
             item(key = "section_agent") {
+                if (!sectionVisible("section_agent")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.settings_llm_providers))
                 EtaPreferenceGroup {
                     EtaArrowPreference(
@@ -335,6 +426,7 @@ private fun SettingsPageContent(
 
             // ── 上下文与扩展 ────────────────────────────────────────────
             item(key = "section_context_extensions") {
+                if (!sectionVisible("section_context_extensions")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.settings_context_extensions))
                 EtaPreferenceGroup {
                     SwitchPref(
@@ -412,6 +504,7 @@ private fun SettingsPageContent(
 
             // ── 工具 ───────────────────────────────────────────────────
             item(key = "section_tools") {
+                if (!sectionVisible("section_tools")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.ui_tool_a72ef1))
                 EtaPreferenceGroup {
                     EtaArrowPreference(
@@ -485,6 +578,7 @@ private fun SettingsPageContent(
             }
 
             item(key = "system_enhancements") {
+                if (!sectionVisible("system_enhancements")) return@item
                 EtaPreferenceGroup {
                     EtaArrowPreference(
                         title = stringResource(R.string.capability_enhancements),
@@ -496,6 +590,7 @@ private fun SettingsPageContent(
 
             // ── 系统助手接管 ──────────────────────────────────────────────
             item(key = "section_assistant_takeover") {
+                if (!sectionVisible("section_assistant_takeover")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.ui_system_assistant_takes_over_f46043))
                 EtaPreferenceGroup {
                     EtaArrowPreference(
@@ -560,6 +655,7 @@ private fun SettingsPageContent(
             if (prefs != null || hasConnectedFramework) {
                 // ── 厂商助手兼容入口 ──────────────────────────────────────────
                 item(key = "section_oem_assistant_compatibility") {
+                    if (!sectionVisible("section_oem_assistant_compatibility")) return@item
                     EtaPreferenceGroupTitle(stringResource(R.string.ui_xiaobu_xiaoai_compatible_entrance_ae918a))
                     EtaPreferenceGroup {
                         SwitchPref(
@@ -588,6 +684,7 @@ private fun SettingsPageContent(
 
             // ── 通用 ────────────────────────────────────────────────────
             item(key = "section_general") {
+                if (!sectionVisible("section_general")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.settings_general))
                 EtaPreferenceGroup {
                     EtaArrowPreference(
@@ -626,6 +723,7 @@ private fun SettingsPageContent(
 
             // ── 权限 ────────────────────────────────────────────────────
             item(key = "section_permissions") {
+                if (!sectionVisible("section_permissions")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.ui_permissions_560165))
                 EtaPreferenceGroup {
                     EtaArrowPreference(
@@ -742,36 +840,32 @@ private fun SettingsPageContent(
 
             // ── 关于 ────────────────────────────────────────────────────
             item(key = "section_about") {
+                if (!sectionVisible("section_about")) return@item
                 EtaPreferenceGroupTitle(stringResource(R.string.ui_about_bed172))
                 EtaPreferenceGroup {
-                    EtaPreference(
-                        title = stringResource(R.string.ui_about_version_title),
-                        summary = appVersionSummary,
+                    EtaArrowPreference(
+                        title = stringResource(R.string.usage_stats_title),
+                        summary = stringResource(R.string.usage_stats_summary),
                         startAction = {
                             EtaPreferenceIcon(
-                                icon = Icons.Rounded.Info,
-                                tint = EtaPreferenceColors.Blue,
+                                icon = Icons.Rounded.BarChart,
+                                tint = EtaPreferenceColors.Green,
                             )
                         },
+                        onClick = { onNavigate(AppRoute.TokenUsage) },
                     )
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
-                        title = stringResource(R.string.ui_about_update_title),
-                        summary = if (checkingUpdate) {
-                            stringResource(R.string.ui_about_update_checking)
-                        } else {
-                            null
-                        },
+                        title = stringResource(R.string.data_usage_title),
+                        summary = stringResource(R.string.data_usage_summary),
                         startAction = {
                             EtaPreferenceIcon(
-                                icon = Icons.Rounded.SystemUpdate,
-                                tint = EtaPreferenceColors.Green,
-                                enabled = !checkingUpdate,
+                                icon = Icons.Rounded.Inventory2,
+                                tint = EtaPreferenceColors.Blue,
                             )
                         },
-                        enabled = !checkingUpdate,
-                        onClick = checkForUpdate,
+                        onClick = { onNavigate(AppRoute.DataUsage) },
                     )
 
                     EtaPreferenceDivider()
@@ -815,6 +909,24 @@ private fun SettingsPageContent(
                         enabled = !diagnosticsPending,
                         onClick = exportDiagnostics,
                     )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.ui_about_crash_title),
+                        summary = if (crashCount <= 0) {
+                            stringResource(R.string.ui_about_crash_none)
+                        } else {
+                            stringResource(R.string.ui_about_crash_summary, crashCount, crashLatest.orEmpty())
+                        },
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.BugReport,
+                                tint = EtaPreferenceColors.Orange,
+                            )
+                        },
+                        enabled = !crashSharing,
+                        onClick = shareCrash,
+                    )
                 }
             }
         }
@@ -852,23 +964,6 @@ private fun SettingsPageContent(
             },
         )
 
-        availableUpdate?.let { update ->
-            EtaWindowDialog(
-                show = true,
-                title = stringResource(R.string.ui_update_available_title),
-                summary = stringResource(R.string.ui_update_available_message, update.version, appVersionName),
-                onDismissRequest = { availableUpdate = null },
-            ) {
-                MiuixDialogActions(
-                    confirmText = stringResource(R.string.ui_update_go_download),
-                    onCancel = { availableUpdate = null },
-                    onConfirm = {
-                        availableUpdate = null
-                        openUrl(update.url)
-                    },
-                )
-            }
-        }
 }
 
 // ── 系统化确认对话框 ─────────────────────────────────────────────────────────
@@ -1058,3 +1153,79 @@ private fun SystemizerInstallResult.toToastMessage(context: Context): String =
             ?.let { "$message：$it" }
             ?: message
     }
+
+/** 设置项搜索词条：一个分组对应一组小写关键词。 */
+private data class SettingsSearchEntry(val sectionKey: String, val keywords: String)
+
+private val SETTINGS_SEARCH_INDEX = listOf(
+    SettingsSearchEntry("section_agent", "llm 提供商 模型 服务商 api 密钥 深度思考"),
+    SettingsSearchEntry("section_context_extensions", "上下文 扩展 自动压缩 记忆"),
+    SettingsSearchEntry("section_tools", "工具 工具档 精简 五档 mcp"),
+    SettingsSearchEntry("system_enhancements", "能力增强 语音 朗读 语速 音调 tts 虚拟屏 小窗 悬浮窗 折叠"),
+    SettingsSearchEntry("section_assistant_takeover", "系统助手接管 接管 助手"),
+    SettingsSearchEntry("section_oem_assistant_compatibility", "厂商助手兼容 小布 小爱 vivo 蓝心 兼容"),
+    SettingsSearchEntry("section_general", "通用 外观 主题 语言"),
+    SettingsSearchEntry("section_permissions", "权限 无障碍 悬浮窗 通知"),
+    SettingsSearchEntry("section_about", "关于 版本 用量 token 统计 消耗 数据占用 清理 数据库 大小 诊断包 日志 导出 分享 开源"),
+)
+
+private fun settingsMatched(sectionKey: String, keyword: String): Boolean =
+    SETTINGS_SEARCH_INDEX.firstOrNull { it.sectionKey == sectionKey }
+        ?.keywords?.contains(keyword) == true
+
+/** 设置页顶部搜索框：占位提示 + 清除按钮 + 无结果提示。 */
+@Composable
+private fun SettingsSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    emptyResult: Boolean,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 2.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.settings_search_hint),
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = MiuixTheme.colorScheme.onSurface, fontSize = 15.sp),
+                    cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "×",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.clickable { onQueryChange("") },
+                )
+            }
+        }
+        if (emptyResult) {
+            Text(
+                text = stringResource(R.string.settings_search_empty),
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+            )
+        }
+    }
+}

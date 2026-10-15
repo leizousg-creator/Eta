@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +27,13 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.core.safeStackTrace
+import io.github.mangi.eta.agent.automation.AutoBackupAlarm
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.model.AutoBackupInterval
+import io.github.mangi.eta.data.model.AutoBackupKeepCount
+import io.github.mangi.eta.data.model.Settings
+import io.github.mangi.eta.data.repository.AutoBackupResult
+import io.github.mangi.eta.data.repository.AutoBackupRunner
 import io.github.mangi.eta.data.repository.EtaBackupSummary
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCard
@@ -33,6 +41,7 @@ import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
+import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
@@ -42,6 +51,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
@@ -58,6 +68,9 @@ internal fun DataBackupScreen(
     var busy by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
+    val settings by SettingsDataStore.settingsFlow().collectAsState(initial = Settings())
+    var autoBusy by remember { mutableStateOf(false) }
+    var autoNote by remember { mutableStateOf<String?>(null) }
 
     fun showFailure(throwable: Throwable) {
         if (throwable is CancellationException) throw throwable
@@ -157,6 +170,94 @@ internal fun DataBackupScreen(
                 )
             }
         }
+        item(key = "auto-backup-title") {
+            EtaPreferenceGroupTitle(stringResource(R.string.data_backup_auto))
+        }
+        item(key = "auto-backup-card") {
+            EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                EtaSwitchPreference(
+                    title = stringResource(R.string.data_backup_auto_enable),
+                    summary = stringResource(R.string.data_backup_auto_enable_summary),
+                    checked = settings.autoBackupEnabled,
+                    onCheckedChange = { value ->
+                        scope.launch(Dispatchers.IO) {
+                            SettingsDataStore.updateSettings { it.copy(autoBackupEnabled = value) }
+                            if (value) AutoBackupAlarm.refresh(context) else AutoBackupAlarm.cancel(context)
+                        }
+                    },
+                )
+                EtaPreferenceDivider(hasLeading = true)
+                EtaArrowPreference(
+                    title = stringResource(R.string.data_backup_auto_interval),
+                    summary = stringResource(intervalLabelRes(settings.autoBackupIntervalHours)),
+                    enabled = settings.autoBackupEnabled,
+                    onClick = {
+                        val options = AutoBackupInterval.options
+                        val next = options[(options.indexOf(settings.autoBackupIntervalHours) + 1) % options.size]
+                        scope.launch(Dispatchers.IO) {
+                            SettingsDataStore.updateSettings { it.copy(autoBackupIntervalHours = next) }
+                            AutoBackupAlarm.refresh(context)
+                        }
+                    },
+                )
+                EtaPreferenceDivider(hasLeading = true)
+                EtaArrowPreference(
+                    title = stringResource(R.string.data_backup_auto_keep),
+                    summary = stringResource(R.string.data_backup_auto_keep_value, settings.autoBackupKeepCount),
+                    enabled = settings.autoBackupEnabled,
+                    onClick = {
+                        val options = AutoBackupKeepCount.options
+                        val next = options[(options.indexOf(settings.autoBackupKeepCount) + 1) % options.size]
+                        scope.launch(Dispatchers.IO) {
+                            SettingsDataStore.updateSettings { it.copy(autoBackupKeepCount = next) }
+                        }
+                    },
+                )
+                EtaPreferenceDivider(hasLeading = true)
+                EtaArrowPreference(
+                    title = stringResource(R.string.data_backup_auto_run_now),
+                    summary = autoNote ?: if (settings.autoBackupLastFileName.isNotBlank()) {
+                        stringResource(R.string.data_backup_auto_last_file, settings.autoBackupLastFileName)
+                    } else {
+                        stringResource(R.string.data_backup_auto_never)
+                    },
+                    enabled = !autoBusy && !busy,
+                    startAction = {
+                        BackupIcon(icon = Icons.Rounded.Download, loading = autoBusy)
+                    },
+                    onClick = {
+                        if (!autoBusy) {
+                            autoBusy = true
+                            scope.launch {
+                                val result = AutoBackupRunner.maybeRun(context, force = true)
+                                val text = when (result) {
+                                    is AutoBackupResult.Done -> context.getString(
+                                        R.string.data_backup_auto_done,
+                                        result.fileName,
+                                        result.conversationCount,
+                                        result.kept,
+                                    )
+                                    is AutoBackupResult.Failed -> context.getString(
+                                        R.string.data_backup_auto_failed,
+                                        result.message,
+                                    )
+                                    is AutoBackupResult.Skipped -> context.getString(R.string.data_backup_auto_skipped)
+                                }
+                                AutoBackupAlarm.refresh(context)
+                                autoBusy = false
+                                autoNote = text
+                                Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                )
+                EtaPreferenceDivider(hasLeading = true)
+                EtaPreference(
+                    title = stringResource(R.string.data_backup_auto_dir),
+                    summary = AutoBackupRunner.directory().absolutePath,
+                )
+            }
+        }
     }
 
     if (showImportDialog) {
@@ -234,6 +335,12 @@ private fun BackupIcon(icon: ImageVector, loading: Boolean) {
             )
         }
     }
+}
+
+private fun intervalLabelRes(hours: Int): Int = when (AutoBackupInterval.normalize(hours)) {
+    72 -> R.string.data_backup_auto_interval_72
+    168 -> R.string.data_backup_auto_interval_168
+    else -> R.string.data_backup_auto_interval_24
 }
 
 private fun defaultBackupFileName(): String =

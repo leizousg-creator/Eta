@@ -10,6 +10,9 @@ import io.github.mangi.eta.agent.display.VirtualScreenFloatWindow
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.core.CrashRecorder
+import io.github.mangi.eta.agent.automation.AutoBackupAlarm
+import io.github.mangi.eta.data.repository.AutoBackupRunner
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
@@ -46,6 +49,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
     override fun onCreate() {
         super.onCreate()
         Prefs.initLocal(this)
+        // 崩溃留证：任何进程一启动就装好，写入失败也不影响原有崩溃流程。
+        runCatching { CrashRecorder.install(this) }
         if (!AppProcessPolicy.shouldInitializeFullRuntime(Application.getProcessName(), packageName)) {
             return
         }
@@ -65,6 +70,9 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
                 io.github.mangi.eta.data.db.EtaDatabase.get(this@EtaApp).agentTaskDao().recoverInterrupted(System.currentTimeMillis())
                 io.github.mangi.eta.agent.automation.AgentTaskScheduler.enqueueDue(this@EtaApp)
                 io.github.mangi.eta.agent.automation.AgentTaskScheduler.refresh(this@EtaApp)
+                // 自动备份：先排下一次唤醒（闹钟可能已被系统清掉），再补一次到期检查。
+                AutoBackupAlarm.refresh(this@EtaApp)
+                AutoBackupRunner.maybeRun(this@EtaApp)
             }.onFailure { AndroidAgentLogger.warn("Automation recovery unavailable") }
         }
         XposedServiceHelper.registerListener(this)
