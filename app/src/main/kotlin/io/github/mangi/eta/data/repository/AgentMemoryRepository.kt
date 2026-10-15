@@ -127,6 +127,17 @@ internal class AgentMemoryStore(
         AgentMemoryWriteResult.Success(snapshotOf(compacted))
     }
 
+    /** 启动时收敛一次：热区超限且自动压缩开启时立即压一轮，不等待下一次写入。 */
+    fun compactOnStartup() {
+        synchronized(lock) {
+            val current = snapshotLocked()
+            val compacted = maybeCompact(current.content)
+            if (compacted != current.content) {
+                writeLocked(compacted)
+            }
+        }
+    }
+
     /** 冷区（MEMORY-ARCHIVE.md）全文；不参与上下文注入，只供检索与归档。 */
     fun archiveSnapshot(): AgentMemorySnapshot = synchronized(lock) {
         snapshotOf(readArchiveText())
@@ -282,14 +293,37 @@ internal class AgentMemoryStore(
 
     fun isAutoCompactEnabled(): Boolean = autoCompactEnabled
 
-    /** 写入后若热区超限，就把最旧的段落正文移入冷区。保护段落热区保留标题 + 一行摘要，其余只留归档标记。 */
+    /** 把首个 ## 标题之前的无标题旧段落整块移入冷区，消除热区盲区（旧格式段落无标题，永远无法被 compactOnce 命中）。 */
+    private fun compactPrefix(content: String): String {
+        val lines = content.memoryLines()
+        val firstHeading = lines.indices.firstOrNull { lines[it].startsWith(SECTION_PREFIX) } ?: return content
+        if (firstHeading == 0) return content
+        if ((0 until firstHeading).any { lines[it].trim() == ARCHIVE_SENTINEL }) return content
+        val prefixBytes = (0 until firstHeading).sumOf { lines[it].toByteArray(Charsets.UTF_8).size + 1 }
+        if (prefixBytes < MIN_SECTION_BYTES) return content
+        val archive = StringBuilder()
+        for (index in 0 until firstHeading) archive.append(lines[index]).append('\n')
+        appendArchive(archive.toString().trimEnd('\n') + "\n")
+        val summary = (0 until firstHeading)
+            .map { lines[it].trim() }
+            .firstOrNull { it.isNotEmpty() && !it.startsWith("- ") }
+            ?.let { if (it.length <= SUMMARY_MAX_CHARS) it else it.take(SUMMARY_MAX_CHARS) + "…" }
+        val rebuilt = ArrayList<String>(lines.size - firstHeading + 2)
+        if (summary != null) rebuilt += summary
+        rebuilt += ARCHIVE_SENTINEL
+        for (index in firstHeading until lines.size) rebuilt += lines[index]
+        return rebuilt.joinToString("\n")
+    }
+
+    /** 写入后若热区超限，就把无标题前缀与最旧的段落正文移入冷区。保护段落热区保留标题 + 一行摘要，其余只留归档标记。 */
     private fun maybeCompact(content: String): String {
         if (!autoCompactEnabled) return content
         var current = content
         if (current.toByteArray(Charsets.UTF_8).size <= MAX_HOT_BYTES) return current
         repeat(MAX_COMPACT_ROUNDS) {
             if (current.toByteArray(Charsets.UTF_8).size <= TARGET_HOT_BYTES) return current
-            val next = compactOnce(current)
+            var next = compactPrefix(current)
+            if (next == current) next = compactOnce(current)
             if (next == current) return current
             current = next
         }
@@ -474,7 +508,7 @@ internal class AgentMemoryStore(
         const val TARGET_HOT_BYTES = 48 * 1024
         const val ARCHIVE_FILE_NAME = "MEMORY-ARCHIVE.md"
         private const val SECTION_PREFIX = "## "
-        private const val MIN_SECTION_BYTES = 600
+        private const val MIN_SECTION_BYTES = 160
         private const val MAX_COMPACT_ROUNDS = 20
         private const val SUMMARY_MAX_CHARS = 96
         private const val ARCHIVE_SENTINEL =
@@ -526,6 +560,13 @@ internal object AgentMemoryRepository {
                     if (collected) return@launch
                     delay(1_000)
                 }
+            }
+            // 启动即收敛：开关就绪后异步压一轮，避免存量超限记忆一直挂到下一次写入
+            autoCompactScope.launch {
+                delay(1_200)
+                val enabled = runCatching { SettingsDataStore.settings().memoryAutoCompactEnabled }.getOrDefault(true)
+                store.setAutoCompactEnabled(enabled)
+                runCatching { store.compactOnStartup() }
             }
         }
     }
