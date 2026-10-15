@@ -10,11 +10,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import io.github.mangi.eta.core.CrashRecorder
 import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.db.ChunkedTextDao
 import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.db.TextStoreMaintenance
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
@@ -26,6 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val STATE_OK = "✔ 正常"
@@ -111,6 +115,34 @@ internal fun FeatureSelfCheckScreen(onBack: () -> Unit) {
                         EtaPreference(title = "${item.state}  ${item.name}", summary = item.detail)
                     }
                 }
+            }
+        }
+
+        item(key = "selfcheck-textstore-trim") {
+            val scope = rememberCoroutineScope()
+            var busy by remember { mutableStateOf(false) }
+            EtaPreferenceGroup {
+                EtaArrowPreference(
+                    title = if (busy) "正在瘦身…" else "文本库瘦身",
+                    summary = "把超上限的历史字段按同一条规则保尾截断并重写引用头；只动文本分块，不碰会话、消息与设置",
+                    onClick = {
+                        if (!busy) {
+                            busy = true
+                            scope.launch {
+                                val done = withContext(Dispatchers.IO) {
+                                    runCatching { TextStoreMaintenance.trimOversized(EtaDatabase.get(context)) }.getOrNull()
+                                }
+                                busy = false
+                                android.widget.Toast.makeText(
+                                    context,
+                                    done?.let { "瘦身完成：${it.trimmedFields} 个字段 · 省 ${it.savedChars} 字符" } ?: "瘦身失败",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                                round += 1
+                            }
+                        }
+                    },
+                )
             }
         }
 
@@ -236,6 +268,18 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         state = STATE_OK,
         detail = if (crashCount == 0) "暂无崩溃记录（正常）" else "已留 ${crashCount} 份，设置 → 关于可查看导出",
     )
+    val textStore = runCatching { database?.let { TextStoreMaintenance.inspect(it) } }.getOrNull()
+    storage += SelfCheckItem(
+        name = "文本库体量",
+        state = if (textStore == null || textStore.oversizedFields == 0) STATE_OK else STATE_MISSING,
+        detail = if (textStore == null) {
+            "读不到分块表"
+        } else {
+            val cap = ChunkedTextDao.MAX_FIELD_CHARS / 10000
+            val top = textStore.topFields.firstOrNull()?.let { " · 最大 ${it.field} ${it.charCount / 10000} 万字符" }.orEmpty()
+            "分块 ${textStore.scannedChars / 10000} 万字符 / ${textStore.scannedFields} 个字段 · 单字段上限 ${cap} 万 · 越线 ${textStore.oversizedFields} 个$top"
+        },
+    )
     val settings = runCatching { SettingsDataStore.settings() }.getOrNull()
     val backupDetail = if (settings == null) {
         "读不到设置"
@@ -289,6 +333,8 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem("内存占用胶囊", STATE_BUILTIN, "顶栏显示内存占用，点开看明细"),
         SelfCheckItem("插话按会话投递", STATE_BUILTIN, "运行中插话只投给同会话正在跑的 run，别的会话在跑长任务时不会再被吸进去"),
         SelfCheckItem("顶栏状态行右靠紧凑", STATE_BUILTIN, "顶栏状态胶囊、新建对话、更多一起贴右，行尾留白收紧"),
+        SelfCheckItem("文本库容量上限", STATE_BUILTIN, "单字段超 1200 万字符时保留尾部（尽量落在 JSON 元素边界），读入峰值约 50 MB，512 MB 堆内安全；超大堆由 largeHeap 提供"),
+        SelfCheckItem("文本库瘦身体检", STATE_BUILTIN, "自检页「文本库体量」报出分块总量、最大字段与越线数，可一键瘦身；升级后首次起动自动跑一次"),
         SelfCheckItem("图片预览浮层", STATE_BUILTIN, "会话内点图放大预览（JPEG 92、最长边 1920、上限 3.69M 像素）"),
         SelfCheckItem("Linux 能力探测", STATE_BUILTIN, "终端环境页按实际能力显示可用项"),
         SelfCheckItem("离线朗读", STATE_BUILTIN, "系统 TTS 离线档位，设置 → 语音朗读 可试听"),

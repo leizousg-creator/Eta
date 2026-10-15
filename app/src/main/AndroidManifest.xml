@@ -57,6 +57,7 @@
     <application
         android:name=".EtaApp"
         android:allowBackup="false"
+        android:largeHeap="true"
         android:description="@string/xposed_description"
         android:enableOnBackInvokedCallback="true"
         android:hasCode="true"

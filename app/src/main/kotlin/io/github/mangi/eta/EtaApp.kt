@@ -56,6 +56,10 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         if (!AppProcessPolicy.shouldInitializeFullRuntime(Application.getProcessName(), packageName)) {
             return
         }
+        // 文本库体量：升级后第一次起动把超上限的历史字段按写入侧规则保尾截断（只跑一次）。
+        applicationScope.launch {
+            runCatching { io.github.mangi.eta.data.db.TextStoreMaintenance.runOnceIfNeeded(this@EtaApp) }
+        }
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
         SettingsDataStore.init(this)

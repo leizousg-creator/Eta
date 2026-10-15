@@ -76,6 +76,19 @@ internal interface ConversationDao : ChunkedTextDao {
     @Query("SELECT * FROM conversation_messages ORDER BY conversation_id ASC, sort_index ASC LIMIT :limit OFFSET :offset")
     suspend fun allMessageRowsPage(limit: Int, offset: Int): List<ConversationMessageEntity>
 
+    @Query(
+        "SELECT owner_table AS owner_table, owner_id AS owner_id, field AS field, " +
+            "COUNT(*) AS chunk_count, SUM(LENGTH(content)) AS char_count FROM agent_text_chunks " +
+            "GROUP BY owner_table, owner_id, field ORDER BY char_count DESC"
+    )
+    suspend fun chunkUsage(): List<TextChunkUsage>
+
+    @Query("SELECT COUNT(*) FROM agent_text_chunks")
+    suspend fun textChunkCount(): Int
+
+    @Query("SELECT COALESCE(SUM(LENGTH(content)), 0) FROM agent_text_chunks")
+    suspend fun textChunkChars(): Long
+
     @Query("SELECT * FROM conversation_context_checkpoints ORDER BY conversation_id ASC")
     suspend fun contextCheckpointRows(): List<ConversationContextCheckpointEntity>
 
