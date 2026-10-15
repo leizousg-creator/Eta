@@ -287,6 +287,8 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem("界面重连文本重复修复", STATE_BUILTIN, "切出去再回来，同一段回复不再重复 2~3 遍"),
         SelfCheckItem("虚拟屏与顶层浮动", STATE_BUILTIN, "独立 display 执行 GUI 任务；小窗可拖拽/贴边折叠/两档缩放"),
         SelfCheckItem("内存占用胶囊", STATE_BUILTIN, "顶栏显示内存占用，点开看明细"),
+        SelfCheckItem("插话按会话投递", STATE_BUILTIN, "运行中插话只投给同会话正在跑的 run，别的会话在跑长任务时不会再被吸进去"),
+        SelfCheckItem("顶栏状态行右靠紧凑", STATE_BUILTIN, "顶栏状态胶囊、新建对话、更多一起贴右，行尾留白收紧"),
         SelfCheckItem("图片预览浮层", STATE_BUILTIN, "会话内点图放大预览（JPEG 92、最长边 1920、上限 3.69M 像素）"),
         SelfCheckItem("Linux 能力探测", STATE_BUILTIN, "终端环境页按实际能力显示可用项"),
         SelfCheckItem("离线朗读", STATE_BUILTIN, "系统 TTS 离线档位，设置 → 语音朗读 可试听"),
