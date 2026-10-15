@@ -276,8 +276,9 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
             "读不到分块表"
         } else {
             val cap = ChunkedTextDao.MAX_FIELD_CHARS / 10000
+            val window = ChunkedTextDao.MAX_RESTORE_CHARS / 10000
             val top = textStore.topFields.firstOrNull()?.let { " · 最大 ${it.field} ${it.charCount / 10000} 万字符" }.orEmpty()
-            "分块 ${textStore.scannedChars / 10000} 万字符 / ${textStore.scannedFields} 个字段 · 单字段上限 ${cap} 万 · 越线 ${textStore.oversizedFields} 个$top"
+            "分块 ${textStore.scannedChars / 10000} 万字符 / ${textStore.scannedFields} 个字段 · 单字段上限 ${cap} 万 · 单次读入窗口 ${window} 万 · 越线 ${textStore.oversizedFields} 个$top"
         },
     )
     val settings = runCatching { SettingsDataStore.settings() }.getOrNull()
@@ -334,7 +335,10 @@ private suspend fun runSelfCheck(context: Context): SelfCheckReport {
         SelfCheckItem("插话按会话投递", STATE_BUILTIN, "运行中插话只投给同会话正在跑的 run，别的会话在跑长任务时不会再被吸进去"),
         SelfCheckItem("顶栏状态行右靠紧凑", STATE_BUILTIN, "顶栏状态胶囊、新建对话、更多一起贴右，行尾留白收紧"),
         SelfCheckItem("文本库容量上限", STATE_BUILTIN, "单字段超 1200 万字符时保留尾部（尽量落在 JSON 元素边界），读入峰值约 50 MB，512 MB 堆内安全；超大堆由 largeHeap 提供"),
-        SelfCheckItem("文本库瘦身体检", STATE_BUILTIN, "自检页「文本库体量」报出分块总量、最大字段与越线数，可一键瘦身；升级后首次起动自动跑一次"),
+        SelfCheckItem("文本库瘦身体检", STATE_BUILTIN, "自检页「文本库体量」报出分块总量、最大字段、单次读入窗口与越线数，可一键瘦身；升级后首次起动自动跑一次"),
+        SelfCheckItem("瘦身写回引用头", STATE_BUILTIN, "瘦身只保留尾部、按 JSON 元素边界切齐，删旧分块后把新引用头写回原列，读取不会 length mismatch"),
+        SelfCheckItem("journal 与 history 去重", STATE_BUILTIN, "两个字段逐字相同时只存一份，读取回落到 history；同一段历史不再占两份体积"),
+        SelfCheckItem("单次读入窗口", STATE_BUILTIN, "上下文读取按 200 万字符窗口取尾部，超长存档不再整串进堆；存储上限仍是单字段 1200 万字符"),
         SelfCheckItem("图片预览浮层", STATE_BUILTIN, "会话内点图放大预览（JPEG 92、最长边 1920、上限 3.69M 像素）"),
         SelfCheckItem("Linux 能力探测", STATE_BUILTIN, "终端环境页按实际能力显示可用项"),
         SelfCheckItem("离线朗读", STATE_BUILTIN, "系统 TTS 离线档位，设置 → 语音朗读 可试听"),

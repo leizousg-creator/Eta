@@ -93,10 +93,72 @@ internal interface ChunkedTextDao {
         return result.toString()
     }
 
+    /** 引用头（块数, 字符数）；非引用返回其自身长度。字符数按 UTF-16 单元计，与 SQLite 的 LENGTH() 不同。 */
+    fun parseReference(stored: String): Pair<Int, Int>? {
+        if (!stored.startsWith(REFERENCE_PREFIX)) return 1 to stored.length
+        val parts = stored.removePrefix(REFERENCE_PREFIX).split(':')
+        if (parts.size != 2) return null
+        val count = parts[0].toIntOrNull() ?: return null
+        val length = parts[1].toIntOrNull() ?: return null
+        if (count <= 0 || length <= 0) return null
+        return count to length
+    }
+
+    /**
+     * 只读尾部分块：单次进堆的字符数以 [maxChars] 为界。
+     * 越线判断只信引用头，不用 SQL 求和（两者计法不同，混用会造成假的不匹配）。
+     */
+    suspend fun restoreTextTail(table: String, owner: String, field: String, stored: String, maxChars: Int): String {
+        if (!stored.startsWith(REFERENCE_PREFIX)) return stored
+        val ref = parseReference(stored) ?: return ""
+        val count = ref.first
+        if (ref.second <= maxChars) return restoreText(table, owner, field, stored)
+        val wanted = maxChars / CHUNK_CHARS + 2
+        var start = maxOf(0, count - wanted)
+        val kept = ArrayList<AgentTextChunkEntity>(wanted)
+        while (start < count) {
+            val page = textChunks(table, owner, field, minOf(32, count - start), start)
+            if (page.isEmpty()) break
+            kept.addAll(page)
+            start += page.size
+            if (kept.sumOf { it.content.length } >= maxChars) break
+        }
+        val buffer = StringBuilder(maxChars + CHUNK_CHARS * 2)
+        kept.forEach { buffer.append(it.content) }
+        if (buffer.length <= maxChars) return buffer.toString()
+        return buffer.substring(buffer.length - maxChars)
+    }
+
+    /**
+     * 瘦身：只保留尾部 [keepChars] 字符，删旧分块后写回，返回（新引用头, 省下的字符数）。
+     * 调用方必须把新引用头写回原列，否则列里的头与分块不一致，下次读取会 length mismatch。
+     */
+    suspend fun trimToTail(table: String, owner: String, field: String, stored: String, keepChars: Int): Pair<String, Long>? {
+        val ref = parseReference(stored) ?: return null
+        if (ref.second <= keepChars) return null
+        val tail = restoreTextTail(table, owner, field, stored, keepChars)
+        if (tail.isEmpty()) return null
+        val kept = trimToElementBoundary(tail)
+        if (kept.isEmpty() || kept.length >= ref.second) return null
+        deleteTextChunks(table, owner, field)
+        val header = storeText(table, owner, field, kept)
+        return header to (ref.second - kept.length).toLong()
+    }
+
+    /** 尾巴是从中间切出来的，去掉被腰斩的首个元素，让 JSON 数组仍然完整。 */
+    fun trimToElementBoundary(text: String): String {
+        if (!text.startsWith("[")) return text
+        val boundary = text.indexOf("},{")
+        if (boundary >= 0 && boundary < text.length - 3) return "[" + text.substring(boundary + 2)
+        return text
+    }
+
     companion object {
         private const val CHUNK_CHARS = 16_384
         /** 单字段容量上限：1200 万字符（约 24 MB 原文，读入峰值约 50 MB，512 MB 堆内安全）。 */
         const val MAX_FIELD_CHARS = 12_000_000
+        /** 单次读入窗口：200 万字符（约 4 MB 堆内）；超出的历史只取尾部，不再整串进堆。 */
+        const val MAX_RESTORE_CHARS = 2_000_000
         const val REFERENCE_PREFIX = "@eta:chunks:v1:"
     }
 }

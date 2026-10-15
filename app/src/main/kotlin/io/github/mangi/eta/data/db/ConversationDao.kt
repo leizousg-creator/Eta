@@ -118,10 +118,49 @@ internal interface ConversationDao : ChunkedTextDao {
     suspend fun contextCheckpoint(conversationId: String): ConversationContextCheckpointEntity? =
         contextCheckpointRow(conversationId)?.let { restoreCheckpoint(it) }
 
-    suspend fun restoreCheckpoint(row: ConversationContextCheckpointEntity) = row.copy(
-        historyJson = restoreText("conversation_context_checkpoints", row.conversationId, "history", row.historyJson),
-        journalJson = restoreText("conversation_context_checkpoints", row.conversationId, "journal", row.journalJson),
-    )
+    /** 上下文只取最近一段（窗口内）；journal 与 history 相同时不重复读。 */
+    suspend fun restoreCheckpoint(row: ConversationContextCheckpointEntity): ConversationContextCheckpointEntity {
+        val history = restoreTextTail(
+            "conversation_context_checkpoints", row.conversationId, "history", row.historyJson,
+            ChunkedTextDao.MAX_RESTORE_CHARS,
+        )
+        val journal = if (row.journalJson.isBlank()) {
+            history
+        } else {
+            restoreTextTail(
+                "conversation_context_checkpoints", row.conversationId, "journal", row.journalJson,
+                ChunkedTextDao.MAX_RESTORE_CHARS,
+            )
+        }
+        return row.copy(historyJson = history, journalJson = journal)
+    }
+
+    @Query("UPDATE conversation_context_checkpoints SET history_json = :stored WHERE conversation_id = :conversationId")
+    suspend fun setCheckpointHistory(conversationId: String, stored: String)
+
+    @Query("UPDATE conversation_context_checkpoints SET journal_json = :stored WHERE conversation_id = :conversationId")
+    suspend fun setCheckpointJournal(conversationId: String, stored: String)
+
+    @Query("SELECT * FROM conversation_messages WHERE id = :messageId")
+    suspend fun messageRow(messageId: String): ConversationMessageEntity?
+
+    @Query("UPDATE conversation_messages SET content = :stored WHERE id = :messageId")
+    suspend fun setMessageContent(messageId: String, stored: String)
+
+    @Query("UPDATE conversation_messages SET images_json = :stored WHERE id = :messageId")
+    suspend fun setMessageImages(messageId: String, stored: String)
+
+    @Query("SELECT * FROM conversations WHERE id = :conversationId")
+    suspend fun conversationEntityRow(conversationId: String): ConversationEntity?
+
+    @Query("UPDATE conversations SET applied_runtime_run_ids_json = :stored WHERE id = :conversationId")
+    suspend fun setConversationRuns(conversationId: String, stored: String)
+
+    @Query("UPDATE conversations SET roleplay_json = :stored WHERE id = :conversationId")
+    suspend fun setConversationRoleplay(conversationId: String, stored: String)
+
+    @Query("UPDATE conversations SET revisions_json = :stored WHERE id = :conversationId")
+    suspend fun setConversationRevisions(conversationId: String, stored: String)
 
     @Query("SELECT * FROM conversation_state WHERE id = :id")
     suspend fun state(id: String = ConversationStateEntity.SINGLETON_ID): ConversationStateEntity?
@@ -164,10 +203,16 @@ internal interface ConversationDao : ChunkedTextDao {
     @Transaction
     suspend fun insertContextCheckpoints(checkpoints: List<ConversationContextCheckpointEntity>) {
         checkpoints.forEach { row ->
-            insertContextCheckpointRow(row.copy(
-                historyJson = storeText("conversation_context_checkpoints", row.conversationId, "history", row.historyJson),
-                journalJson = storeText("conversation_context_checkpoints", row.conversationId, "journal", row.journalJson),
-            ))
+            val historyStored = storeText(
+                "conversation_context_checkpoints", row.conversationId, "history", row.historyJson,
+            )
+            // journal 与 history 逐字相同时不再重复存一份（读取时回落到 history）。
+            val journalStored = if (row.journalJson == row.historyJson) {
+                ""
+            } else {
+                storeText("conversation_context_checkpoints", row.conversationId, "journal", row.journalJson)
+            }
+            insertContextCheckpointRow(row.copy(historyJson = historyStored, journalJson = journalStored))
         }
     }
 
@@ -178,8 +223,13 @@ internal interface ConversationDao : ChunkedTextDao {
         insertContextCheckpointRow(previous.copy(
             historyJson = historyJson?.let { storeText("conversation_context_checkpoints", conversationId, "history", it) }
                 ?: previous.historyJson,
-            journalJson = journalJson?.let { storeText("conversation_context_checkpoints", conversationId, "journal", it) }
-                ?: previous.journalJson,
+            journalJson = journalJson?.let {
+                if (it.isNotEmpty() && it == historyJson) {
+                    ""
+                } else {
+                    storeText("conversation_context_checkpoints", conversationId, "journal", it)
+                }
+            } ?: previous.journalJson,
         ))
     }
 

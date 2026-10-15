@@ -50,15 +50,68 @@ internal object TextStoreMaintenance {
         var trimmed = 0
         var saved = 0L
         rows.filter { it.charCount > limit }.forEach { row ->
-            val stored = "${ChunkedTextDao.REFERENCE_PREFIX}${row.chunkCount}:${row.charCount}"
-            val text = runCatching { dao.restoreText(row.ownerTable, row.ownerId, row.field, stored) }.getOrNull() ?: return@forEach
-            val capped = dao.capText(text)
-            if (capped.length >= text.length) return@forEach
-            dao.storeText(row.ownerTable, row.ownerId, row.field, capped)
-            trimmed += 1
-            saved += (text.length - capped.length).toLong()
+            val outcome = runCatching { trimOne(dao, row) }.getOrNull() ?: return@forEach
+            trimmed += outcome.first
+            saved += outcome.second
         }
         return inspect(database).copy(trimmedFields = trimmed, savedChars = saved)
+    }
+
+    /**
+     * 单字段瘦身：只按引用头判断越线、只读尾部分块（堆内占用以 MAX_RESTORE_CHARS 为界），
+     * 删旧分块后把新引用头写回原列。旧实现丢掉了引用头，列与分块会不一致，读取会 length mismatch。
+     */
+    private suspend fun trimOne(dao: ConversationDao, row: TextChunkUsage): Pair<Int, Long>? {
+        val keep = ChunkedTextDao.MAX_FIELD_CHARS
+        val table = row.ownerTable
+        val field = row.field
+        val id = row.ownerId
+        return when {
+            table == "conversation_context_checkpoints" && field == "history" -> {
+                val raw = dao.contextCheckpointRow(id) ?: return null
+                val done = dao.trimToTail(table, id, field, raw.historyJson, keep) ?: return null
+                dao.setCheckpointHistory(id, done.first)
+                1 to done.second
+            }
+            table == "conversation_context_checkpoints" && field == "journal" -> {
+                val raw = dao.contextCheckpointRow(id) ?: return null
+                if (raw.journalJson.isBlank()) return null
+                val done = dao.trimToTail(table, id, field, raw.journalJson, keep) ?: return null
+                dao.setCheckpointJournal(id, done.first)
+                1 to done.second
+            }
+            table == "conversation_messages" && field == "content" -> {
+                val raw = dao.messageRow(id) ?: return null
+                val done = dao.trimToTail(table, id, field, raw.content, keep) ?: return null
+                dao.setMessageContent(id, done.first)
+                1 to done.second
+            }
+            table == "conversation_messages" && field == "images" -> {
+                val raw = dao.messageRow(id) ?: return null
+                val done = dao.trimToTail(table, id, field, raw.imagesJson, keep) ?: return null
+                dao.setMessageImages(id, done.first)
+                1 to done.second
+            }
+            table == "conversations" && field == "runs" -> {
+                val raw = dao.conversationEntityRow(id) ?: return null
+                val done = dao.trimToTail(table, id, field, raw.appliedRuntimeRunIdsJson, keep) ?: return null
+                dao.setConversationRuns(id, done.first)
+                1 to done.second
+            }
+            table == "conversations" && field == "roleplay" -> {
+                val raw = dao.conversationEntityRow(id) ?: return null
+                val done = dao.trimToTail(table, id, field, raw.roleplayJson, keep) ?: return null
+                dao.setConversationRoleplay(id, done.first)
+                1 to done.second
+            }
+            table == "conversations" && field == "revisions" -> {
+                val raw = dao.conversationEntityRow(id) ?: return null
+                val done = dao.trimToTail(table, id, field, raw.revisionsJson, keep) ?: return null
+                dao.setConversationRevisions(id, done.first)
+                1 to done.second
+            }
+            else -> null
+        }
     }
 
     /** 升级后第一次起动跑一次，之后靠体检与「一键瘦身」按需跑。 */
