@@ -126,13 +126,37 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
         }
         val trimmed = list.take(SESSION_LIST_LIMIT)
-        if (state.value.runningSessions == trimmed) return
-        state.value = state.value.copy(
+        val nextUnread = unreadSessionState.value
+        val nextOpened = recentOpenedState.value.take(RECENT_OPENED_SHOWN)
+        val current = state.value
+        // 角标与「最新回复」也算状态：只看运行列表会让点开会话后的减号一直不生效。
+        if (current.runningSessions == trimmed &&
+            current.finishedBadge == unreadFinishedCount &&
+            current.unreadSessions == nextUnread &&
+            current.recentOpenedSessions == nextOpened
+        ) {
+            return
+        }
+        state.value = current.copy(
             runningSessions = trimmed,
             finishedBadge = unreadFinishedCount,
-            recentOpenedSessions = recentOpenedState.value.take(RECENT_OPENED_SHOWN),
-            unreadSessions = unreadSessionState.value,
+            recentOpenedSessions = nextOpened,
+            unreadSessions = nextUnread,
         )
+    }
+
+    /** 打开某个会话＝看过它：立刻从「最新回复」移除并减角标，不等下一次状态刷新。 */
+    private fun markConversationRead(conversationId: String) {
+        var changed = false
+        if (conversationId.isNotBlank() && unreadSessionIds.remove(conversationId)) changed = true
+        if (unreadFinishedCount > 0) {
+            unreadFinishedCount = (unreadFinishedCount - 1).coerceAtLeast(0)
+            unreadFinished = unreadFinishedCount > 0
+            changed = true
+        }
+        if (!changed) return
+        refreshUnreadSessions()
+        syncRunningSessions()
     }
 
     /** 会话结束后把它记进「最近会话」，胶囊展开后仍可点回去。 */
@@ -175,7 +199,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     /** 从悬浮胶囊跳回某个会话：复用 MainActivity 已有的“打开指定会话”入口。 */
     private fun openConversation(conversationId: String) {
         noteRecentOpened(conversationId)
-        if (unreadSessionIds.remove(conversationId)) refreshUnreadSessions()
+        markConversationRead(conversationId)
         if (conversationId.isBlank()) return
         runCatching {
             startActivity(
@@ -185,9 +209,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             )
             capsuleExpanded.value = false
-            // 点开就等于看到了：清掉完成提示，并把这条从「最近会话」里移除。
-            unreadFinished = false
-            unreadFinishedCount = (unreadFinishedCount - 1).coerceAtLeast(0)
+            // 点开就等于看到了：未读已在 markConversationRead 里减掉，这里只把新状态推给胶囊。
+            syncRunningSessions()
             // 列表保持"最近三条"常驻：点开过只是清未读角标，不把会话从列表里删掉。
             if (runningSessionCount() == 0) {
                 if (capsulePinned) {
@@ -310,6 +333,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             ACTION_UNPIN_CAPSULE -> {
                 capsulePinned = false
                 if (runningSessionCount() == 0) dismissAndStop()
+            }
+            ACTION_MARK_READ -> {
+                // 从胶囊点进某个会话：只清这一条的未读，不用等回到 Eta 才整体归零。
+                markConversationRead(intent.getStringExtra(EXTRA_MARK_READ_CONVERSATION_ID).orEmpty())
             }
             ACTION_CLEAR_READ -> {
                 unreadFinished = false
@@ -1868,6 +1895,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         const val ACTION_PIN_CAPSULE = "io.github.mangi.eta.agent.runtime.PIN_CAPSULE"
         const val ACTION_UNPIN_CAPSULE = "io.github.mangi.eta.agent.runtime.UNPIN_CAPSULE"
         const val ACTION_CLEAR_READ = "io.github.mangi.eta.agent.runtime.CLEAR_READ"
+        /** 单条会话已读：进过哪个会话就减哪个，立刻生效。 */
+        const val ACTION_MARK_READ = "io.github.mangi.eta.agent.runtime.MARK_READ"
+        const val EXTRA_MARK_READ_CONVERSATION_ID = "io.github.mangi.eta.agent.runtime.MARK_READ_CONVERSATION_ID"
         const val HIDE_DELAY_MS = 2_500L
         const val RESULT_REVIEW_DELAY_MS = 120_000L
         const val RESULT_CARD_HEIGHT_RATIO = 0.5f

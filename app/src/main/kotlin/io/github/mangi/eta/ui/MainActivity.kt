@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.display.VirtualScreenViewerActivity
+import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.hook.vivo.VivoHandoff
 import io.github.mangi.eta.data.model.AppearanceThemeMode
@@ -94,6 +95,16 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         updateAssistantHandoff(intent)
         handleShareIntent(intent)
+        // Activity 被复用（栈里已有实例）时 AgentAppRoot 的首帧效应不会重跑；
+        // 除了「打开指定会话」由 updateAssistantHandoff 精确清，其他再次进入都按「回到 Eta」整体清未读。
+        if (intent.action != ACTION_OPEN_CONVERSATION_ID) {
+            runCatching {
+                startService(
+                    Intent(this, AgentRuntimeService::class.java)
+                        .setAction(AgentRuntimeService.ACTION_CLEAR_READ),
+                )
+            }
+        }
     }
 
     /** 系统分享面板送进来的文字／图片，先暂存起来，界面就绪后由 AgentAppRoot 取走。 */
@@ -176,7 +187,22 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (intent?.action == ACTION_OPEN_CONVERSATION_ID) {
-            requestedConversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID)?.takeIf(String::isNotBlank)
+            val openedId = intent.getStringExtra(EXTRA_CONVERSATION_ID)?.takeIf(String::isNotBlank)
+            requestedConversationId = openedId
+            // CLEAR_TOP 复用本 Activity 时不重建组合，AgentAppRoot 那次清未读不会重跑；
+            // 这里直接把「点开的这条会话」标成已读，胶囊角标与「最新回复」立刻同步。
+            openedId?.let { conversationId ->
+                runCatching {
+                    startService(
+                        Intent(this, AgentRuntimeService::class.java)
+                            .setAction(AgentRuntimeService.ACTION_MARK_READ)
+                            .putExtra(
+                                AgentRuntimeService.EXTRA_MARK_READ_CONVERSATION_ID,
+                                conversationId,
+                            ),
+                    )
+                }
+            }
             return
         }
         if (intent?.action != EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION) return
