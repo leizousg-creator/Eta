@@ -8,6 +8,8 @@ sealed interface AgentHomeAction {
     data class ModelSelected(val modelId: String) : AgentHomeAction
     data class SubmitMessage(val text: String) : AgentHomeAction
     data object StopRun : AgentHomeAction
+    data object PauseRun : AgentHomeAction
+    data object ResumeRun : AgentHomeAction
     data class ImageAttached(val uri: String) : AgentHomeAction
     data class RemoveImage(val id: String) : AgentHomeAction
     data class FilesAttached(val uris: List<String>) : AgentHomeAction

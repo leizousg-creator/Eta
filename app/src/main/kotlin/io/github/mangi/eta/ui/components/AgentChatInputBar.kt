@@ -43,6 +43,8 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -123,6 +125,9 @@ internal fun AgentChatInputBar(
     onModelSelected: (String) -> Unit,
     onSubmit: (String) -> Unit,
     onStop: () -> Unit,
+    isPaused: Boolean = false,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
     onAttachImage: (String) -> Unit,
     onRemoveImage: (String) -> Unit,
     onAttachFiles: (List<String>) -> Unit,
@@ -346,70 +351,90 @@ internal fun AgentChatInputBar(
                             onModelSelected = onModelSelected,
                         )
 
-                        IconButton(
-                            onClick = if (isStreaming) {
-                                onStop
-                            } else {
-                                {
+                        if (isStreaming) {
+                            // 运行中一变三：暂停/恢复、停止、插话发送；插话走 steering，不打断当前运行。
+                            IconButton(
+                                onClick = if (isPaused) onResume else onPause,
+                                minWidth = ChatInputActionSize,
+                                minHeight = ChatInputActionSize,
+                            ) {
+                                Icon(
+                                    imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                    contentDescription = if (isPaused) {
+                                        stringResource(R.string.overlay_resume)
+                                    } else {
+                                        stringResource(R.string.overlay_pause)
+                                    },
+                                    modifier = Modifier.size(ChatInputActionIconSize),
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                )
+                            }
+                            IconButton(
+                                onClick = onStop,
+                                minWidth = ChatInputActionSize,
+                                minHeight = ChatInputActionSize,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Stop,
+                                    contentDescription = stringResource(R.string.chat_stop),
+                                    modifier = Modifier.size(ChatInputActionIconSize),
+                                    tint = MiuixTheme.colorScheme.error,
+                                )
+                            }
+                            IconButton(
+                                onClick = {
                                     if (canSend) {
                                         dictation.cancel()
                                         val submittedText = textFieldState.text.toString()
                                         textFieldState.clearText()
                                         onSubmit(submittedText)
                                     }
-                                }
-                            },
-                            enabled = isStreaming || canSend,
-                            minWidth = ChatInputActionSize,
-                            minHeight = ChatInputActionSize,
-                        ) {
-                            // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
-                            val sendButtonColor by animateColorAsState(
-                                targetValue = when {
-                                    isStreaming -> MiuixTheme.colorScheme.onSurface
-                                    canSend -> MiuixTheme.colorScheme.primary
-                                    else -> MiuixTheme.colorScheme.surfaceContainerHigh
                                 },
-                                animationSpec = tween(durationMillis = 160),
-                                label = "send_button_color",
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(SendButtonVisualSize)
-                                    .clip(CircleShape)
-                                    .background(sendButtonColor),
-                                contentAlignment = Alignment.Center,
+                                enabled = canSend,
+                                minWidth = ChatInputActionSize,
+                                minHeight = ChatInputActionSize,
                             ) {
-                                AnimatedContent(
-                                    targetState = isStreaming,
-                                    transitionSpec = {
-                                        (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
-                                            .togetherWith(
-                                                fadeOut(tween(90)) +
-                                                    scaleOut(tween(110), targetScale = 0.72f)
-                                            )
-                                    },
-                                    label = "send_stop_icon",
-                                ) { streaming ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(SendButtonVisualSize)
+                                        .clip(CircleShape)
+                                        .background(if (canSend) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainerHigh),
+                                    contentAlignment = Alignment.Center,
+                                ) {
                                     Icon(
-                                        imageVector = if (streaming) {
-                                            Icons.Rounded.Stop
-                                        } else {
-                                            Icons.Rounded.ArrowUpward
-                                        },
-                                        contentDescription = when {
-                                            streaming -> stringResource(R.string.chat_stop)
-                                            isEditingMessage && preserveFollowingMessages -> "保存消息"
-                                            else -> stringResource(R.string.chat_send)
-                                        },
-                                        modifier = Modifier.size(
-                                            if (streaming) StopIconSize else SendIconSize
-                                        ),
-                                        tint = when {
-                                            streaming -> MiuixTheme.colorScheme.surface
-                                            canSend -> MiuixTheme.colorScheme.onPrimary
-                                            else -> MiuixTheme.colorScheme.onSurfaceVariantActions
-                                        },
+                                        imageVector = Icons.Rounded.ArrowUpward,
+                                        contentDescription = stringResource(R.string.chat_send),
+                                        modifier = Modifier.size(SendIconSize),
+                                        tint = if (canSend) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    )
+                                }
+                            }
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    if (canSend) {
+                                        dictation.cancel()
+                                        val submittedText = textFieldState.text.toString()
+                                        textFieldState.clearText()
+                                        onSubmit(submittedText)
+                                    }
+                                },
+                                enabled = canSend,
+                                minWidth = ChatInputActionSize,
+                                minHeight = ChatInputActionSize,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(SendButtonVisualSize)
+                                        .clip(CircleShape)
+                                        .background(MiuixTheme.colorScheme.primary),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ArrowUpward,
+                                        contentDescription = stringResource(R.string.chat_send),
+                                        modifier = Modifier.size(SendIconSize),
+                                        tint = MiuixTheme.colorScheme.onPrimary,
                                     )
                                 }
                             }

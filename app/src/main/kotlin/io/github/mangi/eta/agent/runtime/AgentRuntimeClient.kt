@@ -122,6 +122,31 @@ internal class AgentRuntimeClient(
         }
     }
 
+    /** 暂停当前运行：不取消在途请求，下一个检查点生效。 */
+    fun pauseRun() {
+        withRuntimeMessenger(Unit) { serviceMessenger ->
+            serviceMessenger.send(Message.obtain(null, AgentRuntimeWire.MSG_PAUSE))
+        }
+    }
+
+    /** 恢复已暂停的运行。 */
+    fun resumeRun() {
+        withRuntimeMessenger(Unit) { serviceMessenger ->
+            serviceMessenger.send(Message.obtain(null, AgentRuntimeWire.MSG_RESUME))
+        }
+    }
+
+    /** 运行中插话：steering 通道，在下一个 turn 注入，不取消当前请求或工具批次。 */
+    fun steerRun(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        withRuntimeMessenger(Unit) { serviceMessenger ->
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_STEER)
+            msg.data = android.os.Bundle().apply { putString(AgentRuntimeWire.KEY_PROMPT, trimmed) }
+            serviceMessenger.send(msg)
+        }
+    }
+
     fun ackResult(runId: String): Boolean {
         if (runId.isBlank()) return false
         return withRuntimeMessenger(false) { serviceMessenger ->

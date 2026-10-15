@@ -161,6 +161,7 @@ fun AgentAppRoot(
     var conversationPaneOpen by remember { mutableStateOf(false) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
+    var conversationBatchDeleteTarget by remember { mutableStateOf<List<ConversationSummaryUi>?>(null) }
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var messageDeleteTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var messageRegenerateTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
@@ -318,6 +319,9 @@ fun AgentAppRoot(
             onConversationDelete = { conversation ->
                 conversationDeleteTarget = conversation
             },
+            onBatchDelete = { conversations ->
+                conversationBatchDeleteTarget = conversations
+            },
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
@@ -357,6 +361,7 @@ fun AgentAppRoot(
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Home) {
                     AgentHomeScreen(
+                        isPaused = agentState.runPaused,
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
                         conversationKey = agentState.conversationPaneState.selectedConversationId,
@@ -368,6 +373,8 @@ fun AgentAppRoot(
                                 is AgentHomeAction.ModelSelected -> agentState.selectModel(action.modelId)
                                 is AgentHomeAction.SubmitMessage -> { requestExecutionNotifications(); agentState.sendCurrentMessage(action.text) }
                                 AgentHomeAction.StopRun -> agentState.stopCurrentRun()
+                                AgentHomeAction.PauseRun -> agentState.pauseCurrentRun()
+                                AgentHomeAction.ResumeRun -> agentState.resumeCurrentRun()
                                 is AgentHomeAction.ImageAttached -> agentState.attachImage(action.uri)
                                 is AgentHomeAction.RemoveImage -> agentState.removePendingImage(action.id)
                                 is AgentHomeAction.FilesAttached -> agentState.attachFiles(action.uris)
@@ -807,6 +814,32 @@ fun AgentAppRoot(
                 onConfirm = {
                     agentState.deleteConversation(conversation.id)
                     conversationDeleteTarget = null
+                },
+            )
+        }
+    }
+
+    conversationBatchDeleteTarget?.let { conversations ->
+        WindowDialog(
+            show = true,
+            cornerRadius = DialogDefaults.CornerRadius,
+            title = stringResource(R.string.conversation_delete_title),
+            summary = pluralStringResource(
+                R.plurals.conversation_batch_delete_message,
+                conversations.size,
+                conversations.size,
+            ),
+            onDismissRequest = { conversationBatchDeleteTarget = null },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.action_delete),
+                destructive = true,
+                onCancel = { conversationBatchDeleteTarget = null },
+                onConfirm = {
+                    conversations.forEach { conversation ->
+                        agentState.deleteConversation(conversation.id)
+                    }
+                    conversationBatchDeleteTarget = null
                 },
             )
         }

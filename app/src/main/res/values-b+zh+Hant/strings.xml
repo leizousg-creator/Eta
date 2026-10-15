@@ -177,6 +177,9 @@
   <string name="conversation_delete_message">此對話及其中的訊息將永久刪除。</string>
   <string name="conversation_delete_message_title">要刪除訊息嗎？</string>
   <string name="conversation_delete_message_body">此訊息將被刪除。</string>
+  <plurals name="conversation_batch_delete_message">
+    <item quantity="other">這 %d 個對話及其中的訊息將永久刪除。</item>
+  </plurals>
   <plurals name="conversation_delete_later_turns">
     <item quantity="other">此訊息及後續 %d 輪對話將被刪除。</item>
   </plurals>
@@ -1407,6 +1410,10 @@
     <string name="virtual_screen_notification_channel">虛擬螢幕</string>
     <string name="virtual_screen_notification_title">虛擬螢幕正在執行</string>
     <string name="virtual_screen_notification_content">點擊查看並操作虛擬螢幕目前內容</string>
+    <string name="virtual_screen_completion_channel">任務完成</string>
+    <string name="virtual_screen_completion_ok_title">任務已完成</string>
+    <string name="virtual_screen_completion_fail_title">任務失敗</string>
+    <string name="virtual_screen_completion_ok_body">虛擬屏指令執行完畢</string>
     <string name="conversation_context_capsule">上下文</string>
     <string name="conversation_speed_description">最近一次模型請求：平均每秒產生 %1$s 個輸出 token，包含首字等待時間。</string>
     <string name="virtual_screen_home">主頁</string>

@@ -311,6 +311,7 @@ internal class VirtualScreenViewerActivity : ComponentActivity() {
 
     override fun onPause() {
         surface?.clearFrame(); hasFrame = false; lastFrameId = 0
+        VirtualScreenFloatWindow.exitFullScreen()
         super.onPause()
     }
 }

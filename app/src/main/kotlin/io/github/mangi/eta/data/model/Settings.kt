@@ -14,6 +14,13 @@ data class Settings(
     val virtualScreenFallbackEnabled: Boolean = false,
     val virtualScreenAutoRestartApps: Boolean = false,
     val virtualScreenIdleTimeoutMinutes: Int = 20,
+    val virtualScreenFloatWindowEnabled: Boolean = false,
+    val virtualScreenFloatEdgeCollapseEnabled: Boolean = true,
+    val virtualScreenFloatWindowWidthDp: Int = 0,
+    val virtualScreenFloatWindowHeightDp: Int = 0,
+    val virtualScreenFloatWindowAlpha: Float = 0.85f,
+    val virtualScreenFloatWindowPosX: Int = 16,
+    val virtualScreenFloatWindowPosY: Int = 120,
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
 

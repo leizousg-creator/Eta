@@ -40,6 +40,7 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
 import io.github.mangi.eta.agent.display.VirtualScreenSession
+import io.github.mangi.eta.agent.display.VirtualScreenNotification
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
@@ -231,6 +232,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AgentRuntimeWire.MSG_CANCEL -> {
                     val runId = msg.data?.let(AgentRuntimeWire::runIdFromBundle).orEmpty()
                     if (runId.isNotBlank()) cancelRun(runId)
+                }
+
+                AgentRuntimeWire.MSG_PAUSE -> requestPause()
+                AgentRuntimeWire.MSG_RESUME -> requestResume()
+                AgentRuntimeWire.MSG_STEER -> {
+                    val text = msg.data?.getString(AgentRuntimeWire.KEY_PROMPT).orEmpty().trim()
+                    if (text.isNotBlank()) requestSupplement(text)
                 }
 
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
@@ -473,7 +481,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         mainHandler.post {
             if (activeSession !== session) return@post
-            if (usesVirtualUi(session, virtualScreenEnabled)) removeOverlayWindows()
             if (
                 !virtualUi && AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
@@ -485,7 +492,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (session.isTerminal) return@post
             runCatching {
                 state.value = state.value.applyEvent(event)
-                if (revealsForegroundOperation && entrySurfaceReady) {
+                if (revealsOperation && entrySurfaceReady) {
                     if (capsuleView == null) {
                         AgentHapticFeedback.perform(
                             this,
@@ -527,6 +534,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (activeSession !== session) return@post
             lastCompletedRunContext = completedContext
             activeSession = null
+            if (session.virtualUiRouted.get()) {
+                VirtualScreenNotification.showCompletion(
+                    this,
+                    result.ok,
+                    if (result.ok) result.content.trim() else result.error.orEmpty(),
+                )
+            }
             runCatching {
                 if (result.ok) {
                     enterFinalState(
@@ -870,9 +884,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
 
     private fun showOverlay() {
-        if (activeSession?.let { session ->
-                usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
-            } == true) return
         if (capsuleView != null) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return

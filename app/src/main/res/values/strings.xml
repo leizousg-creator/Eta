@@ -180,6 +180,10 @@
   <string name="conversation_delete_message">This conversation and its messages will be permanently deleted.</string>
   <string name="conversation_delete_message_title">Delete message?</string>
   <string name="conversation_delete_message_body">This message will be deleted.</string>
+  <plurals name="conversation_batch_delete_message">
+    <item quantity="one">This conversation and its messages will be permanently deleted.</item>
+    <item quantity="other">%d conversations and their messages will be permanently deleted.</item>
+  </plurals>
   <plurals name="conversation_delete_later_turns">
     <item quantity="one">This message and %d later turn will be deleted.</item>
     <item quantity="other">This message and %d later turns will be deleted.</item>
@@ -1453,6 +1457,10 @@
     <string name="virtual_screen_notification_channel">Virtual screen</string>
     <string name="virtual_screen_notification_title">Virtual screen is active</string>
     <string name="virtual_screen_notification_content">Tap to view and control the current screen</string>
+    <string name="virtual_screen_completion_channel">Task completion</string>
+    <string name="virtual_screen_completion_ok_title">Task completed</string>
+    <string name="virtual_screen_completion_fail_title">Task failed</string>
+    <string name="virtual_screen_completion_ok_body">Virtual screen task finished</string>
     <string name="conversation_context_capsule">Context</string>
     <string name="conversation_speed_description">Last model request: %1$s output tokens per second, including time to first token.</string>
     <string name="virtual_screen_home">Home</string>

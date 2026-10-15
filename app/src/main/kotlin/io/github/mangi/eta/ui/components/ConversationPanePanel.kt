@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +62,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
@@ -132,6 +134,7 @@ internal fun ConversationPanePanel(
     onConversationRename: (ConversationSummaryUi) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onBatchDelete: (List<ConversationSummaryUi>) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenRootSettings: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
@@ -146,6 +149,8 @@ internal fun ConversationPanePanel(
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     var moreExpanded by rememberSaveable { mutableStateOf(false) }
+    var batchMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
     val capabilities = rememberDeviceCapabilities()
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
 
@@ -241,9 +246,36 @@ internal fun ConversationPanePanel(
                     }
                 }
                 item(key = "history-heading") {
-                    Text(stringResource(R.string.action_conversation_history), style = MiuixTheme.textStyles.body2,
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, bottom = 4.dp).semantics { heading() })
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, bottom = 4.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (batchMode) "已选 ${selectedIds.size} 项" else stringResource(R.string.action_conversation_history),
+                            style = MiuixTheme.textStyles.body2,
+                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f).semantics { heading() },
+                        )
+                        if (batchMode) {
+                            Text("全选", color = MiuixTheme.colorScheme.primary, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp).clickable {
+                                    selectedIds = state.conversations.map { it.id }.toSet()
+                                })
+                            Text("取消", color = MiuixTheme.colorScheme.onSurfaceVariantSummary, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp).clickable {
+                                    batchMode = false; selectedIds = emptySet()
+                                })
+                            Text("删除", color = if (selectedIds.isEmpty()) MiuixTheme.colorScheme.onSurfaceVariantSummary else MiuixTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 8.dp).clickable(enabled = selectedIds.isNotEmpty()) {
+                                    onBatchDelete(state.conversations.filter { it.id in selectedIds })
+                                    batchMode = false; selectedIds = emptySet()
+                                })
+                        } else {
+                            Text("批量删除", color = MiuixTheme.colorScheme.primary, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp).clickable { batchMode = true; selectedIds = emptySet() })
+                        }
+                    }
                 }
                 if (state.conversations.isEmpty()) {
                     item {
@@ -261,7 +293,15 @@ internal fun ConversationPanePanel(
                             ConversationTextRow(
                                 conversation = conversation,
                                 selected = conversation.id == state.selectedConversationId,
-                                onClick = { onConversationSelected(conversation.id) },
+                                batchMode = batchMode,
+                                checked = conversation.id in selectedIds,
+                                onClick = {
+                                    if (batchMode) {
+                                        selectedIds = if (conversation.id in selectedIds) selectedIds - conversation.id else selectedIds + conversation.id
+                                    } else {
+                                        onConversationSelected(conversation.id)
+                                    }
+                                },
                                 onRename = { onConversationRename(conversation) },
                                 onExport = { onConversationExport(conversation) },
                                 onDelete = { onConversationDelete(conversation) },
@@ -392,6 +432,8 @@ private fun ConversationSectionHeader(group: ConversationDrawerGroup) {
 private fun ConversationTextRow(
     conversation: ConversationSummaryUi,
     selected: Boolean,
+    batchMode: Boolean = false,
+    checked: Boolean = false,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
@@ -427,6 +469,9 @@ private fun ConversationTextRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (batchMode) {
+                Checkbox(state = if (checked) ToggleableState.On else ToggleableState.Off, onClick = onClick, modifier = Modifier.padding(end = 4.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
             val title = conversation.title.ifBlank { conversation.preview }
             Text(

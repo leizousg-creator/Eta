@@ -57,6 +57,13 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_FALLBACK_ENABLED = booleanPreferencesKey("virtual_screen_fallback_enabled")
     private val VIRTUAL_SCREEN_AUTO_RESTART_APPS = booleanPreferencesKey("virtual_screen_auto_restart_apps")
     private val VIRTUAL_SCREEN_IDLE_TIMEOUT = intPreferencesKey("virtual_screen_idle_timeout_minutes")
+    private val VIRTUAL_SCREEN_FLOAT_WINDOW = booleanPreferencesKey("virtual_screen_float_window")
+    private val VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE = booleanPreferencesKey("virtual_screen_float_edge_collapse")
+    private val VIRTUAL_SCREEN_FLOAT_WIDTH = intPreferencesKey("virtual_screen_float_width_dp")
+    private val VIRTUAL_SCREEN_FLOAT_HEIGHT = intPreferencesKey("virtual_screen_float_height_dp")
+    private val VIRTUAL_SCREEN_FLOAT_ALPHA = floatPreferencesKey("virtual_screen_float_alpha")
+    private val VIRTUAL_SCREEN_FLOAT_POS_X = intPreferencesKey("virtual_screen_float_pos_x")
+    private val VIRTUAL_SCREEN_FLOAT_POS_Y = intPreferencesKey("virtual_screen_float_pos_y")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -125,6 +132,13 @@ internal object SettingsDataStore {
             prefs[VIRTUAL_SCREEN_FALLBACK_ENABLED] = updated.virtualScreenFallbackEnabled
             prefs[VIRTUAL_SCREEN_AUTO_RESTART_APPS] = updated.virtualScreenAutoRestartApps
             prefs[VIRTUAL_SCREEN_IDLE_TIMEOUT] = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(updated.virtualScreenIdleTimeoutMinutes)
+            prefs[VIRTUAL_SCREEN_FLOAT_WINDOW] = updated.virtualScreenFloatWindowEnabled
+            prefs[VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE] = updated.virtualScreenFloatEdgeCollapseEnabled
+            prefs[VIRTUAL_SCREEN_FLOAT_WIDTH] = updated.virtualScreenFloatWindowWidthDp
+            prefs[VIRTUAL_SCREEN_FLOAT_HEIGHT] = updated.virtualScreenFloatWindowHeightDp
+            prefs[VIRTUAL_SCREEN_FLOAT_ALPHA] = updated.virtualScreenFloatWindowAlpha
+            prefs[VIRTUAL_SCREEN_FLOAT_POS_X] = updated.virtualScreenFloatWindowPosX
+            prefs[VIRTUAL_SCREEN_FLOAT_POS_Y] = updated.virtualScreenFloatWindowPosY
             prefs.remove(stringPreferencesKey("vivo_atomic_scene"))
             prefs.putAppearance(updated.appearance.normalized())
         }
@@ -259,6 +273,13 @@ internal object SettingsDataStore {
         virtualScreenFallbackEnabled = this[VIRTUAL_SCREEN_FALLBACK_ENABLED] ?: false,
         virtualScreenAutoRestartApps = this[VIRTUAL_SCREEN_AUTO_RESTART_APPS] ?: false,
         virtualScreenIdleTimeoutMinutes = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(this[VIRTUAL_SCREEN_IDLE_TIMEOUT] ?: 20),
+        virtualScreenFloatWindowEnabled = this[VIRTUAL_SCREEN_FLOAT_WINDOW] ?: false,
+        virtualScreenFloatEdgeCollapseEnabled = this[VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE] ?: true,
+        virtualScreenFloatWindowWidthDp = this[VIRTUAL_SCREEN_FLOAT_WIDTH] ?: 0,
+        virtualScreenFloatWindowHeightDp = this[VIRTUAL_SCREEN_FLOAT_HEIGHT] ?: 0,
+        virtualScreenFloatWindowAlpha = this[VIRTUAL_SCREEN_FLOAT_ALPHA] ?: 0.85f,
+        virtualScreenFloatWindowPosX = this[VIRTUAL_SCREEN_FLOAT_POS_X] ?: 16,
+        virtualScreenFloatWindowPosY = this[VIRTUAL_SCREEN_FLOAT_POS_Y] ?: 120,
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,

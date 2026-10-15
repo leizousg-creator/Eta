@@ -41,4 +41,34 @@ internal object VirtualScreenNotification {
     fun cancel(context: Context, sessionId: String) {
         context.getSystemService(NotificationManager::class.java)?.cancel(sessionId, ID)
     }
+
+    private const val COMPLETION_CHANNEL = "eta_task_completion"
+    private const val COMPLETION_ID = 1111
+
+    /** 虚拟屏指令运行完毕后，走一条高优先级通知通道，由 ColorOS 尽量归入流体云展示。 */
+    fun showCompletion(context: Context, ok: Boolean, detail: String) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) return
+        runCatching {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(NotificationChannel(
+                COMPLETION_CHANNEL,
+                context.getString(R.string.virtual_screen_completion_channel),
+                NotificationManager.IMPORTANCE_HIGH,
+            ))
+            val open = PendingIntent.getActivity(context, 0,
+                Intent(context, io.github.mangi.eta.ui.MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            manager.notify(COMPLETION_ID, Notification.Builder(context, COMPLETION_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(if (ok) context.getString(R.string.virtual_screen_completion_ok_title)
+                    else context.getString(R.string.virtual_screen_completion_fail_title))
+                .setContentText(detail.ifBlank { context.getString(R.string.virtual_screen_completion_ok_body) })
+                .setCategory(Notification.CATEGORY_STATUS)
+                .setAutoCancel(true)
+                .setContentIntent(open).build())
+        }.onFailure { AndroidAgentLogger.warn("Virtual screen completion notification failed: type=${it.safeLogType()}") }
+    }
 }

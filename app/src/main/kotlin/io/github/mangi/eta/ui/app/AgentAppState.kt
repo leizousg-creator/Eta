@@ -133,6 +133,10 @@ internal class AgentAppState(
     )
         private set
 
+    /** 当前运行是否被用户暂停（仅驱动输入栏按钮在 暂停/恢复 之间切换）。 */
+    var runPaused by mutableStateOf(false)
+        private set
+
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
@@ -822,12 +826,18 @@ internal class AgentAppState(
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
-        if (
-            (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) ||
-            homeState.isStreaming
-        ) {
+        if (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) {
             return
         }
+        if (homeState.isStreaming) {
+            // 运行中插话：走 steering 通道，在下一个 turn 注入，不取消当前模型请求或工具批次。
+            updateCurrentConversation(homeState.copy(input = ""))
+            scope.launch(Dispatchers.IO) {
+                AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(prompt)
+            }
+            return
+        }
+        runPaused = false
         homeState.messageEdit?.takeIf { it.preserveFollowingMessages }?.let { edit ->
             val updated = RoleplayConversationReducer.edit(homeState, edit.targetMessageId, prompt) ?: return
             updateCurrentConversation(updated.copy(
@@ -1459,8 +1469,25 @@ internal class AgentAppState(
     fun stopCurrentRun() {
         val runId = currentRunId ?: return
         if (!stopRequestedRunIds.add(runId)) return
+        runPaused = false
         scope.launch(Dispatchers.IO) {
             AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+        }
+    }
+
+    /** 暂停当前运行：steering 注入在 turn 边界生效，不取消在途请求。 */
+    fun pauseCurrentRun() {
+        runPaused = true
+        scope.launch(Dispatchers.IO) {
+            AgentRuntimeClient(appContext, AndroidAgentLogger).pauseRun()
+        }
+    }
+
+    /** 恢复已暂停的运行。 */
+    fun resumeCurrentRun() {
+        runPaused = false
+        scope.launch(Dispatchers.IO) {
+            AgentRuntimeClient(appContext, AndroidAgentLogger).resumeRun()
         }
     }
 

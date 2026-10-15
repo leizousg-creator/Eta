@@ -52,6 +52,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -62,6 +63,7 @@ import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
@@ -315,6 +317,8 @@ private fun SettingsPageContent(
                         startAction = { EtaPreferenceIcon(icon = Icons.Rounded.Smartphone, tint = EtaPreferenceColors.Blue) },
                         onClick = { onNavigate(AppRoute.VirtualScreen) },
                     )
+                    EtaPreferenceDivider()
+                    VirtualScreenFloatWindowPrefs()
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
@@ -927,6 +931,44 @@ private fun SystemizerConfirmDialog(
  * 配置来源由调用方按能力边界传入。Hook 开关仍可能因 LSPosed 未连接而禁用；Agent
  * Runtime 开关始终使用 App 本地配置。
  */
+@Composable
+private fun VirtualScreenFloatWindowPrefs() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val settings by SettingsDataStore.settingsFlow().collectAsState(initial = null)
+    val current = settings ?: return
+
+    EtaSwitchPreference(
+        title = "虚拟屏幕悬浮小窗",
+        summary = "虚拟屏启动时自动弹出可拖拽小窗，拖到屏幕边缘自动折叠",
+        checked = current.virtualScreenFloatWindowEnabled,
+        onCheckedChange = { value ->
+            if (value && !Settings.canDrawOverlays(context)) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+            scope.launch { SettingsDataStore.updateSettings { it.copy(virtualScreenFloatWindowEnabled = value) } }
+        },
+        startAction = { EtaPreferenceIcon(Icons.Rounded.Smartphone, tint = EtaPreferenceColors.Blue) },
+    )
+
+    EtaPreferenceDivider()
+
+    EtaSwitchPreference(
+        title = "贴边自动折叠",
+        summary = "拖到屏幕左右边缘松手自动折叠成窄触发条",
+        checked = current.virtualScreenFloatEdgeCollapseEnabled,
+        onCheckedChange = { value ->
+            scope.launch { SettingsDataStore.updateSettings { it.copy(virtualScreenFloatEdgeCollapseEnabled = value) } }
+        },
+        startAction = { EtaPreferenceIcon(Icons.Rounded.Smartphone, tint = EtaPreferenceColors.Green) },
+    )
+}
+
 @Composable
 private fun SwitchPref(
     context: Context,
