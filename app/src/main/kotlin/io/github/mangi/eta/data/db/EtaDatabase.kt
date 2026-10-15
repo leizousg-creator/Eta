@@ -25,8 +25,10 @@ import androidx.room.migration.Migration
         McpServerEntity::class,
         CharacterEntity::class,
         UserPersonaEntity::class,
+        AgentTaskEntity::class,
+        AgentTaskRunEntity::class,
     ],
-    version = 22,
+    version = 25,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -36,6 +38,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
+    abstract fun agentTaskDao(): AgentTaskDao
 
     companion object {
         @Volatile
@@ -65,6 +68,9 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_19_20,
                         MIGRATION_20_21,
                         MIGRATION_21_22,
+                        MIGRATION_22_23,
+                        MIGRATION_23_24,
+                        MIGRATION_24_25,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -81,6 +87,37 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 instance?.close()
                 instance = null
             }
+        }
+
+        // Versions 22-24 of the vivo branch predate upstream's conversation model binding.
+        internal val MIGRATION_24_25 = Migration(24, 25) { database ->
+            val hasModelId = database.query("PRAGMA table_info(conversations)").use { cursor ->
+                val column = cursor.getColumnIndexOrThrow("name")
+                var found = false
+                while (cursor.moveToNext()) if (cursor.getString(column) == "model_id") found = true
+                found
+            }
+            if (!hasModelId) database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
+        }
+
+        internal val MIGRATION_23_24 = Migration(23, 24) { database ->
+            database.execSQL("ALTER TABLE conversations ADD COLUMN last_model_usage_json TEXT NOT NULL DEFAULT ''")
+        }
+
+        internal val MIGRATION_22_23 = Migration(22, 23) { database ->
+            createAgentTaskTables(database)
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN request_duration_ms INTEGER")
+        }
+
+        private fun createAgentTaskTables(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+            database.execSQL("CREATE TABLE IF NOT EXISTS agent_tasks (" +
+                "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, prompt TEXT NOT NULL, triggerJson TEXT NOT NULL, " +
+                "enabled INTEGER NOT NULL, nextRunAt INTEGER, cooldownSeconds INTEGER NOT NULL, maxRuns INTEGER NOT NULL, " +
+                "runCount INTEGER NOT NULL, lastStartedAt INTEGER, lastStatus TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)")
+            database.execSQL("CREATE TABLE IF NOT EXISTS agent_task_runs (" +
+                "id TEXT NOT NULL PRIMARY KEY, taskId TEXT NOT NULL, fireKey TEXT NOT NULL, status TEXT NOT NULL, " +
+                "eventJson TEXT NOT NULL, queuedAt INTEGER NOT NULL, startedAt INTEGER, finishedAt INTEGER, resultPreview TEXT NOT NULL)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_agent_task_runs_taskId_fireKey ON agent_task_runs(taskId,fireKey)")
         }
 
         internal val MIGRATION_19_20 = Migration(19, 20) { database ->

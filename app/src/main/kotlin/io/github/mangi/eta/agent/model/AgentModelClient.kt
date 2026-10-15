@@ -105,6 +105,7 @@ internal object AgentModelClient {
         assistantScreenContext: String = "",
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
+        restrictedToolNames: Set<String>? = null,
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -118,6 +119,8 @@ internal object AgentModelClient {
             memoryContext,
             rootAvailable = initialCapabilities.rootAvailable,
             roleplayContext = roleplayContext,
+            virtualScreenEnabled = initialCapabilities.virtualScreenEnabled,
+            virtualScreenFallbackEnabled = initialCapabilities.virtualScreenFallbackEnabled,
         )
         if (rewriteReply) {
             messages.put(messages.length() - 1, AgentConversationCodec.userTextMessage(
@@ -133,7 +136,7 @@ internal object AgentModelClient {
         val transcript = JSONArray()
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
         val systemCount = AgentPromptBuilder.buildSystemMessages(
-            config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext,
+            config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext, initialCapabilities.virtualScreenEnabled, initialCapabilities.virtualScreenFallbackEnabled,
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities): JSONArray {
             if (rewriteReply) return JSONArray()
@@ -153,7 +156,12 @@ internal object AgentModelClient {
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
-            return tools
+            return if (restrictedToolNames == null) tools else JSONArray().also { filtered ->
+                for (index in 0 until tools.length()) {
+                    val schema = tools.getJSONObject(index)
+                    if (schema.optJSONObject("function")?.optString("name") in restrictedToolNames) filtered.put(schema)
+                }
+            }
         }
         val tools = toolsFor(initialCapabilities)
         onEvent(
@@ -165,6 +173,8 @@ internal object AgentModelClient {
             )
         )
         var promptRootAvailable = initialCapabilities.rootAvailable
+        var promptVirtualScreenEnabled = initialCapabilities.virtualScreenEnabled
+        var promptVirtualScreenFallbackEnabled = initialCapabilities.virtualScreenFallbackEnabled
         val loop = AgentLoop(
             transcript = transcript,
             systemCount = systemCount,
@@ -176,7 +186,11 @@ internal object AgentModelClient {
             messages = messages,
             tools = tools,
             provider = provider,
-            toolExecutor = toolExecutor,
+            toolExecutor = if (restrictedToolNames == null) toolExecutor else ToolExecutor { call ->
+                if (call.name in restrictedToolNames) toolExecutor.execute(call)
+                else ToolResult(JSONObject().put("ok", false).put("code", "REVIEW_TOOL_DENIED")
+                    .put("message", "此工具不属于自动复盘能力").toString())
+            },
             runController = runController,
             traceFormatter = traceFormatter,
             onEvent = onEvent,
@@ -185,14 +199,17 @@ internal object AgentModelClient {
             initialSupplementIndex = initialSupplementIndex,
             toolsForRound = {
                 val capabilities = capabilitiesProvider()
-                if (capabilities.rootAvailable != promptRootAvailable) {
+                if (capabilities.rootAvailable != promptRootAvailable || capabilities.virtualScreenEnabled != promptVirtualScreenEnabled ||
+                    capabilities.virtualScreenFallbackEnabled != promptVirtualScreenFallbackEnabled) {
                     val systemMessages = AgentPromptBuilder.buildSystemMessages(
-                        config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                        config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext, capabilities.virtualScreenEnabled, capabilities.virtualScreenFallbackEnabled,
                     )
                     for (index in 0 until systemMessages.length()) {
                         messages.put(index, systemMessages.getJSONObject(index))
                     }
                     promptRootAvailable = capabilities.rootAvailable
+                    promptVirtualScreenEnabled = capabilities.virtualScreenEnabled
+                    promptVirtualScreenFallbackEnabled = capabilities.virtualScreenFallbackEnabled
                 }
                 toolsFor(capabilities)
             },

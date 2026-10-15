@@ -6,6 +6,7 @@ import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechSynthesisScreen
 import android.Manifest
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -44,6 +45,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
+import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
@@ -78,6 +81,7 @@ import io.github.mangi.eta.ui.screens.home.AgentHomeScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
+import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxEnvironmentScreen
@@ -105,6 +109,7 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 @Composable
 fun AgentAppRoot(
     assistantConversationKey: String? = null,
+    assistantConversationSource: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
     requestedConversationId: String? = null,
     onRequestedConversationOpened: () -> Unit = {},
     openSpeechSettings: Boolean = false,
@@ -133,6 +138,7 @@ fun AgentAppRoot(
     val communityCatalogStore = viewModel<CommunityCatalogViewModel>().store
     val requestExecutionNotifications = rememberExecutionNotificationRequest()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest(permissionHealth::refreshPermissionHealth)
+    val requestBluetoothPermission = rememberBluetoothPermissionRequest(permissionHealth::refreshPermissionHealth)
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -203,13 +209,16 @@ fun AgentAppRoot(
         onRequestedConversationOpened()
     }
 
-    LaunchedEffect(assistantConversationKey) {
+    LaunchedEffect(assistantConversationKey, assistantConversationSource) {
         val conversationKey = assistantConversationKey ?: return@LaunchedEffect
-        val opened = agentState.openAssistantConversation(conversationKey)
+        val opened = agentState.openAssistantConversation(conversationKey, assistantConversationSource)
         if (opened) {
             conversationPaneOpen = false
             // 接管落到主聊天舞台：与主界面同一页面、同一侧边对话列表，不再开独立对话页。
             navigator.popToHome()
+        } else if (assistantConversationSource == "automation") {
+            navigator.popToHome()
+            navigator.push(AppRoute.Tasks)
         }
         onAssistantConversationOpened(opened)
     }
@@ -240,6 +249,16 @@ fun AgentAppRoot(
         conversationPaneOpen = false
     }
 
+    fun openAccessibilitySettings() {
+        focusManager.clearFocus()
+        // Android's per-service settings action is not exposed in the public SDK.
+        val details = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+            .putExtra("android.intent.extra.COMPONENT_NAME", ComponentName(context, AgentAccessibilityService::class.java))
+        if (runCatching { context.startActivity(details) }.isFailure) {
+            runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
+    }
+
     @Composable
     fun RoutedShell(
         route: AppRoute,
@@ -250,6 +269,12 @@ fun AgentAppRoot(
             isCurrentRoute = backStack.lastOrNull() == route,
             conversationPaneState = agentState.conversationPaneState,
             isConversationPaneOpen = conversationPaneOpen,
+            conversationStatus = {
+                io.github.mangi.eta.ui.components.ConversationStatusCapsules(
+                    agentState.homeState.messages, agentState.modelPickerState.selectedModel,
+                    agentState.homeState.lastModelUsage,
+                )
+            },
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
@@ -298,7 +323,10 @@ fun AgentAppRoot(
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
             onOpenPermissions = { pushRoute(AppRoute.Permissions) },
             onOpenSettings = { pushRoute(AppRoute.Settings) },
+            onOpenRootSettings = { focusManager.clearFocus(); pushRoute(AppRoute.SystemEnhance) },
+            onOpenAccessibilitySettings = ::openAccessibilitySettings,
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
+            onOpenTasks = { pushRoute(AppRoute.Tasks) },
         ) { padding ->
             Box(
                 modifier = Modifier
@@ -478,6 +506,7 @@ fun AgentAppRoot(
                             is PermissionHealthAction.OpenItemAction -> {
                                 when (action.itemId) {
                                     LOCAL_NETWORK_PERMISSION_ITEM_ID -> requestLocalNetworkPermission()
+                                    "bluetooth" -> requestBluetoothPermission()
                                     "calendar" -> locationPermissionLauncher.launch(io.github.mangi.eta.agent.device.CalendarPermissions.requested)
                                     "notification_policy" -> context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
                                     "accessibility" -> {
@@ -596,6 +625,12 @@ fun AgentAppRoot(
                     onBack = ::popRoute
                 )
             }
+            entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
+                AgentTasksScreen(onBack = { popRoute() })
+            }
+            entry<AppRoute.VirtualScreen>(swipeDismiss = swipeDismiss) {
+                io.github.mangi.eta.ui.screens.tasks.VirtualScreenSettingsScreen(onBack = { popRoute() })
+            }
             entry<AppRoute.SpeechSettings>(swipeDismiss = swipeDismiss) {
                 SpeechSettingsScreen(
                     onBack = ::popRoute,
@@ -635,6 +670,8 @@ fun AgentAppRoot(
                         when (action) {
                             AgentMemoryAction.NavigateBack -> popRoute()
                             is AgentMemoryAction.ToggleEnabled -> memory.setMemoryEnabled(action.enabled)
+                            is AgentMemoryAction.ToggleAutoMemory -> memory.setAutomaticReview(memory = action.enabled)
+                            is AgentMemoryAction.ToggleAutoSkills -> memory.setAutomaticReview(skills = action.enabled)
                             is AgentMemoryAction.DraftChanged -> memory.updateMemoryDraft(action.content)
                             AgentMemoryAction.Save -> memory.saveMemory()
                             AgentMemoryAction.Clear -> memory.clearMemory()

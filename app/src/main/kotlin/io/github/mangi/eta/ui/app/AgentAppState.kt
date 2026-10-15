@@ -550,14 +550,18 @@ internal class AgentAppState(
         }
     }
 
-    suspend fun openAssistantConversation(conversationKey: String): Boolean {
+    suspend fun openAssistantConversation(
+        conversationKey: String,
+        source: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+    ): Boolean {
         if (conversationKey.isBlank()) return false
-        importArchivedExternalRuns()
+        if (source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) importArchivedExternalRuns()
         return withContext(Dispatchers.Main.immediate) {
-            val conversationId = archiveConversationId(
-                source = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
-                conversationKey = conversationKey,
-            )
+            val conversationId = if (source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
+                conversationKey
+            } else {
+                archiveConversationId(source = source, conversationKey = conversationKey)
+            }
             if (conversationsById[conversationId] == null) {
                 false
             } else {
@@ -595,7 +599,7 @@ internal class AgentAppState(
         runConversationIds[runId] = conversationId
         updateConversation(
             conversationId,
-            existingState.copy(
+            ExternalConversationHistory.appendUser(existingState, runId, payload.userText).copy(
                 input = "",
                 isStreaming = true,
                 thinkingEnabled = archivedEffort.enablesReasoning,
@@ -853,9 +857,6 @@ internal class AgentAppState(
         val runtimePrompt = AgentFileReferencePromptCodec.format(prompt, fileReferences)
 
         val edit = homeState.messageEdit
-        if (edit == null && selectedConversationId?.isReadOnlyExternalArchiveConversation() == true) {
-            moveCurrentDraftToNewConversation()
-        }
 
         val editBoundary = edit?.let {
             AgentConversationRevisionReducer.boundary(homeState, it.targetMessageId)
@@ -1536,6 +1537,21 @@ internal class AgentAppState(
             is AgentEvent.AssistantBlockDelta -> updateMessages(runId, updateTimestamp = false) { messages ->
                 runMessageProjector.applyEvent(runId, event, messages)
             }
+            is AgentEvent.UsageReceived -> {
+                val usage = event.usage.toUi()
+                if (!usage.isEmpty) conversationIdForRun(runId)?.let { id -> conversationsById[id]?.let {
+                    updateConversation(id, it.copy(lastModelUsage = usage))
+                } }
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
+            }
+            is AgentEvent.ContextCompaction -> {
+                if (event.phase == AgentEvent.ContextCompaction.PHASE_COMPLETED) conversationIdForRun(runId)?.let { id ->
+                    conversationsById[id]?.let { current -> updateConversation(id, current.copy(
+                        lastModelUsage = current.lastModelUsage?.copy(contextTokens = null),
+                    )) }
+                }
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
+            }
             else -> updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
         }
     }
@@ -1871,27 +1887,8 @@ private data class ContentMatchCacheEntry(
     val matches: Boolean,
 )
 
-private const val EXTERNAL_ARCHIVE_CONVERSATION_PREFIX = "archive-"
-
-private fun String.isReadOnlyExternalArchiveConversation(): Boolean =
-    startsWith(EXTERNAL_ARCHIVE_CONVERSATION_PREFIX)
-
-private fun archiveConversationId(source: String, conversationKey: String): String {
-    val prefix = if (source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE) {
-        ASSISTANT_CONVERSATION_PREFIX
-    } else {
-        EXTERNAL_ARCHIVE_CONVERSATION_PREFIX
-    }
-    return prefix + stableArchiveId("$source:$conversationKey")
-}
-
-private const val ASSISTANT_CONVERSATION_PREFIX = "assistant-"
-
-private fun stableArchiveId(value: String): String =
-    java.security.MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .take(12)
-        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+private fun archiveConversationId(source: String, conversationKey: String): String =
+    AgentExternalArchivePayload.conversationId(source, conversationKey)
 
 private fun agentBooleanForUi(key: String): Boolean {
     return Prefs.isEnabled(key)

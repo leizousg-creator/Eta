@@ -38,6 +38,8 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
+import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
@@ -55,6 +57,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
@@ -79,6 +82,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val mainHandler = Handler(Looper.getMainLooper())
     private val resultIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "agent-result-io") }
     private val serviceMessenger = Messenger(IncomingHandler())
+    private lateinit var islandBridge: AgentRuntimeIslandBridge
 
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
@@ -126,6 +130,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onCreate() {
         super.onCreate()
+        islandBridge = AgentRuntimeIslandBridge(this, AndroidAgentLogger, ::cancelRun)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -154,6 +159,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onDestroy() {
+        // 经验复盘由自己的执行引用持有；文字任务关闭入口服务后仍可完成。
         startRequestGeneration++
         pendingStartRequest?.let { pending ->
             pending.incoming.close()
@@ -171,6 +177,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         pendingStartRequest = null
         activeSession?.cancel("Agent Runtime 服务已停止")
         activeSession = null
+        islandBridge.close()
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         unregisterResultCardBack()
@@ -333,15 +340,36 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
     ) {
+        val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
+        if (automated && activeSession?.isTerminal == false) {
+            sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "AUTOMATION_RUNTIME_BUSY"))
+            return
+        }
+        val reviewGeneration = AgentExperienceReview.foregroundStarted()
         activeSession?.controller?.cancel()
         val session = AgentRuntimeSession(
             runId = request.runId,
             operation = request.operation,
-            eventSink = { event -> sendEventTo(replyTo, event) },
-            resultSink = { result -> sendResultTo(replyTo, result) },
+            eventSink = { event ->
+                val current = activeSession?.takeIf { it.runId == request.runId }
+                if (current != null && event is AgentEvent.ToolStarted &&
+                    (event.name in VirtualScreenRoutingPolicy.uiTools || event.name == "virtual_screen") &&
+                    runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
+                ) {
+                    current.virtualUiRouted.set(true)
+                }
+                val virtualScreen = current?.let { usesVirtualUi(it) } == true
+                islandBridge.update(request.runId, event, virtualScreen)
+                sendEventTo(replyTo, event, virtualScreen)
+            },
+            resultSink = { result ->
+                islandBridge.finish(result)
+                sendResultTo(replyTo, result)
+            },
         )
+        session.virtualUiRouted.set(VirtualScreenSession.isOwnedBy(request.virtualScreenOwner))
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
-        val allowBoundFallback = RootAccess.isGranted
+        val allowBoundFallback = RootAccess.isGranted || automated
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
         ) { session.controller.cancel() }
@@ -353,6 +381,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             return
         }
         activeSession = session
+        islandBridge.start(request)
         lastCompletedRunContext = null
         runCatching {
             startService(Intent(this, AgentRuntimeService::class.java).setAction(ACTION_KEEP_ALIVE))
@@ -362,6 +391,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         mainHandler.removeCallbacksAndMessages(hideToken)
+        if (usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)) {
+            removeOverlayWindows()
+        }
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
         setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
@@ -382,7 +414,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         thread(name = "agent-runtime") {
             try {
-                executeRun(session, request)
+                executeRun(session, request, reviewGeneration)
             } finally {
                 AgentExecutionService.updateRunStatus(this, null)
                 AgentExecutionService.release("run:${request.runId}")
@@ -393,9 +425,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
+        reviewGeneration: Long,
     ) {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
+            reviewGeneration = reviewGeneration,
             currentPermissions = ::currentRuntimePermissions,
             snapshotRequest = { it.withActiveSupplements() },
             onAcceptedEvent = { event, entrySurfaceGuard ->
@@ -425,9 +459,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
         if (activeSession !== session) return
-        val revealsForegroundOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
-        val requiresEntrySurfaceDismissal =
-            AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
+        val revealsOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
+        val dismissesEntrySurface = AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
+        val virtualScreenEnabled = (revealsOperation || dismissesEntrySurface || event is AgentEvent.ToolStarted) &&
+            runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
+        val virtualUi = usesVirtualUi(session, virtualScreenEnabled)
+        val revealsForegroundOperation = !virtualUi && revealsOperation
+        val requiresEntrySurfaceDismissal = !virtualUi && dismissesEntrySurface
         val entrySurfaceReady = if (requiresEntrySurfaceDismissal && entrySurfaceGuard != null) {
             runCatching { entrySurfaceGuard.dismissOnce() }.getOrDefault(false)
         } else {
@@ -435,8 +473,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         mainHandler.post {
             if (activeSession !== session) return@post
+            if (usesVirtualUi(session, virtualScreenEnabled)) removeOverlayWindows()
             if (
-                AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
+                !virtualUi && AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
                     entrySurfaceReady,
                 )
@@ -523,10 +562,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sendEventTo(
         target: Messenger?,
         event: AgentEvent,
+        virtualScreen: Boolean? = null,
     ) {
         runCatching {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_EVENT)
-            msg.data = AgentRuntimeWire.eventToBundle(event)
+            msg.data = AgentRuntimeWire.eventToBundle(event, virtualScreen)
             target?.send(msg)
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_event_delivery_failed") {
@@ -826,7 +866,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         showOverlay()
     }
 
+    private fun usesVirtualUi(session: AgentRuntimeSession, virtualScreenEnabled: Boolean = false): Boolean =
+        (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
+
     private fun showOverlay() {
+        if (activeSession?.let { session ->
+                usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
+            } == true) return
         if (capsuleView != null) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
@@ -1153,18 +1199,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
     }
 
-    private fun dismissAndStop() {
+    private fun removeOverlayWindows() {
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
-        capsuleView = null
-        glowView = null
         resultCardParams = null
-        capsuleParams = null
-        glowParams = null
+        removeAmbientWindows()
         windowManager = null
+    }
+
+    private fun dismissAndStop() {
+        removeOverlayWindows()
         stopSelf()
     }
 
