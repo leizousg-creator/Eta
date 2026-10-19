@@ -16,7 +16,9 @@
 | Hook 流体云（原子岛） | 否 | main | 待盘点 | 🔴 未开始 |
 | 触发器（定时/事件，23 种） | 否（上游有 `tasks` 但无此触发器体系） | main | 待盘点 | 🔴 未开始 |
 | 侧边栏排版优化 | 待核对 | main | 待盘点 | ⬜ 未核对 |
-| 提示词包（PromptKit） | 否 | main | `data/promptkit/*`、`ui/screens/promptkit/*`、`ui/app/AgentPromptKitStore.kt`；接线：`SettingsScreen` 入口、`AppRoute.PromptKit`、`AgentAppRoot` entry、`AgentToolRequirements`/`AgentLocalTools` 的 `prompt_kit`、`AgentPromptBuilder` 注入 | ⬜ 待迁 |
+| 提示词包（PromptKit） | 否 | main | `data/promptkit/*`、`ui/screens/promptkit/*`、`ui/app/AgentPromptKitStore.kt`；接线：`SettingsScreen` 入口、`AppRoute.PromptKit`、`AgentAppRoot` entry、`AgentToolRequirements`/`AgentLocalTools` 的 `prompt_kit`、`AgentPromptBuilder` 注入、**`EtaApp.onCreate` 调 `PromptKitBridge.init(this)`**（缺这一步会导致页面能开但读写全空转，main 已修 `4ddc486`） | ⬜ 待迁 |
+| 随包技能包（assets zip → files/skills） | 否 | main `59a8308` | `assets/skill-bundles/pojia-v4.zip`（1.93MB / 63 技能）、`data/promptkit/SkillBundleInstaller.kt`；接线：`PromptKitSkillSync.sync()` 首行调用 | ⬜ 待迁 |
+| 技能列表懒加载 | 待核对上游 | main `ff9eb0e` | `ui/screens/skills/AgentSkillsScreen.kt` 三组 `itemsIndexed` + `EtaPreferenceGroupItem` | ⬜ 待核对（上游若已懒加载则丢弃） |
 | 技能同步到 Linux 环境 | 否 | main | `data/promptkit/PromptKitSkillSync.kt`（经 Root 通道） | ⬜ 待迁（随提示词包） |
 | 首 token 分阶段打点 | 否 | main | `agent/model/AgentLoop.kt` + `core/EtaTrace.kt` | ⬜ 待迁 |
 | 分块文本读入窗口兜底 | 否（上游有分块存储，无我们的兜底策略） | main | `data/db/ChunkedTextDao.kt` | ⬜ 待迁（需先确认上游实现） |
