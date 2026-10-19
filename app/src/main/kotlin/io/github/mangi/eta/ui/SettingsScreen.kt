@@ -315,12 +315,13 @@ private fun SettingsPageContent(
                         },
                         onClick = { onNavigate(AppRoute.Skills) },
 
+                    )
+
                     EtaPreferenceDivider()
                     EtaArrowPreference(
                         title = stringResource(R.string.automation_title),
                         startAction = { EtaPreferenceIcon(icon = Icons.Rounded.FilterAlt, tint = EtaPreferenceColors.Blue) },
                         onClick = { onNavigate(AppRoute.Tasks) },
-                    )
                     )
 
                     EtaPreferenceDivider()
