@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.app
 
+import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -599,6 +600,9 @@ fun AgentAppRoot(
                         }
                     },
                 )
+            }
+            entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
+                AgentTasksScreen(onBack = { popRoute() })
             }
             entry<AppRoute.SystemEnhance>(swipeDismiss = swipeDismiss) {
                 SystemEnhanceScreen(

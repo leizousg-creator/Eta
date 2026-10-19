@@ -71,6 +71,13 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         applicationScope.launch {
             LinuxEnvironmentSettingsRepository.initialize(this@EtaApp)
             runCatching {
+            runCatching {
+                io.github.mangi.eta.data.db.EtaDatabase.get(this@EtaApp).agentTaskDao().recoverInterrupted(System.currentTimeMillis())
+                io.github.mangi.eta.agent.automation.AgentTaskScheduler.enqueueDue(this@EtaApp)
+                io.github.mangi.eta.agent.automation.AgentTaskScheduler.refresh(this@EtaApp)
+            }.onFailure { throwable ->
+                AndroidAgentLogger.warn("Agent task recovery failed: type=${throwable.javaClass.simpleName}")
+            }
                 SkillRuntime.createIndexService(this@EtaApp).listInstalledSkills()
             }.onFailure { throwable ->
                 AndroidAgentLogger.warn(

@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.tool
 
+import io.github.mangi.eta.agent.automation.AgentTaskTools
 import android.content.Context
 import android.graphics.Rect
 import android.content.Intent
@@ -227,6 +228,10 @@ internal class AgentLocalTools(
                 "skills_list_curated" -> textResult(skillsListCurated())
                 "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
                 "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
+                in AgentTaskTools.names -> AgentModelClient.ToolResult(
+                    AgentTaskTools(context).execute(toolCall.name, args),
+                    sensitive = true,
+                )
                 else -> textResult(
                     errorResult(
                         code = "UNKNOWN_TOOL",
