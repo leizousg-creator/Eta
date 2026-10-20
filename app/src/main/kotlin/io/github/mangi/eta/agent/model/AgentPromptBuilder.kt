@@ -45,6 +45,8 @@ internal object AgentPromptBuilder {
         if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
             messages.put(systemMessage(config.systemPrompt))
         }
+        // 内置工作准则：行为规范精简合并版，每轮注入。
+        messages.put(systemMessage(AgentBehaviorRules.BLOCK))
         messages.put(
             systemMessage(
                 (if (roleplayContext == null) {
