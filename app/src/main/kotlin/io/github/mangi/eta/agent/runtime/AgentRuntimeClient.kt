@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal class AgentRuntimeClient(
     private val context: Context,
-    private val logger: AgentLogger
+    private val logger: AgentLogger,
+    private val onExecutionTarget: (Boolean) -> Unit = {},
 ) {
     sealed interface AttachOutcome {
         data class Completed(val result: AgentRuntimeWire.RunResult) : AttachOutcome

@@ -1459,4 +1459,39 @@
     <string translatable="false" name="automation_trigger_scope_memory">Triggered when Eta local memory is updated.</string>
     <string translatable="false" name="automation_trigger_scope_boot">Triggered after device startup; interrupted tasks are not replayed.</string>
     <string translatable="false" name="automation_trigger_scope_monitor">Received while the trigger monitor is running. Missed events are not replayed if Android stops the service.</string>
+  <string translatable="false" name="injected_vivo_configure_model">Open Eta and configure a model, API key and context window first.</string>
+  <string translatable="false" name="injected_vivo_island_running">Eta is working</string>
+  <string translatable="false" name="injected_vivo_island_virtual_running">Eta is working on the virtual screen</string>
+  <string translatable="false" name="injected_vivo_island_completed">Eta task completed</string>
+  <string translatable="false" name="injected_vivo_island_failed">Eta task failed</string>
+  <string translatable="false" name="injected_vivo_island_cancelled">Eta task stopped</string>
+  <string translatable="false" name="injected_vivo_island_starting">Preparing your task</string>
+  <string translatable="false" name="injected_vivo_island_thinking">Thinking</string>
+  <string translatable="false" name="injected_vivo_island_answering">Writing the answer</string>
+  <string translatable="false" name="injected_vivo_island_retrying">Retrying the model request</string>
+  <string translatable="false" name="injected_vivo_island_compacting">Organizing conversation context</string>
+  <string translatable="false" name="injected_vivo_island_tool">Working: %1$s</string>
+  <string translatable="false" name="injected_vivo_island_virtual_tool">Virtual screen: %1$s</string>
+  <string translatable="false" name="injected_vivo_island_tool_generic">Using a tool</string>
+  <string translatable="false" name="injected_vivo_island_answer_ready">View the answer in Xiao V or Eta</string>
+  <string translatable="false" name="injected_vivo_island_eta_answer_ready">View the answer in Eta</string>
+  <string translatable="false" name="injected_reasoning">Eta is reasoning…</string>
+  <string translatable="false" name="injected_executing">Eta is working…</string>
+  <string translatable="false" name="injected_completed">Eta completed this task</string>
+  <string translatable="false" name="injected_failed">Eta could not complete the task. Try again later</string>
+  <string translatable="false" name="injected_breeno_custom_model_disabled">Enable Breeno custom models in Eta settings first</string>
+  <string translatable="false" name="injected_breeno_context_unavailable">Breeno context is unavailable</string>
+  <string translatable="false" name="injected_runtime_failed">Agent Runtime failed</string>
+  <string translatable="false" name="injected_breeno_failed">Breeno custom model failed: %1$s</string>
+  <string translatable="false" name="injected_using_tool">Using %1$s</string>
+  <string translatable="false" name="injected_tool">tool</string>
+  <string translatable="false" name="injected_system_tool">system tool</string>
+  <string translatable="false" name="injected_app_tool">app tool</string>
+  <string translatable="false" name="injected_screen_tool">screen tool</string>
+  <string translatable="false" name="injected_reasoning_label">Reasoning</string>
+  <string translatable="false" name="injected_image_data_limit">Image data exceeds the safe limit. Resize the image and try again</string>
+  <string translatable="false" name="injected_image_count_limit">You can attach up to %1$d images at a time. Remove some images and try again</string>
+  <string translatable="false" name="injected_image_input_limit">The image input is too complex. Remove some images or simplify the image data</string>
+  <string translatable="false" name="injected_image_cache_limit">Image reference data is too large to cache safely. Choose the images again or use remote image links</string>
+  <string translatable="false" name="injected_image_unreadable">Some images could not be read. Choose the images again and retry</string>
 </resources>
