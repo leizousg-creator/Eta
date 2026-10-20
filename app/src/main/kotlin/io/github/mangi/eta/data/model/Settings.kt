@@ -7,5 +7,7 @@ data class Settings(
     val selectedProviderId: String? = null,
     val selectedModelId: String? = null,
     val memoryEnabled: Boolean = true,
+    val autoMemoryEnabled: Boolean = true,
+    val autoSkillsEnabled: Boolean = true,
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
