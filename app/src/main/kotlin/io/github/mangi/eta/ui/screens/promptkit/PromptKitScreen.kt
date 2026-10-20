@@ -56,6 +56,8 @@ internal fun PromptKitScreen(
     onAction: (PromptKitAction) -> Unit,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameText by remember { mutableStateOf("") }
 
     MiuixScaffold(
         title = "提示词包",
@@ -167,6 +169,15 @@ internal fun PromptKitScreen(
                                 onClick = { showDeleteDialog = true },
                                 modifier = Modifier.weight(1f),
                             )
+                            EtaTextButton(
+                                text = "重命名",
+                                enabled = !state.isLoading && !state.isSaving && state.activeVersionId != null,
+                                onClick = {
+                                    renameText = state.activeVersion?.name ?: ""
+                                    showRenameDialog = true
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
                         }
                     }
                 }
@@ -272,6 +283,36 @@ internal fun PromptKitScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    if (showRenameDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = "重命名版本",
+            summary = "只改显示名；版本 id（${state.activeVersionId ?: ""}）与正文不变。",
+            onDismissRequest = { showRenameDialog = false },
+        ) {
+            Column {
+                TextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = "显示名",
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MiuixDialogActions(
+                    confirmText = "保存",
+                    confirmEnabled = !state.isSaving && renameText.isNotBlank(),
+                    onCancel = { showRenameDialog = false },
+                    onConfirm = {
+                        state.activeVersionId?.let { id ->
+                            onAction(PromptKitAction.RenameVersion(id, renameText.trim()))
+                        }
+                        showRenameDialog = false
+                    },
+                )
             }
         }
     }

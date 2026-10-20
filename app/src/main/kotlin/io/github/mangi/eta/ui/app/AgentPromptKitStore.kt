@@ -117,6 +117,20 @@ internal class AgentPromptKitStore(private val scope: CoroutineScope) {
      * 只写技能根目录下的标记文件（[SkillBundlePolicy.FLAG_FILE]），
      * 技能索引与同步都从那里读，所以不需要额外的持久化字段，也不依赖 Context 常驻。
      */
+    /** 修改版本显示名；只改 name，不动 id 与正文。 */
+    fun renameVersion(id: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            val manifest = PromptKitBridge.update { current ->
+                current.copy(versions = current.versions.map { version ->
+                    if (version.id == id) version.copy(name = trimmed) else version
+                })
+            }
+            withContext(Dispatchers.Main) { state = fromManifest(manifest) }
+        }
+    }
+
     fun toggleBundleOnly(enabled: Boolean) {
         val context = PromptKitBridge.contextOrNull()
         SkillBundlePolicy.setBundleOnly(File(context?.filesDir ?: return@toggleBundleOnly, "skills"), enabled)

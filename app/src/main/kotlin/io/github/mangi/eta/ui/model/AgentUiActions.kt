@@ -83,4 +83,6 @@ sealed interface PromptKitAction {
     data class ImportBodyFile(val uri: String) : PromptKitAction
     data object SaveKeywords : PromptKitAction
     data object DismissNotice : PromptKitAction
+    /** 修改版本显示名（id 不变）。 */
+    data class RenameVersion(val id: String, val name: String) : PromptKitAction
 }

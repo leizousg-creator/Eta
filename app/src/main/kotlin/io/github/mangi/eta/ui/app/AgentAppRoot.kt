@@ -626,6 +626,7 @@ fun AgentAppRoot(
                             is PromptKitAction.ImportBodyFile -> promptKit.importBodyFile(action.uri)
                             PromptKitAction.SaveKeywords -> promptKit.saveKeywords()
                             PromptKitAction.DismissNotice -> promptKit.dismissNotice()
+                            is PromptKitAction.RenameVersion -> promptKit.renameVersion(action.id, action.name)
                         }
                     },
                 )
