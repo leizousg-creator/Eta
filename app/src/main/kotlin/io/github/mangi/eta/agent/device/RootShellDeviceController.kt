@@ -908,6 +908,26 @@ internal class RootShellDeviceController(
             .put("package", focused?.packageName.orEmpty())
     }
 
+    /**
+     * 多点路径滑动（Root 注入）。
+     * 无障碍侧的手势路径（AgentAccessibilityService.gestureSwipePath）上游暂无，待迁；
+     * 此处直接走 Root：把屏幕坐标序列一次性注入。
+     */
+    fun swipePath(
+        context: Context,
+        root: BoundedRootCommandExecutor,
+        points: List<SwipePath.Point>,
+        durationMs: Int,
+    ): String {
+        val (width, height) = screenSize()
+        SwipePath.validate(points, width, height)
+        val duration = durationMs.coerceIn(100, 2_000)
+        val result = RootSwipePathBridge.execute(context, root, points, duration, width, height)
+            .put("tool", "swipe").put("executor", "root").put("method", "INPUT_SWIPE_PATH")
+        if (result.optBoolean("ok")) waitForUiSettle("swipe")
+        return result.toString()
+    }
+
     private fun screenSize(): Pair<Int, Int> {
         AgentAccessibilityService.current()?.displaySize()?.let { return it }
         if (!rootAvailable()) throw DeviceControlUnavailableException()
