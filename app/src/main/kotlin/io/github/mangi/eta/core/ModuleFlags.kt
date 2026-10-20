@@ -12,4 +12,12 @@ object ModuleFlags {
     /** 工具类模块（tasks_*、prompt_kit）是否注入工具目录。 */
     @Volatile
     var toolsEnabled: Boolean = false
+
+    /**
+     * 批量工具（`batch`）是否对外暴露。
+     * 工具目录投影已迁入，但执行侧（AgentLoop 的分段/校验/并发波次）尚未接线，
+     * 在接线完成前保持关闭，避免模型看到一个执行不了的工具。
+     */
+    @Volatile
+    var batchExecutionEnabled: Boolean = false
 }
