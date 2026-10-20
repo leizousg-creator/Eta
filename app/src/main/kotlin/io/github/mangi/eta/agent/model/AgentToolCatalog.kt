@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.core.ModuleFlags
 import org.json.JSONArray
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 
@@ -38,8 +39,8 @@ internal object AgentToolCatalog {
                 githubInstall = skillGitHubInstall,
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
-            if (memoryWritable) AgentTaskToolCatalog.appendTo(tools)
-            AgentPromptKitToolCatalog.appendTo(tools)
+            if (memoryWritable && ModuleFlags.toolsEnabled) AgentTaskToolCatalog.appendTo(tools)
+            if (ModuleFlags.toolsEnabled) AgentPromptKitToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

@@ -60,6 +60,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         AgentMemoryRepository.init(this)
         PromptKitBridge.init(this)
         io.github.mangi.eta.agent.model.AgentBehaviorRules.enabled = true
+        io.github.mangi.eta.core.ModuleFlags.toolsEnabled = true
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)
