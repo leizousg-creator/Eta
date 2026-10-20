@@ -82,4 +82,5 @@ sealed interface PromptKitAction {
     /** 从文件导入正文（uri 由界面选择器给出）。 */
     data class ImportBodyFile(val uri: String) : PromptKitAction
     data object SaveKeywords : PromptKitAction
+    data object DismissNotice : PromptKitAction
 }

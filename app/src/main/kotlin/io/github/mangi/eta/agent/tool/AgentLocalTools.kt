@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.tool
 
+import io.github.mangi.eta.data.promptkit.PromptKitTool
 import io.github.mangi.eta.data.promptkit.PromptKitBridge
 import io.github.mangi.eta.agent.automation.AgentTaskTools
 import android.content.Context
@@ -224,7 +225,7 @@ internal class AgentLocalTools(
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))
-                "prompt_kit" -> textResult(PromptKitBridge.execute(args))
+                "prompt_kit" -> textResult(PromptKitTool.execute(args))
                 "skills_read" -> textResult(skillsRead(args))
                 "skills_read_resource" -> textResult(skillsReadResource(args))
                 "skills_list_curated" -> textResult(skillsListCurated())
