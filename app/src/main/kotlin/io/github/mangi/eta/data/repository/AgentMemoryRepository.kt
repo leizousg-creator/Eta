@@ -107,7 +107,6 @@ internal class AgentMemoryStore(
             is AgentMemoryMutation.Append -> append(current, mutation.content)
             is AgentMemoryMutation.Clear -> ""
         }
-        requireSize(updated)
         AgentMemoryWriteResult.Success(snapshotOf(updated))
     }
 
