@@ -82,7 +82,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val resultIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "agent-result-io") }
     private val serviceMessenger = Messenger(IncomingHandler())
 
-    @Volatile
     /** 正在运行的会话，按 runId 索引；彼此不取消，上限见 [MAX_CONCURRENT_RUNS]。 */
     private val sessions = java.util.concurrent.ConcurrentHashMap<String, AgentRuntimeSession>()
 
@@ -155,7 +154,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val supplementsLock = Any()
     private val activeSupplements = mutableListOf<AgentUiHandoffPayload.Supplement>()
     private var nextSupplementIndex = 1
-    @Volatile
     private var lastCompletedRunContext: CompletedRunContext? = null
     private val hideToken = Any()
 
