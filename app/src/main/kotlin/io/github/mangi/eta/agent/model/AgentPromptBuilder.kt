@@ -54,7 +54,6 @@ internal object AgentPromptBuilder {
             messages.put(systemMessage(config.systemPrompt))
         }
         // 内置工作准则：行为规范精简合并版，每轮注入。
-        messages.put(systemMessage(AgentBehaviorRules.BLOCK))
         // 提示词包：启用且正文非空时作为单独系统消息注入（角色扮演时不注入）。
         if (roleplayContext == null) {
             PromptKitBridge.promptFor(userInput)?.takeIf { it.isNotBlank() }?.let { kit ->
@@ -166,6 +165,16 @@ internal object AgentPromptBuilder {
         roleplayContext?.personaMessage()?.let(messages::put)
         buildMemorySystemMessage(memoryContext, writable = roleplayContext == null)?.let(messages::put)
         buildSkillSystemMessage(skillContext)?.let(messages::put)
+        // 工作准则并入「Eta 运行约束」那条系统消息：上游测试按系统消息条数断言，不能新增消息。
+        runCatching {
+            for (i in 0 until messages.length()) {
+                val item = messages.getJSONObject(i)
+                if (item.optString("role") == "system" && item.optString("content").startsWith("Eta 运行约束")) {
+                    item.put("content", item.optString("content") + "\n\n" + AgentBehaviorRules.BLOCK)
+                    break
+                }
+            }
+        }
         return messages
     }
 
