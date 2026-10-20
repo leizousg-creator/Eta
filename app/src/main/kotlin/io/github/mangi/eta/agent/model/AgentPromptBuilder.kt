@@ -166,7 +166,7 @@ internal object AgentPromptBuilder {
         buildMemorySystemMessage(memoryContext, writable = roleplayContext == null)?.let(messages::put)
         buildSkillSystemMessage(skillContext)?.let(messages::put)
         // 工作准则并入「Eta 运行约束」那条系统消息：上游测试按系统消息条数断言，不能新增消息。
-        runCatching {
+        if (AgentBehaviorRules.enabled) runCatching {
             for (i in 0 until messages.length()) {
                 val item = messages.getJSONObject(i)
                 if (item.optString("role") == "system" && item.optString("content").startsWith("Eta 运行约束")) {

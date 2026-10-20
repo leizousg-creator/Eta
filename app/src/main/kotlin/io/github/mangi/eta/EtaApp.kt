@@ -59,6 +59,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         PredictiveBackController.apply(applicationInfo, predictiveBackEnabled)
         AgentMemoryRepository.init(this)
         PromptKitBridge.init(this)
+        io.github.mangi.eta.agent.model.AgentBehaviorRules.enabled = true
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)

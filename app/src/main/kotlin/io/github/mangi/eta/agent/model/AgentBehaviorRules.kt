@@ -10,6 +10,12 @@ package io.github.mangi.eta.agent.model
  * 约束：本段只描述"怎么做"，不改变任何权限、工具合同或执行边界。
  */
 object AgentBehaviorRules {
+    /**
+     * 是否注入。默认关闭：仅由 [EtaApp.onCreate] 在真实应用进程里打开，
+     * 单元测试与工具脚本不经过 Application，因此不会把准则混进断言用的提示词。
+     */
+    @Volatile
+    var enabled: Boolean = false
     const val BLOCK: String = """工作准则（始终适用）：
 
 一、动手前先找现成的
