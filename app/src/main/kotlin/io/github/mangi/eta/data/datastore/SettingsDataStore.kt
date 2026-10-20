@@ -241,8 +241,8 @@ internal object SettingsDataStore {
         selectedProviderId = this[SELECTED_PROVIDER_ID],
         selectedModelId = this[SELECTED_MODEL_ID],
         memoryEnabled = this[MEMORY_ENABLED] ?: true,
-            autoMemoryEnabled = this[AUTO_MEMORY_ENABLED] ?: true
-            autoSkillsEnabled = this[AUTO_SKILLS_ENABLED] ?: true
+        autoMemoryEnabled = this[AUTO_MEMORY_ENABLED] ?: true,
+        autoSkillsEnabled = this[AUTO_SKILLS_ENABLED] ?: true,
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,
