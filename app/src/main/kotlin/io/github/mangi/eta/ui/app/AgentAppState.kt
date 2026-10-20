@@ -818,13 +818,14 @@ internal class AgentAppState(
     )
 
     fun sendCurrentMessage(submittedText: String? = null) {
+        // 多会话：只有当前会话正在流式才拦截，别处有 run 也能发。
+        if (homeState.isStreaming) return
         if (homeState.isCompacting) return
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
         if (
-            (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) ||
-            homeState.isStreaming
+            prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()
         ) {
             return
         }
