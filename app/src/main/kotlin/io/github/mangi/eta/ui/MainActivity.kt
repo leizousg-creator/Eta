@@ -163,6 +163,8 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        const val ACTION_VIEW_EXECUTION = "io.github.mangi.eta.action.VIEW_EXECUTION"
+        const val EXTRA_EXECUTION_SOURCE = "io.github.mangi.eta.extra.EXECUTION_SOURCE"
         const val ACTION_OPEN_TERMINAL = "io.github.mangi.eta.action.OPEN_TERMINAL"
         /** 运行浮层的结果卡片回到本体：App 发起的 run 带会话 ID，直接打开该会话。 */
         const val ACTION_OPEN_CONVERSATION_ID = "io.github.mangi.eta.action.OPEN_CONVERSATION_ID"

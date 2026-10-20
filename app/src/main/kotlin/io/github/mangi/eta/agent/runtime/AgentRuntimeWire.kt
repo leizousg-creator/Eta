@@ -656,6 +656,11 @@ internal object AgentRuntimeWire {
                 putString("reason_code", event.reasonCode)
             }
 
+            is AgentEvent.ModelRequestInterrupted -> {
+                putString(KEY_TYPE, "model_request_interrupted")
+                putInt("round", event.round)
+            }
+
             is AgentEvent.ProviderRequestStarted -> {
                 putString(KEY_TYPE, "provider_request_started")
                 putInt("round", event.round)
@@ -800,6 +805,8 @@ internal object AgentRuntimeWire {
             delayMs = bundle.getInt("delay_ms", 2_000),
             reasonCode = bundle.getString("reason_code").orEmpty(),
         )
+
+        "model_request_interrupted" -> AgentEvent.ModelRequestInterrupted(bundle.getInt("round"))
 
         "provider_request_started" -> AgentEvent.ProviderRequestStarted(
             round = bundle.getInt("round"),
