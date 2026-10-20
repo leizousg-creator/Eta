@@ -314,7 +314,14 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.Skills) },
+                    )
 
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = "提示词包",
+                        summary = "多版本附加提示词；开启后可把技能包同步进 Linux 环境",
+                        startAction = { EtaPreferenceIcon(icon = Icons.Rounded.Layers, tint = EtaPreferenceColors.Green) },
+                        onClick = { onNavigate(AppRoute.PromptKit) },
                     )
 
                     EtaPreferenceDivider()

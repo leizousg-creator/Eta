@@ -65,3 +65,21 @@ sealed interface AgentMemoryAction {
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
 }
+
+/** 提示词包页面的动作。 */
+sealed interface PromptKitAction {
+    data object NavigateBack : PromptKitAction
+    data class ToggleEnabled(val enabled: Boolean) : PromptKitAction
+    data class ToggleKeywordOnly(val enabled: Boolean) : PromptKitAction
+    /** 仅使用技能包内技能（默认开启）。 */
+    data class ToggleBundleOnly(val enabled: Boolean) : PromptKitAction
+    data class SelectVersion(val id: String) : PromptKitAction
+    data object CreateVersion : PromptKitAction
+    data object RemoveActiveVersion : PromptKitAction
+    data class DraftChanged(val content: String) : PromptKitAction
+    data class KeywordsChanged(val text: String) : PromptKitAction
+    data object SaveBody : PromptKitAction
+    /** 从文件导入正文（uri 由界面选择器给出）。 */
+    data class ImportBodyFile(val uri: String) : PromptKitAction
+    data object SaveKeywords : PromptKitAction
+}

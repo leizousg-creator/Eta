@@ -1,5 +1,6 @@
 package io.github.mangi.eta
 
+import io.github.mangi.eta.data.promptkit.PromptKitBridge
 import io.github.mangi.eta.agent.voice.SpeechOssUpload
 import android.app.Application
 import android.os.Handler
@@ -57,6 +58,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         PredictiveBackController.apply(applicationInfo, predictiveBackEnabled)
         AgentMemoryRepository.init(this)
+        PromptKitBridge.init(this)
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)

@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.app
 
+import io.github.mangi.eta.ui.model.PromptKitAction
+import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
 import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import android.Manifest
 import android.app.Activity
@@ -139,6 +141,7 @@ fun AgentAppRoot(
     val agentState = appViewModel.state
     val skills = appViewModel.skills
     val memory = appViewModel.memory
+    val promptKit = appViewModel.promptKit
     val permissionHealth = appViewModel.permissionHealth
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
@@ -603,6 +606,29 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
                 AgentTasksScreen(onBack = { popRoute() })
+            }
+            entry<AppRoute.PromptKit>(swipeDismiss = swipeDismiss) {
+                LaunchedEffect(Unit) { promptKit.refresh() }
+                PromptKitScreen(
+                    state = promptKit.state,
+                    onAction = { action ->
+                        when (action) {
+                            PromptKitAction.NavigateBack -> popRoute()
+                            is PromptKitAction.ToggleEnabled -> promptKit.toggleEnabled(action.enabled)
+                            is PromptKitAction.ToggleKeywordOnly -> promptKit.toggleKeywordOnly(action.enabled)
+                            is PromptKitAction.ToggleBundleOnly -> promptKit.toggleBundleOnly(action.enabled)
+                            is PromptKitAction.SelectVersion -> promptKit.selectVersion(action.id)
+                            PromptKitAction.CreateVersion -> promptKit.createVersion()
+                            PromptKitAction.RemoveActiveVersion -> promptKit.removeActiveVersion()
+                            is PromptKitAction.DraftChanged -> promptKit.updateDraft(action.content)
+                            is PromptKitAction.KeywordsChanged -> promptKit.updateKeywords(action.text)
+                            PromptKitAction.SaveBody -> promptKit.saveBody()
+                            is PromptKitAction.ImportBodyFile -> promptKit.importBodyFile(action.uri)
+                            PromptKitAction.SaveKeywords -> promptKit.saveKeywords()
+                            PromptKitAction.DismissNotice -> promptKit.dismissNotice()
+                        }
+                    },
+                )
             }
             entry<AppRoute.SystemEnhance>(swipeDismiss = swipeDismiss) {
                 SystemEnhanceScreen(
