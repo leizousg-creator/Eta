@@ -59,8 +59,12 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         PredictiveBackController.apply(applicationInfo, predictiveBackEnabled)
         AgentMemoryRepository.init(this)
         PromptKitBridge.init(this)
-        io.github.mangi.eta.agent.model.AgentBehaviorRules.enabled = true
-        io.github.mangi.eta.core.ModuleFlags.toolsEnabled = true
+        // Robolectric 会实例化 Application；测试环境不启用自建模块，
+        // 否则工具目录与系统提示词会偏离上游，导致大量单测断言失配。
+        if (!android.os.Build.FINGERPRINT.startsWith("robolectric")) {
+            io.github.mangi.eta.agent.model.AgentBehaviorRules.enabled = true
+            io.github.mangi.eta.core.ModuleFlags.toolsEnabled = true
+        }
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)
