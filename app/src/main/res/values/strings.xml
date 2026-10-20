@@ -1475,23 +1475,4 @@
   <string translatable="false" name="injected_vivo_island_tool_generic">Using a tool</string>
   <string translatable="false" name="injected_vivo_island_answer_ready">View the answer in Xiao V or Eta</string>
   <string translatable="false" name="injected_vivo_island_eta_answer_ready">View the answer in Eta</string>
-  <string translatable="false" name="injected_reasoning">Eta is reasoning…</string>
-  <string translatable="false" name="injected_executing">Eta is working…</string>
-  <string translatable="false" name="injected_completed">Eta completed this task</string>
-  <string translatable="false" name="injected_failed">Eta could not complete the task. Try again later</string>
-  <string translatable="false" name="injected_breeno_custom_model_disabled">Enable Breeno custom models in Eta settings first</string>
-  <string translatable="false" name="injected_breeno_context_unavailable">Breeno context is unavailable</string>
-  <string translatable="false" name="injected_runtime_failed">Agent Runtime failed</string>
-  <string translatable="false" name="injected_breeno_failed">Breeno custom model failed: %1$s</string>
-  <string translatable="false" name="injected_using_tool">Using %1$s</string>
-  <string translatable="false" name="injected_tool">tool</string>
-  <string translatable="false" name="injected_system_tool">system tool</string>
-  <string translatable="false" name="injected_app_tool">app tool</string>
-  <string translatable="false" name="injected_screen_tool">screen tool</string>
-  <string translatable="false" name="injected_reasoning_label">Reasoning</string>
-  <string translatable="false" name="injected_image_data_limit">Image data exceeds the safe limit. Resize the image and try again</string>
-  <string translatable="false" name="injected_image_count_limit">You can attach up to %1$d images at a time. Remove some images and try again</string>
-  <string translatable="false" name="injected_image_input_limit">The image input is too complex. Remove some images or simplify the image data</string>
-  <string translatable="false" name="injected_image_cache_limit">Image reference data is too large to cache safely. Choose the images again or use remote image links</string>
-  <string translatable="false" name="injected_image_unreadable">Some images could not be read. Choose the images again and retry</string>
 </resources>
