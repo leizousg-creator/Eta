@@ -42,6 +42,8 @@ internal object AgentToolRequirements {
             "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
             "skills_inspect_github", "skills_install_from_github",
             "prompt_kit",
+            "tasks_triggers", "tasks_list", "tasks_create", "tasks_update",
+            "tasks_delete", "tasks_run", "tasks_cancel", "tasks_history",
         )
         register(
             RootRequirement.PARTIAL,
