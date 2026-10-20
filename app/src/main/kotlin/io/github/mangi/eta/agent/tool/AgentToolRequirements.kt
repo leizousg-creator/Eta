@@ -41,7 +41,7 @@ internal object AgentToolRequirements {
             "character_memory_get", "character_memory_write",
             "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
             "skills_inspect_github", "skills_install_from_github",
-            "prompt_kit",
+            "prompt_kit", "batch",
             "tasks_triggers", "tasks_list", "tasks_create", "tasks_update",
             "tasks_delete", "tasks_run", "tasks_cancel", "tasks_history",
         )

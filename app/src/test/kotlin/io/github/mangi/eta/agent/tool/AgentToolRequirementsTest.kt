@@ -19,7 +19,7 @@ class AgentToolRequirementsTest {
         // 自建模块（prompt_kit、tasks_*）在测试环境不注入工具目录，从期望集合中排除
         val selfBuiltTools = setOf(
             "prompt_kit", "tasks_triggers", "tasks_list", "tasks_create", "tasks_update",
-            "tasks_delete", "tasks_run", "tasks_cancel", "tasks_history",
+            "tasks_delete", "tasks_run", "tasks_cancel", "tasks_history", "batch",
         )
         assertEquals(AgentToolRequirements.toolNames - executionOnly - selfBuiltTools, tools.names())
         executionOnly.forEach { name -> assertFalse("$name 仅保留执行兼容，不再向模型暴露", name in tools.names()) }
