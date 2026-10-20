@@ -83,6 +83,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val serviceMessenger = Messenger(IncomingHandler())
 
     @Volatile
+    /** 正在运行的会话，按 runId 索引；彼此不取消，上限见 [MAX_CONCURRENT_RUNS]。 */
+    private val sessions = java.util.concurrent.ConcurrentHashMap<String, AgentRuntimeSession>()
+
+    /** 浮层/通知展示用的会话：最近启动的那个。 */
     private var activeSession: AgentRuntimeSession? = null
     private var startRequestGeneration = 0L
     private var pendingStartRequest: PendingStartRequest? = null
@@ -201,7 +205,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
         }
         pendingStartRequest = null
-        activeSession?.cancel("Agent Runtime 服务已停止")
+        sessions.values.toList().forEach { it.cancel("Agent Runtime 服务已停止") }
+        sessions.clear()
         activeSession = null
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
@@ -366,7 +371,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
     ) {
-        activeSession?.controller?.cancel()
+        if (sessions.values.count { !it.isTerminal } >= MAX_CONCURRENT_RUNS) {
+            sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "RUNTIME_CONCURRENCY_LIMIT"))
+            return
+        }
         val session = AgentRuntimeSession(
             runId = request.runId,
             operation = request.operation,
@@ -385,6 +393,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )) {}
             return
         }
+        sessions[session.runId] = session
         activeSession = session
         lastCompletedRunContext = null
         runCatching {
@@ -465,7 +474,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         event: AgentEvent,
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
-        if (activeSession !== session) return
+        if (sessions[session.runId] !== session) return
         val revealsForegroundOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
         val requiresEntrySurfaceDismissal =
             AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
@@ -475,7 +484,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             true
         }
         mainHandler.post {
-            if (activeSession !== session) return@post
+            if (sessions[session.runId] !== session) return@post
             if (
                 AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
@@ -526,8 +535,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         completedContext: CompletedRunContext? = null,
     ) {
         mainHandler.post {
-            if (activeSession !== session) return@post
+            if (sessions[session.runId] !== session) return@post
             lastCompletedRunContext = completedContext
+            sessions.remove(session.runId)
+            if (activeSession === session) {
+                activeSession = sessions.values.lastOrNull { !it.isTerminal }
+            }
             activeSession = null
             runCatching {
                 if (result.ok) {
@@ -668,7 +681,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun attachRun(runId: String, replyTo: Messenger?) {
-        val session = activeSession
+        val session = sessions[runId]
         val attached = replyTo != null &&
             runId.isNotBlank() &&
             session?.runId == runId &&
@@ -1291,6 +1304,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
         /** 注入点击只是一个点，目标控件常贴着胶囊边缘，判定范围向外多留一点。 */
         private const val CAPSULE_CLEARANCE_SLOP_DP = 8
+        /** 同时运行的会话上限。 */
+        private const val MAX_CONCURRENT_RUNS = 3
         private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
     }
