@@ -286,6 +286,12 @@ internal class AgentLoop(
         val outcomes = CopyOnWriteArrayList<ToolOutcome>()
         val segments = AgentToolBatchPlanner.plan(toolCalls)
         var stopped = false
+        if (io.github.mangi.eta.core.AgentBehaviorRules.enabled) {
+            io.github.mangi.eta.core.AndroidAgentLogger.info(
+                "batch segments=${segments.size} calls=${toolCalls.size} " +
+                    "sizes=${segments.joinToString(",") { "${it.calls.size}" }}",
+            )
+        }
         for (segment in segments) {
             for (wave in segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)) {
                 if (stopped) {
