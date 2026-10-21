@@ -67,7 +67,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
             .build()
 
         val call = AgentHttpClient.modelClient(request.purpose).newCall(httpRequest)
-        val binding = runController.register { call.cancel() }
+        val binding = runController.registerModelRequest(request.purpose == ProviderRequestPurpose.CHAT) { call.cancel() }
 
         try {
             runController.throwIfCancelled()
@@ -90,8 +90,12 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
                 return ProviderResponse(assistantMessage)
             }
         } catch (throwable: Throwable) {
-            runCatching { runController.throwIfCancelled() }
-                .getOrElse { interruption -> throw interruption }
+            // 插话中断：CHAT 用途下把被取消的请求翻译成 AgentModelInterruptedException，
+            // 让上层保留已完成内容并按新指令重新规划，而不是当成网络错误。
+            runCatching {
+                if (request.purpose == ProviderRequestPurpose.CHAT) runController.throwIfModelInterrupted()
+                else runController.throwIfCancelled()
+            }.getOrElse { interruption -> throw interruption }
             throw throwable
         } finally {
             binding.close()

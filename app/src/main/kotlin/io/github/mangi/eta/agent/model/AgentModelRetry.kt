@@ -24,6 +24,7 @@ internal class AgentModelRetry(
         var retries = 0
         while (true) {
             controller.throwIfCancelled()
+            if (request.purpose == ProviderRequestPurpose.CHAT) controller.throwIfModelInterrupted()
             onEvent(AgentEvent.RoundStarted(round, request.messages.length()))
             var hostedToolStarted = false
             var callbackFailed = false
@@ -40,6 +41,7 @@ internal class AgentModelRetry(
                 return Result(round, response)
             } catch (failure: Exception) {
                 controller.throwIfCancelled()
+                if (request.purpose == ProviderRequestPurpose.CHAT) controller.throwIfModelInterrupted()
                 if (callbackFailed || Thread.currentThread().isInterrupted) throw failure
                 val classified = AgentModelFailure.transport(failure) ?: throw failure
                 if (hostedToolStarted) throw AgentModelFailure(

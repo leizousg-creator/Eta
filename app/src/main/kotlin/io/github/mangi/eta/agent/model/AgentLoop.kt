@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentEvent
+import io.github.mangi.eta.agent.runtime.AgentModelInterruptedException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import org.json.JSONArray
@@ -141,9 +142,20 @@ internal class AgentLoop(
                     rejectContentFilter(response.response)
                     if (purpose == ProviderRequestPurpose.CHAT) validateChatResponse(response.response)
                 }
+            } catch (_: AgentModelInterruptedException) {
+                // 插话中断：保留已完成的工具结果与上下文，丢弃本轮半截文本/思考，
+                // 发出 ModelRequestInterrupted 后按新指令重新规划。
+                runController.throwIfCancelled()
+                accumulatedReasoning.setLength(reasoningLengthBeforeRound)
+                null
             } finally {
                 // 同一回合的重试仍需原始观察；整个回合结束后才移除截图。
                 discardPendingToolImageMessage()
+            }
+            if (completedRound == null) {
+                onEvent(AgentEvent.ModelRequestInterrupted(round))
+                round += 1
+                continue
             }
             context.observeInputTokens(roundInputTokens)
             round = completedRound.round
