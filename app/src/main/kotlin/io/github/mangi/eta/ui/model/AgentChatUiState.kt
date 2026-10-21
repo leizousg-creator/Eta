@@ -103,7 +103,8 @@ data class TokenUsageUi(
             if (out <= 0 || ms <= 0L) return null
             return out * 1000.0 / ms
         }
-} {
+
+    /** 上游原有：是否完全无用量数据。 */
     val isEmpty: Boolean
         get() = contextTokens == null &&
             inputTokens == null &&
