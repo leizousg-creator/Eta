@@ -269,6 +269,93 @@ internal class AgentLoop(
         AgentConversationCodec.userTextMessage(steeringPrompt(supplement))
             .put("_eta_message_id", "user-$operationId-supplement-${++supplementIndex}")
 
+
+    /**
+     * 批量执行一个 assistant 响应返回的工具调用。
+     *
+     * - [AgentToolBatchPlanner] 把调用切成「可并行段」与「必须顺序段」；
+     * - 并行段按 [AgentToolBatchPlanner.MAX_CONCURRENT_CALLS] 分波，每波共享一个线程池；
+     * - 顺序段逐个执行，任一失败即停止后续（BATCH_STOPPED_ON_ERROR）；
+     * - 只读白名单（[AgentToolBatchPlanner.batchTools]）才允许并行，其余一律退化为顺序。
+     */
+    private fun executeToolBatch(
+        round: Int,
+        toolCalls: List<AgentModelClient.ToolCall>,
+        stopReason: AssistantStopReason,
+    ): List<ToolOutcome> {
+        val outcomes = CopyOnWriteArrayList<ToolOutcome>()
+        val segments = AgentToolBatchPlanner.plan(toolCalls)
+        var stopped = false
+        for (segment in segments) {
+            for (wave in segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)) {
+                if (stopped) {
+                    wave.forEach { call ->
+                        val outcome = rejectedToolOutcome(
+                            round, call, "BATCH_STOPPED_ON_ERROR",
+                            "本批次前序工具失败；该项未执行。请核实失败原因和已完成步骤后重新规划。",
+                        )
+                        appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+                        outcomes += outcome
+                    }
+                    publishTranscript()
+                    continue
+                }
+                val parallel = segment.parallel && wave.size > 1
+                if (parallel) {
+                    val pool = Executors.newFixedThreadPool(
+                        wave.size.coerceAtMost(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS),
+                    )
+                    val futures = mutableListOf<Pair<AgentModelClient.ToolCall, java.util.concurrent.Future<ToolOutcome>>>()
+                    wave.forEach { call ->
+                        futures += call to pool.submit<ToolOutcome> {
+                            when (stopReason) {
+                                AssistantStopReason.TOOL_USE -> executeTool(round, call)
+                                AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
+                                    round, call, "TRUNCATED_TOOL_CALL",
+                                    "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
+                                )
+                                else -> rejectedToolOutcome(
+                                    round, call, "UNEXPECTED_TOOL_CALL",
+                                    "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
+                                )
+                            }
+                        }
+                    }
+                    futures.forEach { (call, future) ->
+                        val outcome = runCatching { future.get() }.getOrElse {
+                            rejectedToolOutcome(round, call, "BATCH_PARALLEL_FAILED", it.javaClass.simpleName)
+                        }
+                        appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+                        outcomes += outcome
+                        if (!traceFormatter.isSuccessResult(outcome.result)) stopped = true
+                    }
+                    pool.shutdown()
+                    publishTranscript()
+                } else {
+                    for (call in wave) {
+                        runController.throwIfCancelled()
+                        val outcome = when (stopReason) {
+                            AssistantStopReason.TOOL_USE -> executeTool(round, call)
+                            AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
+                                round, call, "TRUNCATED_TOOL_CALL",
+                                "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
+                            )
+                            else -> rejectedToolOutcome(
+                                round, call, "UNEXPECTED_TOOL_CALL",
+                                "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
+                            )
+                        }
+                        appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+                        publishTranscript()
+                        outcomes += outcome
+                        if (!traceFormatter.isSuccessResult(outcome.result)) stopped = true
+                    }
+                }
+            }
+        }
+        return outcomes
+    }
+
     private fun executeTool(
         round: Int,
         toolCall: AgentModelClient.ToolCall,
