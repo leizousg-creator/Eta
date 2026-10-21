@@ -164,6 +164,8 @@ internal object AgentRuntimeWire {
         val operation: String = OP_CHAT,
         val rewriteTargetMessageId: String? = null,
         val assistantScreenContext: String = "",
+        /** 虚拟屏归属者（主线用于区分同屏多会话）；上游无此概念，默认空串。 */
+        val virtualScreenOwner: String = "",
     ) {
         // 旧入口沿用会话 handoff；无持久会话的入口以首个 run 为会话起点。
         val effectiveModelSessionId: String

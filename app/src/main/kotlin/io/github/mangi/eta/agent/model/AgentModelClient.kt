@@ -157,6 +157,12 @@ internal object AgentModelClient {
                 localWebSearch = !config.usesHostedWebSearch,
             )
 
+            for (index in 0 until additionalTools.length()) {
+                tools.put(additionalTools.opt(index))
+            }
+            return tools
+        }
+        val tools = toolsFor(initialCapabilities)
         // 经验复盘等场景只允许白名单工具进入本轮目录；null 表示不限制。
         val effectiveTools = if (restrictedToolNames == null) tools else JSONArray().also { out ->
             for (i in 0 until tools.length()) {
@@ -165,12 +171,6 @@ internal object AgentModelClient {
                 if (name != null && name in restrictedToolNames) out.put(schema)
             }
         }
-            for (index in 0 until additionalTools.length()) {
-                tools.put(additionalTools.opt(index))
-            }
-            return tools
-        }
-        val tools = toolsFor(initialCapabilities)
         onEvent(
             AgentEvent.RunStarted(
                 initialImages = images.size,
