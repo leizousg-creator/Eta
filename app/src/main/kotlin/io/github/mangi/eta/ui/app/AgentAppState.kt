@@ -824,9 +824,35 @@ internal class AgentAppState(
         },
     )
 
+    /**
+     * 流式中发送消息 = 插话：立即中断当前模型请求，保留已完成的工具结果，
+     * 按新指令重新规划。运行时未接收时把草稿还回输入框，不丢用户输入。
+     */
+    private fun submitInterjection(submittedText: String?) {
+        val conversationId = selectedConversationId ?: return
+        val prompt = (submittedText ?: homeState.input).trim()
+        if (prompt.isBlank()) return
+        if (homeState.pendingImages.isNotEmpty() || homeState.pendingFileReferences.isNotEmpty()) return
+        val runId = currentRunId?.takeIf { runConversationIds[it] == conversationId } ?: return
+        homeState = homeState.copy(input = "")
+        scope.launch(Dispatchers.IO) {
+            val accepted = runCatching {
+                AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
+            }.getOrDefault(false)
+            if (!accepted) {
+                withContext(Dispatchers.Main) {
+                    homeState = homeState.copy(input = prompt)
+                }
+            }
+        }
+    }
+
     fun sendCurrentMessage(submittedText: String? = null) {
-        // 多会话：只有当前会话正在流式才拦截，别处有 run 也能发。
-        if (homeState.isStreaming) return
+        // 正在流式时不拦截：把这条消息作为插话发给运行时，立即中断当前模型请求并按新指令重跑。
+        if (homeState.isStreaming) {
+            submitInterjection(submittedText)
+            return
+        }
         if (homeState.isCompacting) return
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages

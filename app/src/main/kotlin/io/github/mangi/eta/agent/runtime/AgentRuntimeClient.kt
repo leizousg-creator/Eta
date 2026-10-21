@@ -112,6 +112,33 @@ internal class AgentRuntimeClient(
         }
     }
 
+    /**
+     * 聊天中途插话：把补充指令发给运行时，由它中断当前模型请求并按新指令重跑。
+     * 返回 false 表示运行时未接收（run 已结束或校验失败），调用方应把草稿还回输入框。
+     */
+    fun steerRun(runId: String, text: String): Boolean {
+        val payload = runCatching { AgentRuntimeWire.steerBundle(runId, text) }.getOrNull() ?: return false
+        val response = java.util.concurrent.CountDownLatch(1)
+        val accepted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val receiver = Messenger(object : Handler(Looper.getMainLooper()) {
+            override fun handleMessage(msg: Message) {
+                if (msg.what == AgentRuntimeWire.MSG_STEER_RESPONSE &&
+                    AgentRuntimeWire.runIdFromBundle(msg.data ?: return) == runId
+                ) {
+                    accepted.set(msg.data?.getBoolean("accepted") ?: false)
+                    response.countDown()
+                }
+            }
+        })
+        return withRuntimeMessenger(false) { serviceMessenger ->
+            serviceMessenger.send(Message.obtain(null, AgentRuntimeWire.MSG_STEER_RUN).apply {
+                data = payload
+                replyTo = receiver
+            })
+            response.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS) && accepted.get()
+        } ?: false
+    }
+
     fun cancelRun(runId: String) {
         if (runId.isBlank()) return
         withRuntimeMessenger(Unit) { serviceMessenger ->

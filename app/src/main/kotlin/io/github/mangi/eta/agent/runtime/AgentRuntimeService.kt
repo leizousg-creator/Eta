@@ -257,6 +257,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     ingestRunRequest(incoming, msg.replyTo)
                 }
 
+                AgentRuntimeWire.MSG_STEER_RUN -> {
+                    val runId = AgentRuntimeWire.runIdFromBundle(msg.data ?: return)
+                    val text = AgentRuntimeWire.supplementTextFromBundle(msg.data ?: return)
+                    val valid = runCatching { AgentRuntimeWire.steerBundle(runId, text) }.isSuccess
+                    val accepted = valid && requestSupplement(text, expectedRunId = runId)
+                    runCatching {
+                        msg.replyTo?.send(Message.obtain(null, AgentRuntimeWire.MSG_STEER_RESPONSE).apply {
+                            data = AgentRuntimeWire.ackBundle(runId).apply { putBoolean("accepted", accepted) }
+                        })
+                    }
+                }
+
                 AgentRuntimeWire.MSG_CANCEL -> {
                     val runId = msg.data?.let(AgentRuntimeWire::runIdFromBundle).orEmpty()
                     if (runId.isNotBlank()) cancelRun(runId)
@@ -822,11 +834,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         )
     }
 
-    private fun requestSupplement(text: String) {
+    private fun requestSupplement(text: String, expectedRunId: String? = null): Boolean {
         val supplementText = text.trim()
-        if (supplementText.isBlank()) return
+        if (supplementText.isBlank()) return false
+        // 多会话下按 runId 精确定位；未指定时退回展示中的会话。
+        val target = if (expectedRunId != null) sessions[expectedRunId] else activeSession
+        if (expectedRunId != null && target == null) return false
         setCapsuleInputMode(focusable = false)
-        activeSession?.let { session ->
+        target?.let { session ->
             val event = session.steer(supplementText) {
                 recordSupplementEvent(supplementText)
             }
@@ -835,22 +850,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     state.value = state.value.copy(
                         status = AgentOverlayStatus.Finishing,
                     )
-                    return
+                    return false
                 }
             } else {
                 AndroidAgentLogger.info(
                     "Agent runtime supplement received: index=${event.index}, chars=${event.text.length}"
                 )
                 state.value = state.value.applyEvent(event)
-                return
+                return true
             }
         }
 
-        val completed = lastCompletedRunContext ?: return
+        val completed = lastCompletedRunContext ?: return false
         if (completed.request.operation != AgentRuntimeWire.OP_CHAT ||
             completed.request.handoff?.source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
             state.value = state.value.copy(status = AgentOverlayStatus.ContinuationUnavailable)
-            return
+            return false
         }
         val continuationRequest = AgentContinuationBuilder.build(
             request = completed.request,
@@ -858,6 +873,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             supplement = supplementText,
         )
         startRun(continuationRequest)
+        return true
     }
 
     private fun recordSupplementEvent(text: String): AgentEvent.UserSupplementReceived {

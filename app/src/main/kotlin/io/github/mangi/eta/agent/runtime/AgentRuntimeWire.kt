@@ -32,6 +32,9 @@ import kotlinx.serialization.json.Json
  */
 internal object AgentRuntimeWire {
     const val MSG_READ_CONTEXT_RESULT = 15
+    /** 聊天中途插话：立即中断当前模型请求，按新指令重新规划。 */
+    const val MSG_STEER_RUN = 16
+    const val MSG_STEER_RESPONSE = 17
     const val OP_CHAT = "chat"
     const val OP_COMPACT = "compact"
     const val OP_REWRITE_REPLY = "rewrite_reply"
@@ -88,6 +91,7 @@ internal object AgentRuntimeWire {
 
     private const val KEY_TYPE = "type"
     private const val KEY_RUN_ID = "run_id"
+    private const val KEY_SUPPLEMENT_TEXT = "supplement_text"
     private const val KEY_PROMPT = "prompt"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
     private const val KEY_MODEL_SESSION_ID = "model_session_id"
@@ -596,6 +600,16 @@ internal object AgentRuntimeWire {
     fun ackBundle(runId: String): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
     }
+
+    /** 构造插话请求；上限与协议一致，避免超长文本塞进 Binder。 */
+    fun steerBundle(runId: String, text: String): Bundle {
+        require(runId.isNotBlank() && runId.length <= 256)
+        require(text.isNotBlank() && text.length <= 8_000 && '\u0000' !in text)
+        return ackBundle(runId).apply { putString(KEY_SUPPLEMENT_TEXT, text) }
+    }
+
+    fun supplementTextFromBundle(bundle: Bundle): String =
+        bundle.getString(KEY_SUPPLEMENT_TEXT).orEmpty()
 
     fun attachRunResponseBundle(runId: String, attached: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
