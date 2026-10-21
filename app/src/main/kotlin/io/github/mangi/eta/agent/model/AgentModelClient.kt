@@ -105,6 +105,8 @@ internal object AgentModelClient {
         initialSupplementIndex: Int = 0,
         roleplayContext: RoleplayRunContext? = null,
         rewriteReply: Boolean = false,
+        /** 只允许这些工具名进入本轮目录；null 表示不限制（经验复盘用）。 */
+        restrictedToolNames: Set<String>? = null,
         assistantScreenContext: String = "",
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
@@ -154,6 +156,15 @@ internal object AgentModelClient {
                 capabilities = capabilities,
                 localWebSearch = !config.usesHostedWebSearch,
             )
+
+        // 经验复盘等场景只允许白名单工具进入本轮目录；null 表示不限制。
+        val effectiveTools = if (restrictedToolNames == null) tools else JSONArray().also { out ->
+            for (i in 0 until tools.length()) {
+                val schema = tools.getJSONObject(i)
+                val name = schema.optJSONObject("function")?.optString("name")
+                if (name != null && name in restrictedToolNames) out.put(schema)
+            }
+        }
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
@@ -164,7 +175,7 @@ internal object AgentModelClient {
             AgentEvent.RunStarted(
                 initialImages = images.size,
                 initialImageBytes = images.sumOf { it.bytes },
-                toolCount = tools.length(),
+                toolCount = effectiveTools.length(),
                 terminalTools = config.terminalTools
             )
         )
@@ -203,11 +214,20 @@ internal object AgentModelClient {
             sessionId = sessionId,
             config = config,
             messages = messages,
-            tools = tools,
+            tools = effectiveTools,
             provider = provider,
             // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
             // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。
             toolExecutor = AgentModelClient.ToolExecutor { call ->
+                // 经验复盘等场景：白名单之外的调用直接拒绝。
+                if (restrictedToolNames != null && call.name !in restrictedToolNames) {
+                    return@ToolExecutor ToolResult(
+                        JSONObject().put("ok", false)
+                            .put("code", "REVIEW_TOOL_DENIED")
+                            .put("message", "此工具不属于自动复盘能力")
+                            .toString(),
+                    )
+                }
                 val unavailable = AgentToolRequirements.find(call.name)
                     ?.let { capabilitiesProvider().unavailableCode(call.name) }
                 if (unavailable == null) {

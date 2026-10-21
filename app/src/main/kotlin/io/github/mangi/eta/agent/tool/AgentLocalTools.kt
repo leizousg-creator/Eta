@@ -102,6 +102,10 @@ internal class AgentLocalTools(
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    /** 技能自写服务：供 skills_manage 使用；为空时该工具回报不可用。 */
+    private val skillAuthoringService: io.github.mangi.eta.agent.skill.SkillAuthoringService? = null,
+    /** 学习提案写入：memory_write / skills_manage 先走提案，用户批准后才落盘。 */
+    private val learningProposalWriter: ((String, org.json.JSONObject) -> org.json.JSONObject)? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -223,7 +227,9 @@ internal class AgentLocalTools(
                 })
                 in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
                 "memory_get" -> textResult(memoryGet(args))
-                "memory_write" -> textResult(memoryWrite(args))
+                "memory_write" -> textResult(
+                    learningProposalWriter?.invoke("memory_write", args)?.toString() ?: memoryWrite(args),
+                )
                 "skills_list" -> textResult(skillsList(args))
                 "prompt_kit" -> textResult(PromptKitTool.execute(args))
                 "skills_read" -> textResult(skillsRead(args))
