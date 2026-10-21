@@ -614,8 +614,8 @@ fun AgentAppRoot(
                 NotificationCenterScreen(notificationCenter, { pushRoute(AppRoute.LearningProposalDetail(it)) }, ::popRoute)
             }
             entry<AppRoute.LearningProposalDetail>(swipeDismiss = swipeDismiss) { route ->
-                LearningProposalDetailScreen(route.proposalId, notificationCenter, {
-                    // TODO(porting): 主线用 startLearningRefinement(prompt) 直接开新会话；上游无此方法，先返回首页。
+                LearningProposalDetailScreen(route.proposalId, notificationCenter, { prompt ->
+                    agentState.startLearningRefinement(prompt)
                     popRoute()
                 }, ::popRoute)
             }

@@ -696,6 +696,13 @@ internal class AgentAppState(
         persistConversations()
     }
 
+    /** 收件箱「据此改进」：新建会话，并把提案给出的提示填进输入框。 */
+    fun startLearningRefinement(prompt: String) {
+        createConversation()
+        updateCurrentConversation(homeState.copy(input = prompt))
+        persistConversations()
+    }
+
     fun createConversation() {
         if (homeState.messageEdit != null) cancelMessageEdit()
         fileAttachmentOwnerVersion += 1
