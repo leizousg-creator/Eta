@@ -278,20 +278,42 @@ internal class AgentLoop(
      * - 顺序段逐个执行，任一失败即停止后续（BATCH_STOPPED_ON_ERROR）；
      * - 只读白名单（[AgentToolBatchPlanner.batchTools]）才允许并行，其余一律退化为顺序。
      */
+    /**
+     * 批量执行一个 assistant 响应返回的工具调用。
+     *
+     * 默认行为与上游完全一致：按输入顺序逐条执行、逐条落库、逐条发布增量；
+     * 仅当 [AgentToolBatchPlanner] 判定某一段可并行且数量 > 1 时，才用线程池并行，
+     * 其余（含只读白名单之外的一切工具）一律退化为上面的顺序路径。
+     */
     private fun executeToolBatch(
         round: Int,
         toolCalls: List<AgentModelClient.ToolCall>,
         stopReason: AssistantStopReason,
     ): List<ToolOutcome> {
-        val outcomes = CopyOnWriteArrayList<ToolOutcome>()
         val segments = AgentToolBatchPlanner.plan(toolCalls)
-        var stopped = false
-        if (io.github.mangi.eta.core.AgentBehaviorRules.enabled) {
-            io.github.mangi.eta.core.AndroidAgentLogger.info(
-                "batch segments=${segments.size} calls=${toolCalls.size} " +
-                    "sizes=${segments.joinToString(",") { "${it.calls.size}" }}",
-            )
+        val allParallel = segments.size == 1 && segments[0].parallel && toolCalls.size > 1
+        if (!allParallel) {
+            // 与上游等价的顺序路径：逐条执行、逐条 appendMessage + publishTranscript。
+            return toolCalls.map { call ->
+                val outcome = when (stopReason) {
+                    AssistantStopReason.TOOL_USE -> executeTool(round, call)
+                    AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
+                        round, call, "TRUNCATED_TOOL_CALL",
+                        "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
+                    )
+                    else -> rejectedToolOutcome(
+                        round, call, "UNEXPECTED_TOOL_CALL",
+                        "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
+                    )
+                }
+                appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+                publishTranscript()
+                outcome
+            }
         }
+
+        val outcomes = CopyOnWriteArrayList<ToolOutcome>()
+        var stopped = false
         for (segment in segments) {
             for (wave in segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)) {
                 if (stopped) {
