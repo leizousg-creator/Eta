@@ -1509,4 +1509,10 @@
     <string translatable="false" name="inbox_uncertain">Result needs checking</string>
     <string translatable="false" name="inbox_uncertain_help">Saving was interrupted or could not be confirmed. Check current memory or skills before refining; this change will not be replayed automatically.</string>
     <string translatable="false" name="inbox_update_skill">Update an existing skill</string>
+    <string translatable="false" name="conversation_context_capsule">Context</string>
+    <string translatable="false" name="conversation_speed_description">Last model request: %1$s output tokens per second, including time to first token.</string>
+  <string translatable="false" name="permission_bluetooth_denied">Bluetooth connection permission was not granted. You can allow Nearby devices in Eta’s system app permission settings to enable Bluetooth triggers.</string>
+  <string translatable="false" name="permission_bluetooth_settings_unavailable">Could not open settings. Open Eta’s app permissions in system settings to allow Nearby devices.</string>
+  <string translatable="false" name="permission_bluetooth_summary">Receive Bluetooth device connection and disconnection events for task triggers.</string>
+  <string translatable="false" name="permission_bluetooth_title">Bluetooth connection</string>
 </resources>
