@@ -5,6 +5,10 @@ import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import org.json.JSONArray
 import org.json.JSONObject
+import io.github.mangi.eta.agent.model.AgentToolBatchPlanner
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
  * 单次 Agent run 的纯编排循环。
@@ -178,22 +182,7 @@ internal class AgentLoop(
             )
 
             if (toolCalls.isNotEmpty()) {
-                val outcomes = toolCalls.map { call ->
-                    val outcome = when (providerResponse.stopReason) {
-                        AssistantStopReason.TOOL_USE -> executeTool(round, call)
-                        AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
-                            round, call, "TRUNCATED_TOOL_CALL",
-                            "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
-                        )
-                        else -> rejectedToolOutcome(
-                            round, call, "UNEXPECTED_TOOL_CALL",
-                            "模型在 ${providerResponse.stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
-                        )
-                    }
-                    appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
-                    publishTranscript()
-                    outcome
-                }
+                val outcomes = executeToolBatch(round, toolCalls, providerResponse.stopReason)
                 appendToolImages(round, outcomes)
                 publishTranscript()
                 round += 1
