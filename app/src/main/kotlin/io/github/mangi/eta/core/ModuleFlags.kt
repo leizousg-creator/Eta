@@ -15,9 +15,9 @@ object ModuleFlags {
 
     /**
      * 批量工具（`batch`）是否对外暴露。
-     * 工具目录投影已迁入，但执行侧（AgentLoop 的分段/校验/并发波次）尚未接线，
-     * 在接线完成前保持关闭，避免模型看到一个执行不了的工具。
+     * 执行侧已接入（AgentLoop.executeToolBatch：非并行场景与上游等价，
+     * 仅「整批只读且数量 > 1」时用线程池），可以对外暴露。
      */
     @Volatile
-    var batchExecutionEnabled: Boolean = false
+    var batchExecutionEnabled: Boolean = true
 }
