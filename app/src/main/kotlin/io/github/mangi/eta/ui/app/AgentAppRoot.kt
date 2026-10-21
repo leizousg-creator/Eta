@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.ui.model.PromptKitAction
+import io.github.mangi.eta.ui.screens.notifications.NotificationCenterScreen
 import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
 import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import android.Manifest
@@ -606,6 +607,15 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
                 AgentTasksScreen(onBack = { popRoute() })
+            }
+            entry<AppRoute.Notifications>(swipeDismiss = swipeDismiss) {
+                NotificationCenterScreen(notificationCenter, { pushRoute(AppRoute.LearningProposalDetail(it)) }, ::popRoute)
+            }
+            entry<AppRoute.LearningProposalDetail>(swipeDismiss = swipeDismiss) { route ->
+                LearningProposalDetailScreen(route.proposalId, notificationCenter, {
+                    // TODO(porting): 主线用 startLearningRefinement(prompt) 直接开新会话；上游无此方法，先返回首页。
+                    popRoute()
+                }, ::popRoute)
             }
             entry<AppRoute.PromptKit>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) { promptKit.refresh() }

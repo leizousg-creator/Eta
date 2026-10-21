@@ -397,6 +397,8 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Permissions -> stringResource(R.string.route_permissions)
     is AppRoute.SystemEnhance -> stringResource(R.string.route_system_enhancements)
     is AppRoute.PromptKit -> "提示词包"
+    is AppRoute.Notifications -> stringResource(R.string.inbox_title)
+    is AppRoute.LearningProposalDetail -> stringResource(R.string.inbox_detail)
     is AppRoute.Tasks -> "自动任务"
     is AppRoute.Settings -> stringResource(R.string.route_settings)
     is AppRoute.SpeechSettings -> stringResource(R.string.speech_settings_title)
