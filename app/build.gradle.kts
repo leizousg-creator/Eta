@@ -63,7 +63,9 @@ android {
         }
         release {
             versionNameSuffix = buildMetadataSuffix
-            signingConfig = signingConfigs.findByName("release")
+            // Fork 未配置 release 签名 secrets 时回退 debug 签名：
+            // 仍产出 release 变体（R8 混淆 + 资源压缩），但签名是标准 debug key。
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
