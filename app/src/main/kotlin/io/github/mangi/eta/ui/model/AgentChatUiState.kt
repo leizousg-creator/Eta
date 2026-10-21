@@ -92,7 +92,18 @@ data class TokenUsageUi(
     val outputTokens: Int? = null,
     val reasoningTokens: Int? = null,
     val cachedTokens: Int? = null,
+    /** 本次请求耗时（毫秒）；用于派生 tokens/秒。 */
+    val requestDurationMs: Long? = null,
 ) {
+    /** 派生：输出 tokens / 秒；上游没有该字段，状态胶囊需要它。 */
+    val averageTokensPerSecond: Double?
+        get() {
+            val out = outputTokens ?: return null
+            val ms = requestDurationMs ?: return null
+            if (out <= 0 || ms <= 0L) return null
+            return out * 1000.0 / ms
+        }
+} {
     val isEmpty: Boolean
         get() = contextTokens == null &&
             inputTokens == null &&

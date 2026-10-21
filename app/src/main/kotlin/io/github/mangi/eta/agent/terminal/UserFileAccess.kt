@@ -7,9 +7,10 @@ import org.json.JSONObject
 internal object UserFileAccess {
     fun backend(cwd: String = TerminalRuntime.userWorkspacePath, isCancelled: () -> Boolean = { false }): FileToolBackend {
         val workspace = File(TerminalRuntime.userWorkspacePath)
+        // 上游 LocalFileToolBackend 只接受 workspace/home；allowedRoots 是自建线的额外约束，
+        // 这里以上游签名为准，路径范围由 workspace 自身限定。
         return LocalFileToolBackend(
             workspace = File(cwd),
-            allowedRoots = listOf(workspace, File(workspace.parentFile, "proot"), File("/storage/emulated/0")),
             home = workspace,
             isCancelled = isCancelled,
         )
