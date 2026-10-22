@@ -597,15 +597,18 @@ internal class AgentAppState(
             conversationTitles = conversationTitles + (conversationId to payload.title)
         }
         runConversationIds[runId] = conversationId
+        // 外部入口（岛/小V）发起的会话：归档记录只有模型/工具回复，
+        // 用户那句话必须补进 history/journal，否则模型看不到自己是在回答什么。
+        val withUserHistory = ExternalConversationHistory.appendUser(existingState, runId, payload.userText)
         updateConversation(
             conversationId,
-            existingState.copy(
+            withUserHistory.copy(
                 input = "",
                 isStreaming = true,
                 thinkingEnabled = archivedEffort.enablesReasoning,
                 reasoningEffort = archivedEffort,
                 pendingImages = emptyList(),
-                messages = existingState.messages +
+                messages = withUserHistory.messages +
                     UserMessageUi(
                         id = "user-$runId",
                         content = payload.userText,
