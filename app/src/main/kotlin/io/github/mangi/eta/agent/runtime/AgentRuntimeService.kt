@@ -389,6 +389,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "RUNTIME_CONCURRENCY_LIMIT"))
             return
         }
+        val reviewGeneration = runCatching { AgentExperienceReview.foregroundStarted() }.getOrNull()
         val session = AgentRuntimeSession(
             runId = request.runId,
             operation = request.operation,
@@ -471,6 +472,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             context = this,
             currentPermissions = ::currentRuntimePermissions,
             snapshotRequest = { it.withActiveSupplements() },
+            reviewGeneration = reviewGeneration,
             onAcceptedEvent = { event, entrySurfaceGuard ->
                 handleAcceptedRunEvent(session, event, entrySurfaceGuard)
             },
