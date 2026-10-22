@@ -110,8 +110,8 @@ internal class AgentExecutionService : Service() {
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.execution_title))
-            .setContentText(
-                status?.localizedText(resources)
+            .setContentText(progress.ifBlank { 
+                status?.localizedText(resources })
                     ?: resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
             )
             .setContentIntent(open)

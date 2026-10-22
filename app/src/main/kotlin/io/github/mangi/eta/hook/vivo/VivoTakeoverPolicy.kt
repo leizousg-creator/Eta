@@ -7,6 +7,14 @@ internal object VivoTakeoverPolicy {
 
     fun isSupportedVersion(versionCode: Long): Boolean = versionCode == SUPPORTED_VERSION_CODE
 
+    /**
+     * 岛（流体云）显示用的宽松判断：>= 基线版本即可尝试。
+     *
+     * 与 [isSupportedVersion] 分开是刻意的——hook 安装仍要求精确版本（内部 API 一变就崩），
+     * 而岛只是 bindService 通信，协议不兼容时会 bind 失败并优雅降级，不会拖垮小V。
+     */
+    fun isIslandCompatible(versionCode: Long): Boolean = versionCode >= SUPPORTED_VERSION_CODE
+
     fun isSupportedInputMode(inputMode: String?, fullDuplex: Boolean): Boolean =
         !fullDuplex && inputMode in setOf("inputmode_keyboard", "voice", "longpress_voice")
 

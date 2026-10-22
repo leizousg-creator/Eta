@@ -212,7 +212,7 @@ internal class AgentRuntimeIslandBridge(
     }
 
     private fun supportsCopilot(): Boolean = runCatching {
-        VivoTakeoverPolicy.isSupportedVersion(context.packageManager.getPackageInfo(
+        VivoTakeoverPolicy.isIslandCompatible(context.packageManager.getPackageInfo(
             ModuleConfig.VIVO_COPILOT_PACKAGE, PackageManager.PackageInfoFlags.of(0),
         ).longVersionCode)
     }.getOrDefault(false)

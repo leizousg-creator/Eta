@@ -394,6 +394,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             operation = request.operation,
             eventSink = { event ->
                 runCatching { islandBridge.update(request.runId, event) }
+                // 通知栏也显示当前工具，不依赖 vivo 岛是否可用。
+                runCatching { AgentExecutionService.updateProgress(request.runId, event) }
                 sendEventTo(replyTo, event)
             },
             resultSink = { result ->
