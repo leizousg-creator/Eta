@@ -68,7 +68,9 @@ internal object VivoHooks {
                         ).longVersionCode
                     }.getOrDefault(-1L)
                 } ?: -1L
-                if (VivoTakeoverPolicy.isSupportedVersion(version)) {
+                val islandCompatible = VivoTakeoverPolicy.isIslandCompatible(version)
+                if (islandCompatible) {
+                    // 岛只走 bindService + Messenger，协议不兼容会 bind 失败并降级，不依赖精确版本。
                     if (context != null) {
                         islandNotifications = runCatching {
                             VivoIslandNotifications(context, logger, onStop = { runId ->
@@ -81,6 +83,8 @@ internal object VivoHooks {
                             installIslandRelay(module, rootLogger, classLoader, context, notifications)
                         }
                     }
+                }
+                if (VivoTakeoverPolicy.isSupportedVersion(version)) {
                     installBusinessHooks(module, rootLogger, classLoader)
                 } else {
                     logger.warn("小 V 版本未适配，保持原生行为: versionCode=$version")

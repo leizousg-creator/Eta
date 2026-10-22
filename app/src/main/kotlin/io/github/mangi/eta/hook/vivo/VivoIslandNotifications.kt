@@ -40,6 +40,7 @@ internal class VivoIslandNotifications(
     private var session: Session? = null
     private var lastPublishedAt = 0L
     private var failureLogged = false
+    private var sceneLogged = false
     private val flush = Runnable { session?.takeUnless { it.hidden || it.terminal }?.let(::publish) }
     private val expire = Runnable { session?.takeIf { it.terminal }?.let(::hide) }
     private val receiver = object : BroadcastReceiver() {
@@ -135,7 +136,15 @@ internal class VivoIslandNotifications(
     private fun publish(current: Session) {
         if (current.hidden) return
         try {
-            if (!manager.areNotificationsEnabled() || !sceneEnabled(manager)) {
+            val notificationsEnabled = manager.areNotificationsEnabled()
+            val sceneOn = sceneEnabled(manager)
+            if (!notificationsEnabled || !sceneOn) {
+                if (!sceneLogged) {
+                    sceneLogged = true
+                    logger.warn(
+                        "小 V 原子岛场景未开启，仅保留 Eta 普通通知: notifications=$notificationsEnabled scene=$sceneOn",
+                    )
+                }
                 removeNotification(current)
                 return
             }
@@ -357,6 +366,6 @@ internal class VivoIslandNotifications(
             runCatching {
                 NotificationManager::class.java.getDeclaredMethod("getSceneStatus", String::class.java, String::class.java)
                     .apply { isAccessible = true }.invoke(manager, "com.vivo.ai.copilot", SCENE) == true
-            }.getOrDefault(false)
+            }.getOrDefault(true) // 反射不可用时放行：由系统决定是否上岛，避免整条链路被静默掐断
     }
 }
