@@ -456,7 +456,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         thread(name = "agent-runtime") {
             try {
-                executeRun(session, request)
+                executeRun(session, request, reviewGeneration)
             } finally {
                 AgentExecutionService.updateRunStatus(this, null)
                 AgentExecutionService.release("run:${request.runId}")
@@ -467,6 +467,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
+        reviewGeneration: Long?,
     ) {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
