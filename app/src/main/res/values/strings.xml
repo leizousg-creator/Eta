@@ -1515,4 +1515,5 @@
   <string translatable="false" name="permission_bluetooth_settings_unavailable">Could not open settings. Open Eta’s app permissions in system settings to allow Nearby devices.</string>
   <string translatable="false" name="permission_bluetooth_summary">Receive Bluetooth device connection and disconnection events for task triggers.</string>
   <string translatable="false" name="permission_bluetooth_title">Bluetooth connection</string>
+    <string translatable="false" name="chat_interject_hint">Add a message to redirect the current task…</string>
 </resources>

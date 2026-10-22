@@ -146,6 +146,9 @@ internal fun AgentChatInputBar(
     val canSend = textFieldState.text.isNotBlank() ||
         pendingImages.isNotEmpty() ||
         pendingFileReferences.isNotEmpty()
+    // 流式中仍有文字时，发送键变成「插话」：立即打断模型请求并按新指令重跑。
+    val canInterject = isStreaming && !isCompacting && textFieldState.text.isNotBlank() &&
+        pendingImages.isEmpty() && pendingFileReferences.isEmpty()
     val density = LocalDensity.current
     val statusBarTopPx = WindowInsets.statusBars.getTop(density)
     var inputContainerTopPx by remember { mutableIntStateOf(0) }
@@ -269,7 +272,8 @@ internal fun AgentChatInputBar(
                                 character != null && isStreaming ->
                                     stringResource(R.string.chat_character_typing, character.characterName)
                                 character != null -> stringResource(R.string.chat_character_input_hint, character.characterName)
-                                isStreaming -> stringResource(R.string.chat_eta_working)
+                                isCompacting -> stringResource(R.string.chat_eta_working)
+                                isStreaming -> stringResource(R.string.chat_interject_hint)
                                 else -> stringResource(R.string.chat_input_hint)
                             },
                             style = inputTextStyle,
@@ -353,7 +357,7 @@ internal fun AgentChatInputBar(
                         )
 
                         IconButton(
-                            onClick = if (isStreaming) {
+                            onClick = if (isStreaming && !canInterject) {
                                 onStop
                             } else {
                                 {
@@ -372,7 +376,7 @@ internal fun AgentChatInputBar(
                             // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
                             val sendButtonColor by animateColorAsState(
                                 targetValue = when {
-                                    isStreaming -> MiuixTheme.colorScheme.onSurface
+                                    isStreaming && !canInterject -> MiuixTheme.colorScheme.onSurface
                                     canSend -> MiuixTheme.colorScheme.primary
                                     else -> MiuixTheme.colorScheme.surfaceContainerHigh
                                 },
