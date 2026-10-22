@@ -72,6 +72,9 @@ internal data class AgentToolCapabilities(
     }
 
     companion object {
+        /** vivo 设备才有蓝心小V 的个人数据接口（笔记/待办）。 */
+        fun isVivoDevice(): Boolean = Build.MANUFACTURER.equals("vivo", ignoreCase = true)
+
         fun isColorOsDevice(): Boolean = Build.MANUFACTURER.lowercase(Locale.ROOT) in
             setOf("oppo", "oneplus", "realme")
 
