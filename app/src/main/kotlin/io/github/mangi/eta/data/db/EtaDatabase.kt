@@ -141,6 +141,8 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 "id TEXT NOT NULL PRIMARY KEY, taskId TEXT NOT NULL, fireKey TEXT NOT NULL, status TEXT NOT NULL, " +
                 "eventJson TEXT NOT NULL, queuedAt INTEGER NOT NULL, startedAt INTEGER, finishedAt INTEGER, resultPreview TEXT NOT NULL)")
             database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_agent_task_runs_taskId_fireKey ON agent_task_runs(taskId,fireKey)")
+            // 上游 3.3.3 的 auth_mode 列并入同一个 22->23，避免与本地的任务表迁移抢同一版本号
+            database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
         }
 
         internal val MIGRATION_21_22 = Migration(21, 22) { database ->

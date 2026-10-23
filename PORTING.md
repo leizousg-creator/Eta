@@ -17,9 +17,7 @@
 | 触发器（定时/事件，23 种） | 否（上游有 `tasks` 但无此触发器体系） | main | 待盘点 | 🔴 未开始 |
 | 侧边栏排版优化 | 待核对 | main | 待盘点 | ⬜ 未核对 |
 | 提示词包（PromptKit） | 否 | main | `data/promptkit/*`、`ui/screens/promptkit/*`、`ui/app/AgentPromptKitStore.kt`；接线：`SettingsScreen` 入口、`AppRoute.PromptKit`、`AgentAppRoot` entry、`AgentToolRequirements`/`AgentLocalTools` 的 `prompt_kit`、`AgentPromptBuilder` 注入、**`EtaApp.onCreate` 调 `PromptKitBridge.init(this)`**（缺这一步会导致页面能开但读写全空转，main 已修 `4ddc486`） | ⬜ 待迁 |
-| 随包技能包（assets zip → files/skills） | 否 | main `59a8308` / `4ba2ddd` | `assets/skill-bundles/pojia-v4.zip`（1.93MB / **69 技能**，含 5 篇行为规范）、`data/promptkit/SkillBundleInstaller.kt`（bundle v5，同版本缺项自动补）；接线：`PromptKitSkillSync.sync()` 首行调用 | ⬜ 待迁 |
-| 技能范围开关（仅技能包内技能） | 否 | main `c151159` | `data/promptkit/SkillBundlePolicy.kt`（`.skill-bundle-ids.txt` + `.bundle-only`）、`SkillRuntime.listInstalledSkills/findInstalledSkill` 过滤、提示词包页开关 | ⬜ 待迁 |
-| 内置工作准则（行为规范） | 否 | main `4ba2ddd`；modular 已迁 `06e8283` | `agent/model/AgentBehaviorRules.kt` + `AgentPromptBuilder` 注入一条系统消息（约 1.5 KB/轮） | 🟢 已迁入 modular |
+| 随包技能包（assets zip → files/skills） | 否 | main `59a8308` | `assets/skill-bundles/pojia-v4.zip`（1.93MB / 63 技能）、`data/promptkit/SkillBundleInstaller.kt`；接线：`PromptKitSkillSync.sync()` 首行调用 | ⬜ 待迁 |
 | 技能列表懒加载 | 待核对上游 | main `ff9eb0e` | `ui/screens/skills/AgentSkillsScreen.kt` 三组 `itemsIndexed` + `EtaPreferenceGroupItem` | ⬜ 待核对（上游若已懒加载则丢弃） |
 | 技能同步到 Linux 环境 | 否 | main | `data/promptkit/PromptKitSkillSync.kt`（经 Root 通道） | ⬜ 待迁（随提示词包） |
 | 首 token 分阶段打点 | 否 | main | `agent/model/AgentLoop.kt` + `core/EtaTrace.kt` | ⬜ 待迁 |
