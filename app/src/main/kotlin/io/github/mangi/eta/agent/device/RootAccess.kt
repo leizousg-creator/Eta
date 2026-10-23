@@ -64,13 +64,10 @@ internal object RootAccess {
         scope.launch {
             try {
                 val present = suExists()
-                // 不再因 present=false 直接返回：KernelSU 只在授权后才把 su 注入进程 PATH，
-                // 「先看到 su 才请求授权」会两边互相等待，导致永远检测不到 root。
-                // 这里继续走请求流程，由 su 执行本身触发 root 管理器的授权。
-                if (!present && !explicit && !rootManagerLikelyPresent()) {
-                    mutableState.value = RootAccessState(RootAccessStatus.UNAVAILABLE)
-                    return@launch
-                }
+                // 关键：不能因为「PATH 里没有 su」就提前返回。
+                // KernelSU 的 su 只有在授权后才注入进程 PATH，而授权又需要先执行一次 su；
+                // 两边互相等待会永远判定「不可用」。这里直接进入请求流程，由执行 su 触发授权。
+                // 没有 root 的设备上这一步会快速失败，代价很小。
                 val attempted = prefs.getBoolean(AUTOMATIC_REQUEST_ATTEMPTED, false)
                 val wasGranted = prefs.getBoolean(LAST_GRANTED, false)
                 if (!shouldRequestRoot(explicit, attempted, wasGranted)) {
@@ -111,13 +108,6 @@ internal object RootAccess {
             }
         }.also { probeJob = it }
     }
-
-    /** KernelSU / Magisk / APatch 的工作目录存在，说明设备很可能装有 root 管理器。 */
-    private fun rootManagerLikelyPresent(): Boolean = listOf(
-        "/data/adb/ksu",
-        "/data/adb/magisk",
-        "/data/adb/ap",
-    ).any { path -> runCatching { File(path).exists() }.getOrDefault(false) }
 
     /**
      * 候选 su 路径。
