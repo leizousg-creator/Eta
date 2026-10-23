@@ -941,6 +941,13 @@ internal class AgentAppState(
         }
     }
 
+    /** 收件箱「据此改进」：新建会话，并把提案给出的提示填进输入框。 */
+    fun startLearningRefinement(prompt: String) {
+        createConversation()
+        updateCurrentConversation(homeState.copy(input = prompt))
+        persistConversations()
+    }
+
     fun createConversation() {
         conversationSelectionVersion += 1
         cancelHistoryPageLoad()

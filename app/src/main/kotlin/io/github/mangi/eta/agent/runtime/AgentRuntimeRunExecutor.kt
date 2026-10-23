@@ -405,7 +405,7 @@ internal class AgentRuntimeRunExecutor(
             response?.let { completed ->
                 runCatching {
                     AgentExperienceReview.submit(
-                        appContext, reviewEpoch, completedRequest, completed, archivedEvents.toList(),
+                        appContext, reviewEpoch, completedRequest, completed, archivedEvents.orEmpty().toList(),
                     )
                 }.onFailure { error ->
                     AndroidAgentLogger.warn("Experience review submission failed: type=${error.safeLogType()}")
