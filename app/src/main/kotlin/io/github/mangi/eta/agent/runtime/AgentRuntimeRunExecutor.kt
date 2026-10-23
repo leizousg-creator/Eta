@@ -52,6 +52,8 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
     ) -> Unit,
+    /** 经验复盘准入代次；null 表示本 run 不参与复盘。 */
+    private val reviewGeneration: Long? = null,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -68,7 +70,7 @@ internal class AgentRuntimeRunExecutor(
         request: AgentRuntimeWire.RunRequest,
     ): Outcome {
         val runController = session.controller
-        val archivedEvents = mutableListOf<AgentEvent>()
+        val archivedEvents = AgentRunArchiveStore.createEventBuffer(request.handoff)
         var entrySurfaceGuard: EntrySurfaceGuard? = null
         var toolExecutor: AutoCloseable? = null
         var toolsBinding: AgentRunController.ResourceBinding? = null
@@ -362,7 +364,7 @@ internal class AgentRuntimeRunExecutor(
 
         if (cancelled && session.isTerminal) {
             runCatching {
-                persistArtifacts(snapshotRequest(request), result, archivedEvents)
+                persistArtifacts(snapshotRequest(request), result, archivedEvents.orEmpty())
             }.onFailure { throwable ->
                 AndroidAgentLogger.error(
                     "Agent runtime cancelled result persistence failed: " +
@@ -390,12 +392,25 @@ internal class AgentRuntimeRunExecutor(
                         "Agent runtime checkpoint seal failed: type=${throwable.safeLogType()}"
                     )
                 }
-            runCatching { persistArtifacts(completedRequest, result, archivedEvents) }
+            runCatching { persistArtifacts(completedRequest, result, archivedEvents.orEmpty()) }
                 .onFailure { throwable ->
                     AndroidAgentLogger.error(
                         "Agent runtime artifact persistence failed: type=${throwable.safeLogType()}"
                     )
                 }
+        }
+        // 经验复盘：只在正常提交、结果成功且未取消时提交，由学习提案决定是否采纳。
+        val reviewEpoch = reviewGeneration
+        if (committed && result.ok && !cancelled && reviewEpoch != null) {
+            response?.let { completed ->
+                runCatching {
+                    AgentExperienceReview.submit(
+                        appContext, reviewEpoch, completedRequest, completed, archivedEvents.orEmpty().toList(),
+                    )
+                }.onFailure { error ->
+                    AndroidAgentLogger.warn("Experience review submission failed: type=${error.safeLogType()}")
+                }
+            }
         }
         return Outcome(
             result = result,
@@ -409,13 +424,13 @@ internal class AgentRuntimeRunExecutor(
     private fun acceptEvent(
         session: AgentRuntimeSession,
         event: AgentEvent,
-        archivedEvents: MutableList<AgentEvent>,
+        archivedEvents: MutableList<AgentEvent>?,
         entrySurfaceGuard: EntrySurfaceGuard?,
         checkpointRecorder: AgentRunCheckpointRecorder?,
     ) {
         checkpointRecorder?.accept(event)
         if (!session.emit(event)) return
-        archivedEvents += event
+        archivedEvents?.add(event)
         if (event is AgentEvent.ModelRetryScheduled) {
             AndroidAgentLogger.warn("Agent runtime event: ${event.toLogLine()}")
         } else if (event !is AgentEvent.AssistantBlockDelta) {

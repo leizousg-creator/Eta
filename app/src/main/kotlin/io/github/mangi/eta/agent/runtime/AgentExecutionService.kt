@@ -28,6 +28,9 @@ internal class AgentExecutionService : Service() {
     private val owner = ownerSequence.incrementAndGet()
     private var foregroundActive = false
     @Volatile private var startRejected = false
+    /** 通知里展示的「当前工具」进度；经验复盘等外部调用也用它。 */
+    private var progress: String = ""
+    private var progressOwner: String = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -108,8 +111,10 @@ internal class AgentExecutionService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.execution_title))
             .setContentText(
-                status?.localizedText(resources)
-                    ?: resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+                progress.ifBlank {
+                    status?.localizedText(resources)
+                        ?: resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+                },
             )
             .setContentIntent(open)
             .setOngoing(true)
@@ -181,6 +186,24 @@ internal class AgentExecutionService : Service() {
         fun release(id: String) {
             leases.release(id)
             mainHandler.post { instance?.refreshNotification() }
+        }
+
+        /** 把当前工具名写进通知进度；同 runId 才覆盖，避免多会话互相抢占。 */
+        fun updateProgress(id: String, event: AgentEvent) {
+            val tool = when (event) {
+                is AgentEvent.ToolStarted -> event.name
+                is AgentEvent.ToolFinished -> ""
+                else -> return
+            }
+            mainHandler.post {
+                instance?.let { service ->
+                    if (tool.isNotBlank() || service.progressOwner == id) {
+                        service.progressOwner = id
+                        service.progress = tool.take(80)
+                        service.refreshNotification()
+                    }
+                }
+            }
         }
     }
 }

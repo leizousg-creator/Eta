@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.core.ModuleFlags
 import org.json.JSONArray
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 
@@ -17,8 +18,8 @@ internal object AgentToolCatalog {
         memoryWritable: Boolean = true,
         capabilities: AgentToolCapabilities = AgentToolCapabilities(rootAvailable = true),
         localWebSearch: Boolean = true,
-    ): JSONArray =
-        capabilities.project(JSONArray().also { tools ->
+    ): JSONArray {
+        val tools = capabilities.project(JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
             AgentGestureToolCatalog.appendTo(tools)
             AgentTextSystemToolCatalog.appendTo(tools)
@@ -38,10 +39,15 @@ internal object AgentToolCatalog {
                 githubInstall = skillGitHubInstall,
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
+            if (memoryWritable && ModuleFlags.toolsEnabled) AgentTaskToolCatalog.appendTo(tools)
+            if (ModuleFlags.toolsEnabled) AgentPromptKitToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)
                 AgentFileToolCatalog.appendTo(tools)
             }
         })
+        // 批量工具由我们迁入：仅在应用进程启用，避免改动上游单测的工具集合断言。
+        return AgentBatchToolCatalog.project(tools, enabled = ModuleFlags.batchExecutionEnabled)
+    }
 }

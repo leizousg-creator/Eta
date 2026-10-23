@@ -95,6 +95,21 @@ internal class AgentMemoryStore(
         AgentMemoryWriteResult.Success(snapshotOf(updated))
     }
 
+
+    /** Validate the exact revision, range and size without changing persistent memory. */
+    fun preview(mutation: AgentMemoryMutation): AgentMemoryWriteResult = synchronized(lock) {
+        val current = snapshotLocked()
+        if (mutation.revision != current.revision) {
+            return@synchronized AgentMemoryWriteResult.Conflict(current)
+        }
+        val updated = when (mutation) {
+            is AgentMemoryMutation.ReplaceRange -> replaceRange(current, mutation)
+            is AgentMemoryMutation.Append -> append(current, mutation.content)
+            is AgentMemoryMutation.Clear -> ""
+        }
+        AgentMemoryWriteResult.Success(snapshotOf(updated))
+    }
+
     fun replaceAll(content: String): AgentMemorySnapshot = synchronized(lock) {
         writeLocked(content)
         snapshotOf(content)
@@ -329,6 +344,11 @@ internal object AgentMemoryRepository {
     fun mutate(mutation: AgentMemoryMutation): AgentMemoryWriteResult {
         ensureInitialized()
         return store.mutate(mutation)
+    }
+
+    fun preview(mutation: AgentMemoryMutation): AgentMemoryWriteResult {
+        ensureInitialized()
+        return store.preview(mutation)
     }
 
     fun replaceAll(content: String): AgentMemorySnapshot {

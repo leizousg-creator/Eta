@@ -13,6 +13,7 @@ import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ProviderTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.provider.BuiltinProviders
@@ -105,6 +106,8 @@ internal object AgentModelClient {
         initialSupplementIndex: Int = 0,
         roleplayContext: RoleplayRunContext? = null,
         rewriteReply: Boolean = false,
+        /** 只允许这些工具名进入本轮目录；null 表示不限制（经验复盘用）。 */
+        restrictedToolNames: Set<String>? = null,
         assistantScreenContext: String = "",
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
@@ -154,17 +157,26 @@ internal object AgentModelClient {
                 capabilities = capabilities,
                 localWebSearch = !config.usesHostedWebSearch,
             )
+
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
             return tools
         }
         val tools = toolsFor(initialCapabilities)
+        // 经验复盘等场景只允许白名单工具进入本轮目录；null 表示不限制。
+        val effectiveTools = if (restrictedToolNames == null) tools else JSONArray().also { out ->
+            for (i in 0 until tools.length()) {
+                val schema = tools.getJSONObject(i)
+                val name = schema.optJSONObject("function")?.optString("name")
+                if (name != null && name in restrictedToolNames) out.put(schema)
+            }
+        }
         onEvent(
             AgentEvent.RunStarted(
                 initialImages = images.size,
                 initialImageBytes = images.sumOf { it.bytes },
-                toolCount = tools.length(),
+                toolCount = effectiveTools.length(),
                 terminalTools = config.terminalTools
             )
         )
@@ -203,11 +215,20 @@ internal object AgentModelClient {
             sessionId = sessionId,
             config = config,
             messages = messages,
-            tools = tools,
+            tools = effectiveTools,
             provider = provider,
             // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
             // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。
             toolExecutor = AgentModelClient.ToolExecutor { call ->
+                // 经验复盘等场景：白名单之外的调用直接拒绝。
+                if (restrictedToolNames != null && call.name !in restrictedToolNames) {
+                    return@ToolExecutor ToolResult(
+                        JSONObject().put("ok", false)
+                            .put("code", "REVIEW_TOOL_DENIED")
+                            .put("message", "此工具不属于自动复盘能力")
+                            .toString(),
+                    )
+                }
                 val unavailable = AgentToolRequirements.find(call.name)
                     ?.let { capabilitiesProvider().unavailableCode(call.name) }
                 if (unavailable == null) {
@@ -260,7 +281,14 @@ internal object AgentModelClient {
 
     private fun ModelConfig.validate() {
         require(baseUrl.isNotBlank()) { "请先配置 API 地址" }
-        require(apiKey.isNotBlank()) { "请先配置 API Key" }
+        when {
+            authMode == ProviderAuthModes.API_KEY -> require(apiKey.isNotBlank()) { "请先配置 API Key" }
+            ProviderAuthModes.isOAuth(authMode) -> {
+                require(providerId.isNotBlank()) { "账号登录缺少服务商标识，请重新选择服务商" }
+                require(apiKey.isEmpty()) { "账号登录配置不能包含 API Key" }
+            }
+            else -> error("不支持的服务商认证方式")
+        }
         require(model.isNotBlank()) { "请先配置模型名" }
         require(
             reasoningCapabilities?.mandatory != true ||
@@ -316,6 +344,7 @@ internal object AgentModelClient {
         val customHeaders: List<CustomHeader> = emptyList(),
         val customBody: List<CustomBody> = emptyList(),
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+        val authMode: String = ProviderAuthModes.API_KEY,
     ) {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && providerType == ProviderTypes.OPENAI_COMPATIBLE &&

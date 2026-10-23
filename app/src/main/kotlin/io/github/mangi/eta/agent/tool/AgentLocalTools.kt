@@ -1,5 +1,8 @@
 package io.github.mangi.eta.agent.tool
 
+import io.github.mangi.eta.data.promptkit.PromptKitTool
+import io.github.mangi.eta.data.promptkit.PromptKitBridge
+import io.github.mangi.eta.agent.automation.AgentTaskTools
 import android.content.Context
 import android.graphics.Rect
 import android.content.Intent
@@ -53,6 +56,7 @@ import io.github.mangi.eta.data.repository.AgentMemoryMutation
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
+import io.github.mangi.eta.data.repository.WebToolsSettingsRepository
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -99,6 +103,10 @@ internal class AgentLocalTools(
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    /** 技能自写服务：供 skills_manage 使用；为空时该工具回报不可用。 */
+    private val skillAuthoringService: io.github.mangi.eta.agent.skill.SkillAuthoringService? = null,
+    /** 学习提案写入：memory_write / skills_manage 先走提案，用户批准后才落盘。 */
+    private val learningProposalWriter: ((String, org.json.JSONObject) -> org.json.JSONObject)? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -114,6 +122,7 @@ internal class AgentLocalTools(
     private val webTools = AgentWebTools(
         transport = WebHttpTransport(AgentHttpClient.client),
         localNetworkAccess = { LocalNetworkPermission.accessState(context).name.lowercase(Locale.ROOT) },
+        runtimeConfig = { runBlocking { WebToolsSettingsRepository.resolveRuntimeConfig(context) } },
     )
     val terminalExecutionContext = LinuxEnvironmentSettingsRepository.current(context).terminalEnvironment.let { environment ->
         TerminalExecutionContext(
@@ -220,13 +229,20 @@ internal class AgentLocalTools(
                 })
                 in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
                 "memory_get" -> textResult(memoryGet(args))
-                "memory_write" -> textResult(memoryWrite(args))
+                "memory_write" -> textResult(
+                    learningProposalWriter?.invoke("memory_write", args)?.toString() ?: memoryWrite(args),
+                )
                 "skills_list" -> textResult(skillsList(args))
+                "prompt_kit" -> textResult(PromptKitTool.execute(args))
                 "skills_read" -> textResult(skillsRead(args))
                 "skills_read_resource" -> textResult(skillsReadResource(args))
                 "skills_list_curated" -> textResult(skillsListCurated())
                 "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
                 "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
+                in AgentTaskTools.names -> AgentModelClient.ToolResult(
+                    AgentTaskTools(context).execute(toolCall.name, args),
+                    sensitive = true,
+                )
                 else -> textResult(
                     errorResult(
                         code = "UNKNOWN_TOOL",

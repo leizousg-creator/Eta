@@ -18,6 +18,9 @@ sealed interface AppRoute : NavKey {
     data object Tools : AppRoute
 
     @Serializable
+    data object WebToolsSettings : AppRoute
+
+    @Serializable
     data object Skills : AppRoute
 
     @Serializable
@@ -43,6 +46,11 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object Settings : AppRoute
+    /** 收件箱：学习提案等需要用户批准的条目。 */
+    data object Notifications : AppRoute
+    data class LearningProposalDetail(val proposalId: String) : AppRoute
+    data object PromptKit : AppRoute
+    data object Tasks : AppRoute
 
     @Serializable
     data object AppearanceSettings : AppRoute

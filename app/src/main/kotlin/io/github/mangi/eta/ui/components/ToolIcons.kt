@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import androidx.compose.material.icons.rounded.TextSnippet
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.Backspace
@@ -85,6 +86,9 @@ internal fun iconForTool(toolId: String): ImageVector = when (toolId) {
     "computer", "computer_call", "计算机操作" -> Icons.Rounded.Computer
     "image_generation", "image_generation_call", "图像生成" -> Icons.Rounded.Image
     "mcp_call", "MCP 工具" -> Icons.Rounded.Extension
+    "tasks_triggers", "tasks_list", "tasks_create", "tasks_update", "tasks_delete", "tasks_run", "tasks_cancel", "tasks_history" -> Icons.Rounded.Schedule
+    "batch" -> Icons.Rounded.Layers
+    "prompt_kit" -> Icons.Rounded.TextSnippet
     "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
         Icons.Rounded.Psychology
     "press_key" -> Icons.Rounded.KeyboardCommandKey

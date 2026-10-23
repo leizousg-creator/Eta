@@ -14,6 +14,7 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,6 +33,9 @@ import kotlinx.serialization.json.Json
  */
 internal object AgentRuntimeWire {
     const val MSG_READ_CONTEXT_RESULT = 15
+    /** 聊天中途插话：立即中断当前模型请求，按新指令重新规划。 */
+    const val MSG_STEER_RUN = 16
+    const val MSG_STEER_RESPONSE = 17
     const val OP_CHAT = "chat"
     const val OP_COMPACT = "compact"
     const val OP_REWRITE_REPLY = "rewrite_reply"
@@ -88,6 +92,7 @@ internal object AgentRuntimeWire {
 
     private const val KEY_TYPE = "type"
     private const val KEY_RUN_ID = "run_id"
+    private const val KEY_SUPPLEMENT_TEXT = "supplement_text"
     private const val KEY_PROMPT = "prompt"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
     private const val KEY_MODEL_SESSION_ID = "model_session_id"
@@ -97,6 +102,7 @@ internal object AgentRuntimeWire {
     private const val KEY_PROVIDER_SOURCE_TYPE = "provider_source_type"
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_API_KEY = "api_key"
+    private const val KEY_AUTH_MODE = "auth_mode"
     private const val KEY_MODEL = "model"
     private const val KEY_MODEL_DISPLAY_NAME = "model_display_name"
     private const val KEY_CONTEXT_WINDOW = "context_window"
@@ -164,6 +170,8 @@ internal object AgentRuntimeWire {
         val operation: String = OP_CHAT,
         val rewriteTargetMessageId: String? = null,
         val assistantScreenContext: String = "",
+        /** 虚拟屏归属者（主线用于区分同屏多会话）；上游无此概念，默认空串。 */
+        val virtualScreenOwner: String = "",
     ) {
         // 旧入口沿用会话 handoff；无持久会话的入口以首个 run 为会话起点。
         val effectiveModelSessionId: String
@@ -295,7 +303,8 @@ internal object AgentRuntimeWire {
         putString(KEY_PROVIDER_TYPE, request.config.providerType)
         putString(KEY_PROVIDER_SOURCE_TYPE, request.config.providerSourceType)
         putString(KEY_BASE_URL, request.config.baseUrl)
-        putString(KEY_API_KEY, request.config.apiKey)
+        putString(KEY_AUTH_MODE, request.config.authMode)
+        putString(KEY_API_KEY, request.config.apiKey.takeIf { request.config.authMode == ProviderAuthModes.API_KEY }.orEmpty())
         putString(KEY_MODEL, request.config.model)
         putString(KEY_MODEL_DISPLAY_NAME, request.config.modelDisplayName)
         putString("operation", request.operation)
@@ -429,7 +438,10 @@ internal object AgentRuntimeWire {
                     .ifBlank { io.github.mangi.eta.data.model.ProviderTypes.OPENAI_COMPATIBLE },
                 providerSourceType = bundle.getString(KEY_PROVIDER_SOURCE_TYPE).orEmpty(),
                 baseUrl = bundle.getString(KEY_BASE_URL).orEmpty(),
-                apiKey = bundle.getString(KEY_API_KEY).orEmpty(),
+                apiKey = bundle.getString(KEY_API_KEY).orEmpty().takeIf {
+                    bundle.getString(KEY_AUTH_MODE, ProviderAuthModes.API_KEY) == ProviderAuthModes.API_KEY
+                }.orEmpty(),
+                authMode = bundle.getString(KEY_AUTH_MODE) ?: ProviderAuthModes.API_KEY,
                 model = bundle.getString(KEY_MODEL).orEmpty(),
                 modelDisplayName = bundle.getString(KEY_MODEL_DISPLAY_NAME).orEmpty(),
                 contextWindow = bundle.optionalInt(KEY_CONTEXT_WINDOW),
@@ -595,6 +607,16 @@ internal object AgentRuntimeWire {
         putString(KEY_RUN_ID, runId)
     }
 
+    /** 构造插话请求；上限与协议一致，避免超长文本塞进 Binder。 */
+    fun steerBundle(runId: String, text: String): Bundle {
+        require(runId.isNotBlank() && runId.length <= 256)
+        require(text.isNotBlank() && text.length <= 8_000 && '\u0000' !in text)
+        return ackBundle(runId).apply { putString(KEY_SUPPLEMENT_TEXT, text) }
+    }
+
+    fun supplementTextFromBundle(bundle: Bundle): String =
+        bundle.getString(KEY_SUPPLEMENT_TEXT).orEmpty()
+
     fun attachRunResponseBundle(runId: String, attached: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
         putBoolean(KEY_OK, attached)
@@ -654,6 +676,11 @@ internal object AgentRuntimeWire {
                 putInt("max_attempts", event.maxAttempts)
                 putInt("delay_ms", event.delayMs)
                 putString("reason_code", event.reasonCode)
+            }
+
+            is AgentEvent.ModelRequestInterrupted -> {
+                putString(KEY_TYPE, "model_request_interrupted")
+                putInt("round", event.round)
             }
 
             is AgentEvent.ProviderRequestStarted -> {
@@ -800,6 +827,8 @@ internal object AgentRuntimeWire {
             delayMs = bundle.getInt("delay_ms", 2_000),
             reasonCode = bundle.getString("reason_code").orEmpty(),
         )
+
+        "model_request_interrupted" -> AgentEvent.ModelRequestInterrupted(bundle.getInt("round"))
 
         "provider_request_started" -> AgentEvent.ProviderRequestStarted(
             round = bundle.getInt("round"),

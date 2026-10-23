@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.data.promptkit.PromptKitBridge
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
@@ -19,8 +20,13 @@ internal object AgentPromptBuilder {
         rootAvailable: Boolean = false,
         roleplayContext: RoleplayRunContext? = null,
         executionContext: TerminalExecutionContext? = null,
+        /** 本轮用户输入；提示词包处于关键词模式时用它判断是否注入。 */
+        userInput: String? = null,
     ): JSONArray {
-        val messages = buildSystemMessages(config, skillContext, memoryContext, rootAvailable, roleplayContext, executionContext)
+        val messages = buildSystemMessages(
+            config, skillContext, memoryContext, rootAvailable, roleplayContext, executionContext,
+            userInput = prompt,
+        )
         history.forEach { item ->
             runCatching { AgentConversationCodec.toJsonObject(item) }.getOrNull()?.let(messages::put)
         }
@@ -40,10 +46,19 @@ internal object AgentPromptBuilder {
         rootAvailable: Boolean,
         roleplayContext: RoleplayRunContext? = null,
         executionContext: TerminalExecutionContext? = null,
+        /** 本轮用户输入；提示词包处于关键词模式时用它判断是否注入。 */
+        userInput: String? = null,
     ): JSONArray {
         val messages = JSONArray()
         if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
             messages.put(systemMessage(config.systemPrompt))
+        }
+        // 内置工作准则：行为规范精简合并版，每轮注入。
+        // 提示词包：启用且正文非空时作为单独系统消息注入（角色扮演时不注入）。
+        if (roleplayContext == null) {
+            PromptKitBridge.promptFor(userInput)?.takeIf { it.isNotBlank() }?.let { kit ->
+                messages.put(systemMessage(kit))
+            }
         }
         messages.put(
             systemMessage(
@@ -150,6 +165,16 @@ internal object AgentPromptBuilder {
         roleplayContext?.personaMessage()?.let(messages::put)
         buildMemorySystemMessage(memoryContext, writable = roleplayContext == null)?.let(messages::put)
         buildSkillSystemMessage(skillContext)?.let(messages::put)
+        // 工作准则并入「Eta 运行约束」那条系统消息：上游测试按系统消息条数断言，不能新增消息。
+        if (AgentBehaviorRules.enabled) runCatching {
+            for (i in 0 until messages.length()) {
+                val item = messages.getJSONObject(i)
+                if (item.optString("role") == "system" && item.optString("content").startsWith("Eta 运行约束")) {
+                    item.put("content", item.optString("content") + "\n\n" + AgentBehaviorRules.BLOCK)
+                    break
+                }
+            }
+        }
         return messages
     }
 

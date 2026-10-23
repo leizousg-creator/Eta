@@ -1,5 +1,10 @@
 package io.github.mangi.eta.ui.app
 
+import io.github.mangi.eta.ui.model.PromptKitAction
+import io.github.mangi.eta.ui.screens.notifications.NotificationCenterScreen
+import io.github.mangi.eta.ui.screens.notifications.LearningProposalDetailScreen
+import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
+import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -30,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
@@ -43,6 +50,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
@@ -83,6 +91,7 @@ import io.github.mangi.eta.ui.screens.terminal.SharedFoldersScreen
 import io.github.mangi.eta.ui.screens.terminal.TerminalEntryScreen
 import io.github.mangi.eta.ui.screens.terminal.WorkspaceScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
+import io.github.mangi.eta.ui.screens.tools.WebToolsSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechOssScreen
 import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
 import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
@@ -136,8 +145,18 @@ fun AgentAppRoot(
     var navigationResetKey by rememberSaveable { mutableIntStateOf(0) }
     val appViewModel = viewModel<AgentAppViewModel>()
     val agentState = appViewModel.state
+    val runtimeActive by AgentRuntimeService.keepScreenOn.collectAsState()
+    val view = LocalView.current
+    val keepScreenOn = backStack.lastOrNull() == AppRoute.Home &&
+        agentState.homeState.isStreaming && runtimeActive
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
     val skills = appViewModel.skills
     val memory = appViewModel.memory
+    val promptKit = appViewModel.promptKit
+    val notificationCenter = appViewModel.notificationCenter
     val permissionHealth = appViewModel.permissionHealth
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
@@ -163,7 +182,7 @@ fun AgentAppRoot(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    var conversationPaneOpen by remember { mutableStateOf(false) }
+    var conversationPaneOpen by rememberSaveable { mutableStateOf(false) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
@@ -362,8 +381,15 @@ fun AgentAppRoot(
                                 is AgentHomeAction.ReasoningEffortChanged ->
                                     agentState.updateReasoningEffort(action.effort)
                                 AgentHomeAction.CompactContext -> agentState.compactCurrentContext()
+                                AgentHomeAction.LoadEarlierMessages -> agentState.loadEarlierMessages()
+                                is AgentHomeAction.HistoryViewportChanged -> agentState.updateHistoryViewport(action.atLatest)
+                                AgentHomeAction.RetryConversationLoad -> agentState.retryConversationLoad()
                                 is AgentHomeAction.ModelSelected -> agentState.selectModel(action.modelId)
                                 is AgentHomeAction.SubmitMessage -> { requestExecutionNotifications(); agentState.sendCurrentMessage(action.text) }
+                                is AgentHomeAction.InterruptAndSubmitMessage -> { requestExecutionNotifications(); agentState.interruptAndSendCurrentMessage(action.text) }
+                                is AgentHomeAction.SteerQueuedMessage -> { requestExecutionNotifications(); agentState.steerQueuedMessage(action.id) }
+                                is AgentHomeAction.RecallQueuedMessage -> agentState.recallQueuedMessage(action.id, action.currentDraftText)
+                                is AgentHomeAction.RemoveQueuedMessage -> agentState.removeQueuedMessage(action.id)
                                 AgentHomeAction.StopRun -> agentState.stopCurrentRun()
                                 is AgentHomeAction.ImageAttached -> agentState.attachImage(action.uri)
                                 is AgentHomeAction.RemoveImage -> agentState.removePendingImage(action.id)
@@ -397,6 +423,9 @@ fun AgentAppRoot(
                                 AgentHomeAction.ExpandRunTrace -> Unit
                             }
                         },
+                        isLoadingConversation = agentState.isLoadingConversation,
+                        conversationLoadFailed = agentState.conversationLoadFailed,
+                        historyLoadState = agentState.historyLoadState,
                         isDrawerOpen = conversationPaneOpen,
                     )
                 }
@@ -423,11 +452,15 @@ fun AgentAppRoot(
                         when (action) {
                             AgentToolsAction.NavigateBack -> popRoute()
                             AgentToolsAction.OpenBrowser -> pushRoute(AppRoute.Browser)
+                            AgentToolsAction.OpenWebToolsSettings -> pushRoute(AppRoute.WebToolsSettings)
                             AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                             AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
                         }
                     },
                 )
+            }
+            entry<AppRoute.WebToolsSettings>(swipeDismiss = swipeDismiss) {
+                WebToolsSettingsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.Skills>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) {
@@ -596,6 +629,42 @@ fun AgentAppRoot(
                                     "root" -> pushRoute(AppRoute.SystemEnhance)
                                 }
                             }
+                        }
+                    },
+                )
+            }
+            entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
+                AgentTasksScreen(onBack = { popRoute() })
+            }
+            entry<AppRoute.Notifications>(swipeDismiss = swipeDismiss) {
+                NotificationCenterScreen(notificationCenter, { pushRoute(AppRoute.LearningProposalDetail(it)) }, ::popRoute)
+            }
+            entry<AppRoute.LearningProposalDetail>(swipeDismiss = swipeDismiss) { route ->
+                LearningProposalDetailScreen(route.proposalId, notificationCenter, { prompt ->
+                    agentState.startLearningRefinement(prompt)
+                    popRoute()
+                }, ::popRoute)
+            }
+            entry<AppRoute.PromptKit>(swipeDismiss = swipeDismiss) {
+                LaunchedEffect(Unit) { promptKit.refresh() }
+                PromptKitScreen(
+                    state = promptKit.state,
+                    onAction = { action ->
+                        when (action) {
+                            PromptKitAction.NavigateBack -> popRoute()
+                            is PromptKitAction.ToggleEnabled -> promptKit.toggleEnabled(action.enabled)
+                            is PromptKitAction.ToggleKeywordOnly -> promptKit.toggleKeywordOnly(action.enabled)
+                            is PromptKitAction.ToggleBundleOnly -> promptKit.toggleBundleOnly(action.enabled)
+                            is PromptKitAction.SelectVersion -> promptKit.selectVersion(action.id)
+                            PromptKitAction.CreateVersion -> promptKit.createVersion()
+                            PromptKitAction.RemoveActiveVersion -> promptKit.removeActiveVersion()
+                            is PromptKitAction.DraftChanged -> promptKit.updateDraft(action.content)
+                            is PromptKitAction.KeywordsChanged -> promptKit.updateKeywords(action.text)
+                            PromptKitAction.SaveBody -> promptKit.saveBody()
+                            is PromptKitAction.ImportBodyFile -> promptKit.importBodyFile(action.uri)
+                            PromptKitAction.SaveKeywords -> promptKit.saveKeywords()
+                            PromptKitAction.DismissNotice -> promptKit.dismissNotice()
+                            is PromptKitAction.RenameVersion -> promptKit.renameVersion(action.id, action.name)
                         }
                     },
                 )

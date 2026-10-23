@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.tool
 
 import android.app.ActivityManager
+import io.github.mangi.eta.agent.context.VivoPersonalContextQuery
 import android.app.Notification
 import android.content.Context
 import android.content.Intent
@@ -68,6 +69,10 @@ internal class AgentStructuredDeviceTools(
     fun execute(name: String, args: JSONObject): AgentModelClient.ToolResult? {
         val canonical = PersonalSearchTools.canonical(name)
         return try {
+            // vivo 设备：笔记/待办优先走蓝心小V 的个人数据接口（Root 侧执行）。
+            if (AgentToolCapabilities.isVivoDevice() && canonical in VivoPersonalContextQuery.tools) {
+                return sensitive(phoneApps.executeVivoPersonal(canonical, args).toString())
+            }
             personalSearch.execute(canonical, args)?.let {
                 return sensitive(it.toString())
             }

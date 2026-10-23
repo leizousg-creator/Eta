@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.READ_ASSIST_STRUCTURE_SCREEN_CONTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -33,13 +33,10 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.VIBRATE" />
-
     <permission
         android:name="io.github.mangi.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION"
         android:protectionLevel="signature" />
-
     <uses-permission android:name="io.github.mangi.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION" />
-
     <queries>
         <package android:name="com.google.android.googlequicksearchbox" />
         <intent>
@@ -50,7 +47,6 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
-
     <application
         android:name=".EtaApp"
         android:allowBackup="false"
@@ -62,7 +58,6 @@
         android:localeConfig="@xml/locales_config"
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round">
-
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
@@ -75,7 +70,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
         <activity
             android:name=".agent.voice.EtaVoiceAssistActivity"
             android:excludeFromRecents="true"
@@ -89,7 +83,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-
         <service
             android:name=".agent.voice.EtaVoiceInteractionService"
             android:exported="true"
@@ -103,12 +96,10 @@
                 android:name="android.voice_interaction"
                 android:resource="@xml/voice_interaction_service" />
         </service>
-
         <service
             android:name=".agent.voice.EtaVoiceInteractionSessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
-
         <service
             android:name=".agent.voice.EtaRecognitionService"
             android:exported="true"
@@ -122,22 +113,18 @@
                 android:name="android.speech"
                 android:resource="@xml/recognition_service" />
         </service>
-
         <service
             android:name=".agent.voice.EtaAssistantOverlayService"
             android:foregroundServiceType="microphone|mediaPlayback"
             android:exported="false" />
-
         <service
             android:name=".agent.voice.ReadAloudPlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
-
         <service
             android:name=".agent.runtime.AgentRuntimeService"
             android:exported="true"
             tools:ignore="ExportedService" />
-
         <service
             android:name=".agent.runtime.AgentExecutionService"
             android:exported="false"
@@ -146,6 +133,21 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-initiated interactive terminals, local Linux services and device automation tasks" />
         </service>
+        <service android:name=".agent.automation.AgentTaskJobService"
+            android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE" />
+        <service android:name=".agent.automation.AgentTriggerMonitorService"
+            android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-configured event trigger monitoring for saved assistant tasks" />
+        </service>
+        <receiver android:name=".agent.automation.AgentTaskReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".agent.accessibility.AgentAccessibilityService"
@@ -159,7 +161,6 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/agent_accessibility_service" />
         </service>
-
         <service
             android:name=".agent.device.AgentNotificationHistoryService"
             android:exported="false"
@@ -169,7 +170,6 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-
         <provider
             android:name=".agent.accessibility.AgentAccessibilityHealthProvider"
             android:authorities="io.github.mangi.eta.accessibility.health"
@@ -177,5 +177,4 @@
             android:grantUriPermissions="false"
             android:permission="android.permission.MANAGE_ACCESSIBILITY" />
     </application>
-
 </manifest>

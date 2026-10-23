@@ -3,10 +3,17 @@ package io.github.mangi.eta.ui.model
 import io.github.mangi.eta.data.model.ReasoningEffort
 
 sealed interface AgentHomeAction {
+    data object LoadEarlierMessages : AgentHomeAction
+    data class HistoryViewportChanged(val atLatest: Boolean) : AgentHomeAction
+    data object RetryConversationLoad : AgentHomeAction
     data object CompactContext : AgentHomeAction
     data class ReasoningEffortChanged(val effort: ReasoningEffort) : AgentHomeAction
     data class ModelSelected(val modelId: String) : AgentHomeAction
     data class SubmitMessage(val text: String) : AgentHomeAction
+    data class InterruptAndSubmitMessage(val text: String) : AgentHomeAction
+    data class SteerQueuedMessage(val id: String) : AgentHomeAction
+    data class RecallQueuedMessage(val id: String, val currentDraftText: String) : AgentHomeAction
+    data class RemoveQueuedMessage(val id: String) : AgentHomeAction
     data object StopRun : AgentHomeAction
     data class ImageAttached(val uri: String) : AgentHomeAction
     data class RemoveImage(val id: String) : AgentHomeAction
@@ -38,6 +45,7 @@ sealed interface AgentToolsAction {
     data object OpenPermissions : AgentToolsAction
     data object NavigateBack : AgentToolsAction
     data object OpenBrowser : AgentToolsAction
+    data object OpenWebToolsSettings : AgentToolsAction
 }
 
 sealed interface AgentSkillsAction {
@@ -64,4 +72,25 @@ sealed interface AgentMemoryAction {
     data object Save : AgentMemoryAction
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
+}
+
+/** 提示词包页面的动作。 */
+sealed interface PromptKitAction {
+    data object NavigateBack : PromptKitAction
+    data class ToggleEnabled(val enabled: Boolean) : PromptKitAction
+    data class ToggleKeywordOnly(val enabled: Boolean) : PromptKitAction
+    /** 仅使用技能包内技能（默认开启）。 */
+    data class ToggleBundleOnly(val enabled: Boolean) : PromptKitAction
+    data class SelectVersion(val id: String) : PromptKitAction
+    data object CreateVersion : PromptKitAction
+    data object RemoveActiveVersion : PromptKitAction
+    data class DraftChanged(val content: String) : PromptKitAction
+    data class KeywordsChanged(val text: String) : PromptKitAction
+    data object SaveBody : PromptKitAction
+    /** 从文件导入正文（uri 由界面选择器给出）。 */
+    data class ImportBodyFile(val uri: String) : PromptKitAction
+    data object SaveKeywords : PromptKitAction
+    data object DismissNotice : PromptKitAction
+    /** 修改版本显示名（id 不变）。 */
+    data class RenameVersion(val id: String, val name: String) : PromptKitAction
 }

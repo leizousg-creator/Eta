@@ -62,6 +62,8 @@ internal class AgentRunMessageProjector(
         is AgentEvent.AssistantReceived -> if (event.reasoningContent.isBlank()) messages else {
             ensureCompletedThinking(runId, event.round, event.reasoningContent, messages)
         }
+        // 上游当前不会产生该事件（vivo 岛需要其类型）；保持消息不变，避免影响现有投影。
+        is AgentEvent.ModelRequestInterrupted -> messages
         is AgentEvent.RunFinished -> finalizeText(runId, finalizeThinking(runId, messages))
         is AgentEvent.UserSupplementReceived,
         is AgentEvent.RunStarted,

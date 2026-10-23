@@ -8,6 +8,12 @@ import org.json.JSONObject
 internal class PhoneOperationFailure(val code: String, message: String) : RuntimeException(message)
 
 internal object PhoneOperation {
+    /** 参数白名单校验：出现字段之外的键直接拒绝（vivo 个人上下文等自建调用依赖）。 */
+    fun allowed(args: JSONObject, fields: Set<String>) {
+        if (args.keys().asSequence().any { it !in fields })
+            error("INVALID_ARGUMENT", "当前操作包含不支持的参数")
+    }
+
     val reads =
         setOf(
             "get_night_light",

@@ -19,6 +19,7 @@ import io.github.mangi.eta.hook.hyperos.HyperOsLauncherHooks
 import io.github.mangi.eta.hook.hyperos.HyperOsScreenSearchHooks
 import io.github.mangi.eta.hook.system.SystemServerHooks
 import io.github.mangi.eta.hook.system.SystemUiHooks
+import io.github.mangi.eta.hook.vivo.VivoHooks
 import io.github.mangi.eta.hook.xiaoai.XiaoAiHooks
 
 class ModuleMain : XposedModule() {
@@ -86,6 +87,12 @@ class ModuleMain : XposedModule() {
                     recordInstallation(
                         ColorDirectHooks.install(this, logger, param.classLoader, param.applicationInfo)
                     )
+                }
+            }
+
+            ModuleConfig.VIVO_COPILOT_PACKAGE -> {
+                if (isCurrentPackageProcess(ModuleConfig.VIVO_COPILOT_PACKAGE)) {
+                    recordInstallation(VivoHooks.install(this, logger, param.classLoader))
                 }
             }
 

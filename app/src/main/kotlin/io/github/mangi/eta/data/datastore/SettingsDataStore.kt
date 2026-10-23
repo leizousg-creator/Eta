@@ -17,6 +17,7 @@ import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
 import io.github.mangi.eta.data.model.SpeechSettings
+import io.github.mangi.eta.data.model.WebToolsSettings
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
 import java.io.IOException
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.map
 
 internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
+    private val WEB_TOOLS_SETTINGS = stringPreferencesKey("web_tools_settings_v1")
     private val speechJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     fun speechSettingsFlow(): Flow<SpeechSettings> {
@@ -44,12 +46,34 @@ internal object SettingsDataStore {
         dataStore.edit { it[SPEECH_SETTINGS] = speechJson.encodeToString(settings) }
     }
 
+    fun webToolsSettingsFlow(): Flow<WebToolsSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[WEB_TOOLS_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<WebToolsSettings>(raw) }.getOrNull()
+                } ?: WebToolsSettings()
+            }
+    }
+
+    suspend fun webToolsSettings(): WebToolsSettings = webToolsSettingsFlow().first()
+
+    suspend fun setWebToolsSettings(settings: WebToolsSettings) {
+        ensureInitialized()
+        dataStore.edit { it[WEB_TOOLS_SETTINGS] = speechJson.encodeToString(settings) }
+    }
+
     private const val STORE_NAME = "eta_settings"
 
     private val SELECTED_PROVIDER_ID = stringPreferencesKey("selected_provider_id")
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
+    private val AUTO_MEMORY_ENABLED = booleanPreferencesKey("auto_memory_enabled")
+    private val AUTO_SKILLS_ENABLED = booleanPreferencesKey("auto_skills_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -111,6 +135,8 @@ internal object SettingsDataStore {
             prefs.putOrRemove(SELECTED_PROVIDER_ID, updated.selectedProviderId)
             prefs.putOrRemove(SELECTED_MODEL_ID, updated.selectedModelId)
             prefs[MEMORY_ENABLED] = updated.memoryEnabled
+            prefs[AUTO_MEMORY_ENABLED] = updated.autoMemoryEnabled
+            prefs[AUTO_SKILLS_ENABLED] = updated.autoSkillsEnabled
             prefs.putAppearance(updated.appearance.normalized())
         }
     }
@@ -237,6 +263,8 @@ internal object SettingsDataStore {
         selectedProviderId = this[SELECTED_PROVIDER_ID],
         selectedModelId = this[SELECTED_MODEL_ID],
         memoryEnabled = this[MEMORY_ENABLED] ?: true,
+        autoMemoryEnabled = this[AUTO_MEMORY_ENABLED] ?: true,
+        autoSkillsEnabled = this[AUTO_SKILLS_ENABLED] ?: true,
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,

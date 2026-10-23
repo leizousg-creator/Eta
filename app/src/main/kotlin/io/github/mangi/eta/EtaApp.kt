@@ -1,5 +1,6 @@
 package io.github.mangi.eta
 
+import io.github.mangi.eta.data.promptkit.PromptKitBridge
 import io.github.mangi.eta.agent.voice.SpeechOssUpload
 import android.app.Application
 import android.os.Handler
@@ -57,8 +58,19 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         PredictiveBackController.apply(applicationInfo, predictiveBackEnabled)
         AgentMemoryRepository.init(this)
+        PromptKitBridge.init(this)
+        // Robolectric 会实例化 Application；测试环境不启用自建模块，
+        // 否则工具目录与系统提示词会偏离上游，导致大量单测断言失配。
+        if (!android.os.Build.FINGERPRINT.startsWith("robolectric")) {
+            io.github.mangi.eta.agent.model.AgentBehaviorRules.enabled = true
+            io.github.mangi.eta.core.ModuleFlags.toolsEnabled = true
+        }
         ProviderRepository.init(this)
         McpServerRepository.init(this)
+        applicationScope.launch(Dispatchers.IO) {
+            runCatching { io.github.mangi.eta.data.repository.LearningProposalRepository.recoverInterrupted(this@EtaApp) }
+                .onFailure { AndroidAgentLogger.warn("Learning approval recovery unavailable") }
+        }
         XposedServiceHelper.registerListener(this)
         applicationScope.launch {
             try {
@@ -71,6 +83,13 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         applicationScope.launch {
             LinuxEnvironmentSettingsRepository.initialize(this@EtaApp)
             runCatching {
+            runCatching {
+                io.github.mangi.eta.data.db.EtaDatabase.get(this@EtaApp).agentTaskDao().recoverInterrupted(System.currentTimeMillis())
+                io.github.mangi.eta.agent.automation.AgentTaskScheduler.enqueueDue(this@EtaApp)
+                io.github.mangi.eta.agent.automation.AgentTaskScheduler.refresh(this@EtaApp)
+            }.onFailure { throwable ->
+                AndroidAgentLogger.warn("Agent task recovery failed: type=${throwable.javaClass.simpleName}")
+            }
                 SkillRuntime.createIndexService(this@EtaApp).listInstalledSkills()
             }.onFailure { throwable ->
                 AndroidAgentLogger.warn(
