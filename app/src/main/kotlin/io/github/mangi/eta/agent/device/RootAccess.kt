@@ -64,7 +64,10 @@ internal object RootAccess {
         scope.launch {
             try {
                 val present = suExists()
-                if (!present && !explicit) {
+                // 不再因 present=false 直接返回：KernelSU 只在授权后才把 su 注入进程 PATH，
+                // 「先看到 su 才请求授权」会两边互相等待，导致永远检测不到 root。
+                // 这里继续走请求流程，由 su 执行本身触发 root 管理器的授权。
+                if (!present && !explicit && !rootManagerLikelyPresent()) {
                     mutableState.value = RootAccessState(RootAccessStatus.UNAVAILABLE)
                     return@launch
                 }
@@ -109,10 +112,35 @@ internal object RootAccess {
         }.also { probeJob = it }
     }
 
-    private fun suExists(): Boolean = System.getenv("PATH").orEmpty()
-        .split(File.pathSeparatorChar)
-        .filter(String::isNotBlank)
-        .any { path -> File(path, "su").let { it.isFile && it.canExecute() } }
+    /** KernelSU / Magisk / APatch 的工作目录存在，说明设备很可能装有 root 管理器。 */
+    private fun rootManagerLikelyPresent(): Boolean = listOf(
+        "/data/adb/ksu",
+        "/data/adb/magisk",
+        "/data/adb/ap",
+    ).any { path -> runCatching { File(path).exists() }.getOrDefault(false) }
+
+    /**
+     * 候选 su 路径。
+     *
+     * 只查 PATH 是不够的：KernelSU 的 su 在 /data/adb/ksu/bin/su，只有被授权后才注入
+     * 进程 PATH；而探测又要求先看到 su 才肯请求授权，两边互相等待会永远判定「不可用」。
+     * 所以这里显式枚举各 root 方案的路径，命中任意一个即认为 su 存在。
+     */
+    private val SU_CANDIDATES = listOf(
+        "/data/adb/ksu/bin/su",   // KernelSU
+        "/system/bin/su",         // Magisk / 常见位置
+        "/system/xbin/su",
+        "/debug_ramdisk/su",      // APatch
+        "/sbin/su",
+    )
+
+    private fun suExists(): Boolean {
+        if (SU_CANDIDATES.any { path -> File(path).let { it.isFile && it.canExecute() } }) return true
+        return System.getenv("PATH").orEmpty()
+            .split(File.pathSeparatorChar)
+            .filter(String::isNotBlank)
+            .any { path -> File(path, "su").let { it.isFile && it.canExecute() } }
+    }
 }
 
 internal fun shouldRequestRoot(explicit: Boolean, attempted: Boolean, wasGranted: Boolean): Boolean =
