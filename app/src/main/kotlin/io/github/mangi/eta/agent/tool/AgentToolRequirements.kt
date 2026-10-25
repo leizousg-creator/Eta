@@ -20,6 +20,8 @@ internal data class LocalToolRequirement(
     val colorOs: Boolean = false,
     /** vivo 设备上由蓝心小V 的个人数据接口提供同一能力。 */
     val vivoAlternative: Boolean = false,
+    val gui: Boolean = false,
+    val freshObservation: Boolean = false,
 )
 
 /** 展示、模型目录与执行边界共同使用的本地工具能力合同。未登记的工具不能发布。 */
@@ -33,7 +35,7 @@ internal object AgentToolRequirements {
         register(
             RootRequirement.NONE,
             "get_current_context", "search_apps", "launch_app", "open_uri", "browser_use", "web_search", "fetch_url",
-            "observe_screen", "tap", "tap_area", "tap_element", "long_press",
+            "observe_screen", "release_gui", "tap", "tap_area", "tap_element", "long_press",
             "long_press_element", "swipe", "scroll", "scroll_element", "type_text", "input_text",
             "replace_text", "clear_text", "set_clipboard", "get_clipboard", "paste_text",
             "wait", "wait_for_text", "wait_for_package", "open_system_panel",
@@ -78,6 +80,15 @@ internal object AgentToolRequirements {
             "replace_text", "clear_text", "paste_text", "press_key", "open_system_panel",
             "wait_for_text", "wait_for_package",
         ).forEach { name -> put(name, getValue(name).copy(accessibility = true)) }
+        listOf(
+            "observe_screen", "launch_app", "open_uri", "open_system_panel",
+            "wait", "wait_for_text", "wait_for_package", "set_clipboard", "get_clipboard",
+        ).forEach { name -> put(name, getValue(name).copy(gui = true)) }
+        listOf(
+            "tap", "tap_area", "tap_element", "long_press", "long_press_element", "swipe",
+            "scroll", "scroll_element", "type_text", "input_text", "replace_text", "clear_text",
+            "paste_text", "press_key",
+        ).forEach { name -> put(name, getValue(name).copy(gui = true, freshObservation = true)) }
         mapOf(
             "recent_notifications" to ToolSystemAccess.NOTIFICATIONS,
             "search_notification_history" to ToolSystemAccess.NOTIFICATIONS,
@@ -107,6 +118,12 @@ internal object AgentToolRequirements {
         requireNotNull(find(name)) { "Missing tool requirements: $name" }.rootRequirement
 
     fun requiresAccessibility(name: String): Boolean = find(name)?.accessibility == true
+
+    fun requiresGuiControl(name: String?): Boolean = name?.let(::find)?.gui == true
+
+    fun requiresFreshObservation(name: String): Boolean = find(name)?.freshObservation == true
+
+    fun hasForegroundIntentFallback(name: String?): Boolean = name == "set_alarm" || name == "set_timer"
 
     fun rootDenied(name: String, arguments: JSONObject, rootAvailable: Boolean): Boolean {
         if (rootAvailable) return false
