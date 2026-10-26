@@ -54,8 +54,6 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
     ) -> Unit,
-    /** 经验复盘准入代次；null 表示本 run 不参与复盘。 */
-    private val reviewGeneration: Long? = null,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -414,19 +412,6 @@ internal class AgentRuntimeRunExecutor(
                         "Agent runtime artifact persistence failed: type=${throwable.safeLogType()}"
                     )
                 }
-        }
-        // 经验复盘：只在正常提交、结果成功且未取消时提交，由学习提案决定是否采纳。
-        val reviewEpoch = reviewGeneration
-        if (committed && result.ok && !cancelled && reviewEpoch != null) {
-            response?.let { completed ->
-                runCatching {
-                    AgentExperienceReview.submit(
-                        appContext, reviewEpoch, completedRequest, completed, archivedEvents.orEmpty().toList(),
-                    )
-                }.onFailure { error ->
-                    AndroidAgentLogger.warn("Experience review submission failed: type=${error.safeLogType()}")
-                }
-            }
         }
         return Outcome(
             result = result,

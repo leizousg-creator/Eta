@@ -479,7 +479,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 handleAcceptedRunEvent(run, event)
             },
             persistArtifacts = ::persistRunArtifacts,
-            reviewGeneration = runCatching { AgentExperienceReview.foregroundStarted() }.getOrNull(),
         ).execute(run.session, run.request)
         if (!outcome.shouldUpdateHost) return
         postTerminalOverlay(

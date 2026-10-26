@@ -1,10 +1,7 @@
 package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.ui.model.PromptKitAction
-import io.github.mangi.eta.ui.screens.notifications.NotificationCenterScreen
-import io.github.mangi.eta.ui.screens.notifications.LearningProposalDetailScreen
 import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
-import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -157,7 +154,6 @@ fun AgentAppRoot(
     val skills = appViewModel.skills
     val memory = appViewModel.memory
     val promptKit = appViewModel.promptKit
-    val notificationCenter = appViewModel.notificationCenter
     val permissionHealth = appViewModel.permissionHealth
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
@@ -645,18 +641,6 @@ fun AgentAppRoot(
                         }
                     },
                 )
-            }
-            entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
-                AgentTasksScreen(onBack = { popRoute() })
-            }
-            entry<AppRoute.Notifications>(swipeDismiss = swipeDismiss) {
-                NotificationCenterScreen(notificationCenter, { pushRoute(AppRoute.LearningProposalDetail(it)) }, ::popRoute)
-            }
-            entry<AppRoute.LearningProposalDetail>(swipeDismiss = swipeDismiss) { route ->
-                LearningProposalDetailScreen(route.proposalId, notificationCenter, { prompt ->
-                    agentState.startLearningRefinement(prompt)
-                    popRoute()
-                }, ::popRoute)
             }
             entry<AppRoute.PromptKit>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) { promptKit.refresh() }

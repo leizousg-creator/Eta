@@ -12,7 +12,7 @@ internal object AgentToolBatchPlanner {
     )
 
     private val parallelSafeTools = setOf(
-        "search_apps", "web_search", "tasks_triggers", "tasks_list", "tasks_history",
+        "search_apps", "web_search",
     )
     private val fileReadTools = setOf(
         "stat_file", "list_directory", "glob_files", "grep_files", "read_file",

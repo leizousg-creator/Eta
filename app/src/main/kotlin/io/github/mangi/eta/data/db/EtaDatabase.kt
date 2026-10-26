@@ -25,11 +25,8 @@ import androidx.room.migration.Migration
         McpServerEntity::class,
         CharacterEntity::class,
         UserPersonaEntity::class,
-        AgentTaskEntity::class,
-        AgentTaskRunEntity::class,
-        LearningProposalEntity::class,
     ],
-    version = 24,
+    version = 23,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -39,8 +36,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
-    abstract fun agentTaskDao(): AgentTaskDao
-    abstract fun learningProposalDao(): LearningProposalDao
 
     companion object {
         @Volatile
@@ -71,7 +66,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_20_21,
                         MIGRATION_21_22,
                         MIGRATION_22_23,
-                        MIGRATION_23_24,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -116,37 +110,12 @@ internal abstract class EtaDatabase : RoomDatabase() {
             createTextChunkCleanup(database)
         }
 
-        /**
-         * 触发器模块（自动任务）新增两张表。
-         * DDL 与 AgentTaskEntity / AgentTaskRunEntity 的列一一对应；
-         * 索引与实体上的 unique index(taskId, fireKey) 保持一致，避免 Room 校验失败。
-         */
-        /** 学习提案（模型自我改进建议）新增一张表。 */
-        internal val MIGRATION_23_24 = Migration(23, 24) { database ->
-            database.execSQL("CREATE TABLE IF NOT EXISTS learning_proposals (" +
-                "id TEXT NOT NULL PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,detailMarkdown TEXT NOT NULL," +
-                "argumentsJson TEXT NOT NULL,conversationId TEXT NOT NULL,runId TEXT NOT NULL,automatic INTEGER NOT NULL," +
-                "status TEXT NOT NULL,errorCode TEXT NOT NULL,createdAt INTEGER NOT NULL,updatedAt INTEGER NOT NULL," +
-                "read INTEGER NOT NULL,applyOwner TEXT NOT NULL)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_learning_proposals_status ON learning_proposals(status)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_learning_proposals_createdAt ON learning_proposals(createdAt)")
+        internal val MIGRATION_21_22 = Migration(21, 22) { database ->
+            database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
         }
 
         internal val MIGRATION_22_23 = Migration(22, 23) { database ->
-            database.execSQL("CREATE TABLE IF NOT EXISTS agent_tasks (" +
-                "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, prompt TEXT NOT NULL, triggerJson TEXT NOT NULL, " +
-                "enabled INTEGER NOT NULL, nextRunAt INTEGER, cooldownSeconds INTEGER NOT NULL, maxRuns INTEGER NOT NULL, " +
-                "runCount INTEGER NOT NULL, lastStartedAt INTEGER, lastStatus TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)")
-            database.execSQL("CREATE TABLE IF NOT EXISTS agent_task_runs (" +
-                "id TEXT NOT NULL PRIMARY KEY, taskId TEXT NOT NULL, fireKey TEXT NOT NULL, status TEXT NOT NULL, " +
-                "eventJson TEXT NOT NULL, queuedAt INTEGER NOT NULL, startedAt INTEGER, finishedAt INTEGER, resultPreview TEXT NOT NULL)")
-            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_agent_task_runs_taskId_fireKey ON agent_task_runs(taskId,fireKey)")
-            // 上游 3.3.3 的 auth_mode 列并入同一个 22->23，避免与本地的任务表迁移抢同一版本号
             database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
-        }
-
-        internal val MIGRATION_21_22 = Migration(21, 22) { database ->
-            database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
         }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
