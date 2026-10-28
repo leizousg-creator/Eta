@@ -4,11 +4,14 @@ import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentModelInterruptedException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
+import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import org.json.JSONArray
 import org.json.JSONObject
-import io.github.mangi.eta.agent.model.AgentToolBatchPlanner
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
 /**
@@ -53,6 +56,7 @@ internal class AgentLoop(
     private var availableToolNames = emptySet<String>()
     private val accumulatedReasoning = StringBuilder()
     private val sensitiveToolCallIds = linkedSetOf<String>()
+    private val toolBatchLock = Any()
     private var pendingToolImageMessage: JSONObject? = null
     private val context = AgentContextSession(
         config, messages, systemCount, operationId, provider, runController,
@@ -196,6 +200,10 @@ internal class AgentLoop(
 
             if (toolCalls.isNotEmpty()) {
                 val outcomes = executeToolBatch(round, toolCalls, providerResponse.stopReason)
+                outcomes.forEach { outcome ->
+                    appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+                }
+                publishTranscript()
                 appendToolImages(round, outcomes)
                 publishTranscript()
                 round += 1
@@ -282,34 +290,14 @@ internal class AgentLoop(
         AgentConversationCodec.userTextMessage(steeringPrompt(supplement))
             .put("_eta_message_id", "user-$operationId-supplement-${++supplementIndex}")
 
-
-    /**
-     * 批量执行一个 assistant 响应返回的工具调用。
-     *
-     * - [AgentToolBatchPlanner] 把调用切成「可并行段」与「必须顺序段」；
-     * - 并行段按 [AgentToolBatchPlanner.MAX_CONCURRENT_CALLS] 分波，每波共享一个线程池；
-     * - 顺序段逐个执行，任一失败即停止后续（BATCH_STOPPED_ON_ERROR）；
-     * - 只读白名单（[AgentToolBatchPlanner.batchTools]）才允许并行，其余一律退化为顺序。
-     */
-    /**
-     * 批量执行一个 assistant 响应返回的工具调用。
-     *
-     * 默认行为与上游完全一致：按输入顺序逐条执行、逐条落库、逐条发布增量；
-     * 仅当 [AgentToolBatchPlanner] 判定某一段可并行且数量 > 1 时，才用线程池并行，
-     * 其余（含只读白名单之外的一切工具）一律退化为上面的顺序路径。
-     */
     private fun executeToolBatch(
         round: Int,
         toolCalls: List<AgentModelClient.ToolCall>,
         stopReason: AssistantStopReason,
     ): List<ToolOutcome> {
-        val segments = AgentToolBatchPlanner.plan(toolCalls)
-        val allParallel = segments.size == 1 && segments[0].parallel && toolCalls.size > 1
-        if (!allParallel) {
-            // 与上游等价的顺序路径：逐条执行、逐条 appendMessage + publishTranscript。
+        if (stopReason != AssistantStopReason.TOOL_USE) {
             return toolCalls.map { call ->
-                val outcome = when (stopReason) {
-                    AssistantStopReason.TOOL_USE -> executeTool(round, call)
+                when (stopReason) {
                     AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
                         round, call, "TRUNCATED_TOOL_CALL",
                         "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
@@ -319,81 +307,93 @@ internal class AgentLoop(
                         "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
                     )
                 }
-                appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
-                publishTranscript()
-                outcome
             }
         }
 
-        val outcomes = CopyOnWriteArrayList<ToolOutcome>()
-        var stopped = false
-        for (segment in segments) {
-            for (wave in segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)) {
-                if (stopped) {
-                    wave.forEach { call ->
-                        val outcome = rejectedToolOutcome(
-                            round, call, "BATCH_STOPPED_ON_ERROR",
-                            "本批次前序工具失败；该项未执行。请核实失败原因和已完成步骤后重新规划。",
-                        )
-                        appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
-                        outcomes += outcome
-                    }
-                    publishTranscript()
-                    continue
+        val outcomes = mutableListOf<ToolOutcome>()
+        var index = 0
+        while (index < toolCalls.size) {
+            val current = toolCalls[index]
+            if (current.name == AgentSubagentToolCatalog.TOOL_NAME && current.name in availableToolNames) {
+                val parallelBatch = mutableListOf<AgentModelClient.ToolCall>()
+                while (
+                    index < toolCalls.size &&
+                    toolCalls[index].name == AgentSubagentToolCatalog.TOOL_NAME &&
+                    toolCalls[index].name in availableToolNames
+                ) {
+                    parallelBatch += toolCalls[index].copy(round = round)
+                    index += 1
                 }
-                val parallel = segment.parallel && wave.size > 1
-                if (parallel) {
-                    val pool = Executors.newFixedThreadPool(
-                        wave.size.coerceAtMost(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS),
-                    )
-                    val futures = mutableListOf<Pair<AgentModelClient.ToolCall, java.util.concurrent.Future<ToolOutcome>>>()
-                    wave.forEach { call ->
-                        futures += call to pool.submit<ToolOutcome> {
-                            when (stopReason) {
-                                AssistantStopReason.TOOL_USE -> executeTool(round, call)
-                                AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
-                                    round, call, "TRUNCATED_TOOL_CALL",
-                                    "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
+                if (parallelBatch.size == 1) {
+                    outcomes += executeTool(round, parallelBatch.single())
+                } else {
+                    outcomes += executeParallelSubagents(round, parallelBatch)
+                }
+            } else {
+                outcomes += executeTool(round, current.copy(round = round))
+                index += 1
+            }
+        }
+        return outcomes
+    }
+
+    private fun executeParallelSubagents(
+        round: Int,
+        calls: List<AgentModelClient.ToolCall>,
+    ): List<ToolOutcome> {
+        runController.throwIfCancelled()
+        calls.forEach { toolCall ->
+            synchronized(toolBatchLock) {
+                onEvent(
+                    AgentEvent.ToolStarted(
+                        round = round,
+                        toolCallId = toolCall.id,
+                        name = toolCall.name,
+                        argsPreview = traceFormatter.summarizeArguments(toolCall),
+                        command = traceFormatter.displayCommand(toolCall),
+                    ),
+                )
+            }
+        }
+        val outcomes = runBlocking(Dispatchers.IO) {
+            supervisorScope {
+                calls.map { toolCall ->
+                    async {
+                        val result = try {
+                            toolExecutor.execute(toolCall)
+                        } catch (throwable: Exception) {
+                            if (runController.isCancelled) {
+                                AgentModelClient.ToolResult(
+                                    content = JSONObject()
+                                        .put("ok", false)
+                                        .put("code", "SUBAGENT_CANCELLED")
+                                        .put("message", "已停止")
+                                        .toString(),
                                 )
-                                else -> rejectedToolOutcome(
-                                    round, call, "UNEXPECTED_TOOL_CALL",
-                                    "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
+                            } else {
+                                AgentModelClient.ToolResult(
+                                    content = JSONObject()
+                                        .put("ok", false)
+                                        .put("code", "TOOL_ERROR")
+                                        .put("message", throwable.message ?: throwable.javaClass.simpleName)
+                                        .toString(),
                                 )
                             }
                         }
-                    }
-                    futures.forEach { (call, future) ->
-                        val outcome = runCatching { future.get() }.getOrElse {
-                            rejectedToolOutcome(round, call, "BATCH_PARALLEL_FAILED", it.javaClass.simpleName)
+                        synchronized(toolBatchLock) {
+                            if (result.sensitive || AgentSensitiveToolPolicy.isSensitive(toolCall.name)) {
+                                sensitiveToolCallIds += toolCall.id
+                            }
+                            if (!runController.isCancelled) {
+                                emitToolFinished(round, toolCall, result)
+                            }
                         }
-                        appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
-                        outcomes += outcome
-                        if (!traceFormatter.isSuccessResult(outcome.result)) stopped = true
+                        ToolOutcome(toolCall, result)
                     }
-                    pool.shutdown()
-                    publishTranscript()
-                } else {
-                    for (call in wave) {
-                        runController.throwIfCancelled()
-                        val outcome = when (stopReason) {
-                            AssistantStopReason.TOOL_USE -> executeTool(round, call)
-                            AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
-                                round, call, "TRUNCATED_TOOL_CALL",
-                                "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
-                            )
-                            else -> rejectedToolOutcome(
-                                round, call, "UNEXPECTED_TOOL_CALL",
-                                "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
-                            )
-                        }
-                        appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
-                        publishTranscript()
-                        outcomes += outcome
-                        if (!traceFormatter.isSuccessResult(outcome.result)) stopped = true
-                    }
-                }
+                }.awaitAll()
             }
         }
+        runController.throwIfCancelled()
         return outcomes
     }
 
@@ -410,18 +410,19 @@ internal class AgentLoop(
                 message = "工具未在本轮能力目录中提供，请使用当前可用工具",
             )
         }
+        val roundCall = if (toolCall.round == round) toolCall else toolCall.copy(round = round)
         onEvent(
             AgentEvent.ToolStarted(
                 round = round,
-                toolCallId = toolCall.id,
-                name = toolCall.name,
-                argsPreview = traceFormatter.summarizeArguments(toolCall),
-                command = traceFormatter.displayCommand(toolCall),
+                toolCallId = roundCall.id,
+                name = roundCall.name,
+                argsPreview = traceFormatter.summarizeArguments(roundCall),
+                command = traceFormatter.displayCommand(roundCall),
             )
         )
 
         val result = try {
-            toolExecutor.execute(toolCall)
+            toolExecutor.execute(roundCall)
         } catch (throwable: Exception) {
             runController.throwIfCancelled()
             AgentModelClient.ToolResult(
@@ -432,12 +433,12 @@ internal class AgentLoop(
                     .toString(),
             )
         }
-        if (result.sensitive || AgentSensitiveToolPolicy.isSensitive(toolCall.name)) {
-            sensitiveToolCallIds += toolCall.id
+        if (result.sensitive || AgentSensitiveToolPolicy.isSensitive(roundCall.name)) {
+            sensitiveToolCallIds += roundCall.id
         }
 
-        emitToolFinished(round, toolCall, result)
-        return ToolOutcome(toolCall, result)
+        emitToolFinished(round, roundCall, result)
+        return ToolOutcome(roundCall, result)
     }
 
     private fun rejectedToolOutcome(
@@ -482,6 +483,7 @@ internal class AgentLoop(
                 imageCount = result.images.size,
                 imageBytes = result.images.sumOf { it.bytes },
                 success = traceFormatter.isSuccessResult(result),
+                command = result.command,
             )
         )
     }

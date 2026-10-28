@@ -55,6 +55,7 @@ internal object AgentModelClient {
                     thinkingEnabled = effort.enablesReasoning,
                     reasoningEffort = effort,
                     autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+                    subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
                 )
             }
         }
@@ -73,6 +74,7 @@ internal object AgentModelClient {
             modelDisplayName = "GPT-5.5",
             systemPrompt = BuiltinProviders.DEFAULT_SYSTEM_PROMPT,
             autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             terminalTools = Prefs.isEnabled(Prefs.Keys.AGENT_TERMINAL_TOOLS),
             browserTools = Prefs.isEnabled(Prefs.Keys.AGENT_BROWSER_TOOLS),
             deviceDirectTools = Prefs.isEnabled(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS),
@@ -110,6 +112,7 @@ internal object AgentModelClient {
         /** 只允许这些工具名进入本轮目录；null 表示不限制（经验复盘用）。 */
         restrictedToolNames: Set<String>? = null,
         assistantScreenContext: String = "",
+        toolFilter: ((JSONArray) -> JSONArray)? = null,
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
         onEvent: (AgentEvent) -> Unit = {}
@@ -165,7 +168,7 @@ internal object AgentModelClient {
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
-            return tools
+            return toolFilter?.invoke(tools) ?: tools
         }
         val tools = toolsFor(initialCapabilities)
         // 经验复盘等场景只允许白名单工具进入本轮目录；null 表示不限制。
@@ -349,6 +352,7 @@ internal object AgentModelClient {
         val customHeaders: List<CustomHeader> = emptyList(),
         val customBody: List<CustomBody> = emptyList(),
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+        val subagentTools: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
         val authMode: String = ProviderAuthModes.API_KEY,
     ) {
         val usesHostedWebSearch: Boolean
@@ -390,7 +394,8 @@ internal object AgentModelClient {
     data class ToolCall(
         val id: String,
         val name: String,
-        val argumentsJson: String
+        val argumentsJson: String,
+        val round: Int = 1,
     )
 
     data class ToolResult(
@@ -401,6 +406,7 @@ internal object AgentModelClient {
          * 最终 assistant 自己组织的答复不受此标记影响。
          */
         val sensitive: Boolean = false,
+        val command: String? = null,
     )
 
     /** 图片引用：入口侧可为本地 URI/路径，进入模型协议前必须解析为远程 URL 或 data URL。 */
