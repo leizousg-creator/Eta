@@ -1381,83 +1381,6 @@
   <string name="memory_discard">Discard</string>
   <string name="chat_character_input_hint">Say something to %1$s…</string>
   <string name="chat_character_typing">%1$s is replying…</string>
-    <string translatable="false" name="automation_title">Automatic tasks</string>
-    <string translatable="false" name="automation_run_count">%1$d / %2$d runs</string>
-    <string translatable="false" name="automation_trigger_label">Trigger</string>
-    <string translatable="false" name="automation_filters_label">Filters</string>
-    <string translatable="false" name="automation_conditions_label">Additional conditions</string>
-    <string translatable="false" name="automation_next_run_label">Next run</string>
-    <string translatable="false" name="automation_recent_runs_label">Recent runs</string>
-    <string translatable="false" name="automation_event_notification_posted">Notification received</string>
-    <string translatable="false" name="automation_event_notification_removed">Notification removed</string>
-    <string translatable="false" name="automation_event_app_foreground">App opened in foreground</string>
-    <string translatable="false" name="automation_event_device_unlocked">Device unlocked</string>
-    <string translatable="false" name="automation_event_screen_on">Screen turned on</string>
-    <string translatable="false" name="automation_event_screen_off">Screen turned off</string>
-    <string translatable="false" name="automation_event_charging_connected">Charger connected</string>
-    <string translatable="false" name="automation_event_charging_disconnected">Charger disconnected</string>
-    <string translatable="false" name="automation_event_battery_low">Battery low</string>
-    <string translatable="false" name="automation_event_battery_okay">Battery recovered</string>
-    <string translatable="false" name="automation_event_network_connected">Network connected</string>
-    <string translatable="false" name="automation_event_network_disconnected">Network disconnected</string>
-    <string translatable="false" name="automation_event_bluetooth_connected">Bluetooth device connected</string>
-    <string translatable="false" name="automation_event_bluetooth_disconnected">Bluetooth device disconnected</string>
-    <string translatable="false" name="automation_event_headset_connected">Headset connected</string>
-    <string translatable="false" name="automation_event_headset_disconnected">Headset disconnected</string>
-    <string translatable="false" name="automation_event_device_boot">Device started</string>
-    <string translatable="false" name="automation_event_memory_updated">Memory updated</string>
-    <string translatable="false" name="automation_event_task_completed">Task completed</string>
-    <string translatable="false" name="automation_event_task_failed">Task failed</string>
-    <string translatable="false" name="automation_filter_app">App: %1$s</string>
-    <string translatable="false" name="automation_filter_title">Title contains: %1$s</string>
-    <string translatable="false" name="automation_filter_text">Text contains: %1$s</string>
-    <string translatable="false" name="automation_filter_task">Task: %1$s</string>
-    <string translatable="false" name="automation_filter_transport">Network type: %1$s</string>
-    <string translatable="false" name="automation_condition_charging">Charging</string>
-    <string translatable="false" name="automation_condition_not_charging">Not charging</string>
-    <string translatable="false" name="automation_condition_unlocked">Unlocked</string>
-    <string translatable="false" name="automation_condition_locked">Locked</string>
-    <string translatable="false" name="automation_condition_online">Network available</string>
-    <string translatable="false" name="automation_condition_offline">No network</string>
-    <string translatable="false" name="automation_create_hint">Create with your assistant</string>
-    <string translatable="false" name="automation_create_summary">For example: summarize my schedule at 09:00 every weekday. Review, pause or remove saved tasks here. Android may delay background execution.</string>
-    <string translatable="false" name="automation_run">Run now</string>
-    <string translatable="false" name="automation_cancel">Cancel execution</string>
-    <string translatable="false" name="automation_delete">Delete task</string>
-    <string translatable="false" name="automation_channel">Automatic tasks</string>
-    <string translatable="false" name="automation_monitor_title">Monitoring task triggers</string>
-    <string translatable="false" name="automation_monitor_summary">Enabled event tasks receive local events while this service is running.</string>
-    <string translatable="false" name="automation_running">Running</string>
-    <string translatable="false" name="automation_daily">Daily at %1$s (%2$s)</string>
-    <string translatable="false" name="automation_interval">Every %1$d minutes</string>
-    <string translatable="false" name="automation_event">Event: %1$s</string>
-    <string translatable="false" name="automation_ready">Ready</string>
-    <string translatable="false" name="automation_queued">Queued</string>
-    <string translatable="false" name="automation_completed">Completed</string>
-    <string translatable="false" name="automation_failed">Failed</string>
-    <string translatable="false" name="automation_cancelled">Cancelled</string>
-    <string translatable="false" name="automation_interrupted">Interrupted; no replay</string>
-    <string translatable="false" name="automation_config_required">Configure a model</string>
-    <string translatable="false" name="automation_triggers_title">Available triggers</string>
-    <string translatable="false" name="automation_triggers_count">%1$d of %2$d available · tap for details</string>
-    <string translatable="false" name="automation_triggers_time">Time</string>
-    <string translatable="false" name="automation_triggers_device">Device</string>
-    <string translatable="false" name="automation_triggers_connection">Connections</string>
-    <string translatable="false" name="automation_triggers_apps">Apps and notifications</string>
-    <string translatable="false" name="automation_triggers_eta">Eta events</string>
-    <string translatable="false" name="automation_trigger_available">Available</string>
-    <string translatable="false" name="automation_trigger_permission">Permission required</string>
-    <string translatable="false" name="automation_trigger_once">One-time schedule</string>
-    <string translatable="false" name="automation_trigger_daily">Daily schedule</string>
-    <string translatable="false" name="automation_trigger_interval">Repeating interval</string>
-    <string translatable="false" name="automation_trigger_scope_time">Run once, daily with a time zone and weekdays, or at intervals of at least 15 minutes. Android may delay background execution.</string>
-    <string translatable="false" name="automation_trigger_scope_notification">Requires notification access. Filter by app, title or content; earlier notifications and Eta notifications do not trigger tasks.</string>
-    <string translatable="false" name="automation_trigger_scope_accessibility">Requires the Eta accessibility service to be connected. Filter by the app entering the foreground.</string>
-    <string translatable="false" name="automation_trigger_scope_bluetooth">Requires Bluetooth connection permission. Events are received while the trigger monitor is running.</string>
-    <string translatable="false" name="automation_trigger_scope_task">Triggered by an Eta task result. Select the source task to prevent repeated task loops.</string>
-    <string translatable="false" name="automation_trigger_scope_memory">Triggered when Eta local memory is updated.</string>
-    <string translatable="false" name="automation_trigger_scope_boot">Triggered after device startup; interrupted tasks are not replayed.</string>
-    <string translatable="false" name="automation_trigger_scope_monitor">Received while the trigger monitor is running. Missed events are not replayed if Android stops the service.</string>
   <string translatable="false" name="injected_vivo_configure_model">Open Eta and configure a model, API key and context window first.</string>
   <string translatable="false" name="injected_vivo_island_running">Eta is working</string>
   <string translatable="false" name="injected_vivo_island_virtual_running">Eta is working on the virtual screen</string>
@@ -1474,40 +1397,6 @@
   <string translatable="false" name="injected_vivo_island_tool_generic">Using a tool</string>
   <string translatable="false" name="injected_vivo_island_answer_ready">View the answer in Xiao V or Eta</string>
   <string translatable="false" name="injected_vivo_island_eta_answer_ready">View the answer in Eta</string>
-    <string translatable="false" name="inbox_all">All</string>
-    <string translatable="false" name="inbox_append_memory">Add to memory</string>
-    <string translatable="false" name="inbox_applying">Applying</string>
-    <string translatable="false" name="inbox_approve">Approve and save</string>
-    <string translatable="false" name="inbox_approved">Approved</string>
-    <string translatable="false" name="inbox_approved_help">Saved. The next conversation can use the approved content.</string>
-    <string translatable="false" name="inbox_clear_memory">Clear all shared memory</string>
-    <string translatable="false" name="inbox_create_skill">Create a skill</string>
-    <string translatable="false" name="inbox_description">Review proposed memories and skills. Changes take effect only after approval.</string>
-    <string translatable="false" name="inbox_detail">Proposal details</string>
-    <string translatable="false" name="inbox_empty">No notifications yet</string>
-    <string translatable="false" name="inbox_empty_summary">Proposed memories and skills will appear here after a conversation.</string>
-    <string translatable="false" name="inbox_failed">Could not apply</string>
-    <string translatable="false" name="inbox_failed_help">This proposal could not be saved. Check the current content and refine it before submitting again.</string>
-    <string translatable="false" name="inbox_memory">Memory</string>
-    <string translatable="false" name="inbox_not_found">This proposal is unavailable</string>
-    <string translatable="false" name="inbox_operation_failed">Could not update this proposal. Try again.</string>
-    <string translatable="false" name="inbox_pending">Pending approval</string>
-    <string translatable="false" name="inbox_pending_count">Pending (%1$d)</string>
-    <string translatable="false" name="inbox_pending_help">This draft is not active. Review it before approving or rejecting. Refine opens a new conversation with this proposal filled in.</string>
-    <string translatable="false" name="inbox_permission_help">The required learning permission is disabled. Enable it, then refine and submit a new proposal.</string>
-    <string translatable="false" name="inbox_refine">Refine</string>
-    <string translatable="false" name="inbox_refining">Refining in a new conversation</string>
-    <string translatable="false" name="inbox_refining_help">A new conversation was opened with this proposal. Send your changes there, then review the revised proposal.</string>
-    <string translatable="false" name="inbox_reject">Reject</string>
-    <string translatable="false" name="inbox_rejected">Rejected</string>
-    <string translatable="false" name="inbox_replace_memory">Replace memory lines</string>
-    <string translatable="false" name="inbox_skill">Skill</string>
-    <string translatable="false" name="inbox_stale">Content changed</string>
-    <string translatable="false" name="inbox_stale_help">The source content changed. Refine this proposal using the latest version.</string>
-    <string translatable="false" name="inbox_title">Notification center</string>
-    <string translatable="false" name="inbox_uncertain">Result needs checking</string>
-    <string translatable="false" name="inbox_uncertain_help">Saving was interrupted or could not be confirmed. Check current memory or skills before refining; this change will not be replayed automatically.</string>
-    <string translatable="false" name="inbox_update_skill">Update an existing skill</string>
     <string translatable="false" name="conversation_context_capsule">Context</string>
     <string translatable="false" name="conversation_speed_description">Last model request: %1$s output tokens per second, including time to first token.</string>
   <string translatable="false" name="permission_bluetooth_denied">Bluetooth connection permission was not granted. You can allow Nearby devices in Eta’s system app permission settings to enable Bluetooth triggers.</string>
