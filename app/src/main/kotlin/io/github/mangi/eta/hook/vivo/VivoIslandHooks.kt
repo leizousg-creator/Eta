@@ -54,6 +54,17 @@ internal object VivoIslandHooks {
                 missing("vivo.island.capsule", "SuperXCapsuleDataController.addAtomIslandCapsuleElementToShow", "未找到原子岛入口")
                 return@install
             }
+            val clickClass = HookSupport.findClassOrNull(classLoader, "com.vivo.island.data.AtomIslandsDataController")
+            val clickMethod = clickClass?.let { HookSupport.findMethod(it, "handleIslandClickEvent", Int::class.javaPrimitiveType!!) }
+            if (clickMethod != null) {
+                intercept("vivo.island.click", clickMethod, "记录岛的点击事件") { chain ->
+                    logger.info("岛点击事件: ${chain.args.getOrNull(0)}")
+                    chain.proceed()
+                }
+            } else {
+                logger.warn("未找到 AtomIslandsDataController.handleIslandClickEvent，点击无法观测")
+            }
+
             intercept("vivo.island.capsule", method, "Eta 通知投递到原子岛") { chain ->
                 runCatching {
                     val sbn = chain.args.getOrNull(0) as? StatusBarNotification
