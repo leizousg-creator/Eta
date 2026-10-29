@@ -32,6 +32,11 @@ internal object VivoIslandHooks {
     private const val RIGHT_CLASS = "com.vivo.island.bean.RightIslandBean"
     private const val TYPE_INFO_CLASS = "com.vivo.island.info.TypeInfo"
     private const val PROXY_CLASS = "com.vivo.systemuiplugin.systemui.islands.IslandServiceProxy"
+    private const val LANDING_JSON = "{\"mType\":\"app\",\"mPkgName\":\"" + TARGET_PACKAGE + "\",\"isDeepLink\":false}"
+
+    /** 内容没变化就不重复投递，避免进度刷新时胶囊闪烁。 */
+    @Volatile
+    private var lastSignature: String? = null
 
     fun install(
         module: XposedModule,
@@ -72,6 +77,14 @@ internal object VivoIslandHooks {
 
         val state = capsule.getInt(KEY_STATE, 0)
         val key = sbn.key ?: return
+        val content = capsule.getString(KEY_CONTENT)?.takeIf { it.isNotBlank() }
+        if (state != 0) {
+            val signature = "$content|${capsule.getInt(KEY_SHOW_TIME, -1)}"
+            if (signature == lastSignature) return
+            lastSignature = signature
+        } else {
+            lastSignature = null
+        }
         val showTime = capsule.getInt(KEY_SHOW_TIME, -1).let { if (it <= 0) 8 else it }
 
         val beanClass = Class.forName(BEAN_CLASS, false, loader)
@@ -84,7 +97,6 @@ internal object VivoIslandHooks {
         bean.setBool("setSupportAppPkgDisappear", true)
 
         if (state != 0) {
-            val content = capsule.getString(KEY_CONTENT)?.takeIf { it.isNotBlank() }
             val icon = capsule.getParcelable(KEY_ICON, Icon::class.java)
             if (content == null || icon == null) {
                 logger.warn("原子岛字段缺失: content=${content != null} icon=${icon != null}")
@@ -93,6 +105,8 @@ internal object VivoIslandHooks {
             val typeInfo = Class.forName(TYPE_INFO_CLASS, false, loader)
             val businessKey = typeInfo.getField("BUSINESS_NEW_SUPER_X").get(null) as String
             bean.setString("setBusinessKey", businessKey)
+            // 点击胶囊回到 Eta（landing 是插件识别点击目标的字段）。
+            bean.setString("setLandingInfo", LANDING_JSON)
             bean.invoke("setTimeout", Long::class.javaPrimitiveType!!, System.currentTimeMillis() + showTime * 1000L)
             bean.setInt("setShowTime", showTime)
             bean.setInt("setPriority", 2)

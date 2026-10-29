@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Bundle
 import android.util.Log
+import io.github.mangi.eta.R
 
 /**
  * 把 Eta 的进行中状态写进 vivo「原子岛 / 超级岛」能识别的通知扩展字段。
@@ -36,7 +37,7 @@ internal object VivoCapsuleExtras {
     ) {
         if (content.isBlank()) return
         runCatching {
-            val icon = Icon.createWithResource(context, android.R.drawable.stat_notify_sync)
+            val icon = Icon.createWithResource(context, R.drawable.ic_notification)
             val capsule = Bundle().apply {
                 putInt(KEY_STATE, 1)
                 putString(KEY_CONTENT, content.take(40))
