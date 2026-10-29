@@ -88,6 +88,11 @@
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <!-- 声明 ASSISTANT 动作后，RoleManager 才会把 Eta 视为数字助理候选。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSISTANT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <service
             android:name=".agent.voice.EtaVoiceInteractionService"

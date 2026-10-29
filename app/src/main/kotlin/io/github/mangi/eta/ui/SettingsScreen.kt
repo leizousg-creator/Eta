@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.app.role.RoleManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
@@ -134,12 +135,25 @@ private fun SettingsPageContent(
         mutableStateOf(AccessibilityProtectionClient.isEnabled(context))
     }
     var accessibilityProtectionPending by remember { mutableStateOf(false) }
+    // 数字助理：优先走 RoleManager 的角色申请，系统不支持时回退到语音输入设置页。
+    val assistantRoleManager = remember { context.getSystemService(RoleManager::class.java) }
+    var assistantHolder by remember {
+        mutableStateOf(runCatching { assistantRoleManager?.getRoleHolders(RoleManager.ROLE_ASSISTANT)?.firstOrNull() }.getOrNull())
+    }
     val openAssistantSettings: () -> Unit = {
+        val roleIntent = runCatching {
+            assistantRoleManager?.takeIf { it.isRoleAvailable(RoleManager.ROLE_ASSISTANT) }
+                ?.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT)
+        }.getOrNull()
         val failed = runCatching {
-            context.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+            context.startActivity(roleIntent ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
         }.isFailure
         if (failed) {
             Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
+        } else {
+            assistantHolder = runCatching {
+                assistantRoleManager?.getRoleHolders(RoleManager.ROLE_ASSISTANT)?.firstOrNull()
+            }.getOrNull()
         }
     }
 
@@ -466,6 +480,11 @@ private fun SettingsPageContent(
                 EtaPreferenceGroup {
                     EtaArrowPreference(
                         title = stringResource(R.string.ui_eta_system_assistant_003e9b),
+                        summary = when (val holder = assistantHolder) {
+                            null -> "未设置，点按选择 Eta 为默认数字助理"
+                            context.packageName -> "当前：Eta"
+                            else -> "当前：$holder"
+                        },
                         startAction = {
                             EtaPreferenceIcon(
                                 icon = Icons.Rounded.SupportAgent,
