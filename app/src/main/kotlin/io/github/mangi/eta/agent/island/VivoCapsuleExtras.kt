@@ -40,7 +40,7 @@ internal object VivoCapsuleExtras {
         context: Context,
         builder: Notification.Builder,
         content: String,
-        showSeconds: Int = -1,
+        showSeconds: Int = 8,
     ) {
         if (content.isBlank()) return
         runCatching {
@@ -56,7 +56,7 @@ internal object VivoCapsuleExtras {
                 putInt(KEY_STATE, 1)
                 putString(KEY_CONTENT, content.take(40))
                 putParcelable(KEY_ICON, icon)
-                putInt(KEY_SHOW_TIME, showSeconds)
+                putInt(KEY_SHOW_TIME, showSeconds.coerceIn(3, 30))
                 // 点击胶囊直接回 Eta：插件会读这两个键决定“点击后做什么”。
                 putParcelable(KEY_CLICK_RESP, open)
                 putBoolean(KEY_LANDING_AUTO_HIDE, true)
@@ -88,7 +88,7 @@ internal object VivoCapsuleExtras {
                             putParcelable("island.superx.clickResp", open)
                             putString("island.superx.landingPkg", "io.github.mangi.eta")
                             putString("island.superx.landingInfo", LANDING_JSON)
-                            putInt("island.superx.showTime", showSeconds)
+                            putInt("island.superx.showTime", showSeconds.coerceIn(3, 30))
                             putInt("island.superx.islandType", 2)
                             putBoolean("island.superx.forceShow", true)
                         },
