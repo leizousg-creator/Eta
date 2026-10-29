@@ -1,6 +1,5 @@
 package io.github.mangi.eta
 
-import io.github.mangi.eta.hook.vivo.VivoIslandHooks
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
@@ -65,15 +64,7 @@ class ModuleMain : XposedModule() {
 
             ModuleConfig.SYSTEM_UI_PACKAGE -> {
                 if (currentProcessName == ModuleConfig.SYSTEM_UI_PACKAGE) {
-                    recordInstallation(
-                        HookInstallation.combine(
-                            group = "SystemUI",
-                            installations = listOf(
-                                SystemUiHooks.install(this, logger, param.classLoader),
-                                VivoIslandHooks.install(this, logger, param.classLoader),
-                            ),
-                        )
-                    )
+                    recordInstallation(SystemUiHooks.install(this, logger, param.classLoader))
                 }
             }
 

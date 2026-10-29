@@ -33,6 +33,9 @@ internal object VivoCapsuleExtras {
     private const val KEY_CLICK_RESP = "notification.superx.capsule.clickResp"
     private const val KEY_LANDING_AUTO_HIDE = "notification.superx.capsule.landingAutoHide"
     private const val KEY_ISLAND = "notification.superx.island"
+
+    /** 胶囊/岛卡片的停留秒数；运行期间每次通知更新都会续期。调整参数时只改这里。 */
+    const val CAPSULE_SHOW_SECONDS = 8
     private const val LANDING_JSON =
         "{\"mType\":\"app\",\"mPkgName\":\"io.github.mangi.eta\",\"isDeepLink\":false}"
 
@@ -40,7 +43,7 @@ internal object VivoCapsuleExtras {
         context: Context,
         builder: Notification.Builder,
         content: String,
-        showSeconds: Int = 8,
+        showSeconds: Int = CAPSULE_SHOW_SECONDS,
     ) {
         if (content.isBlank()) return
         runCatching {
