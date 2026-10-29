@@ -46,7 +46,6 @@ internal object AgentToolCatalog {
                 AgentFileToolCatalog.appendTo(tools)
             }
         })
-        // 批量工具由我们迁入：仅在应用进程启用，避免改动上游单测的工具集合断言。
-        return AgentBatchToolCatalog.project(tools, enabled = ModuleFlags.batchExecutionEnabled)
+        return tools
     }
 }

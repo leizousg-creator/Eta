@@ -12,14 +12,4 @@ object ModuleFlags {
     /** 工具类模块（`prompt_kit`、vivo 个人数据）是否注入工具目录。 */
     @Volatile
     var toolsEnabled: Boolean = false
-
-    /**
-     * `batch` 工具是否对外暴露。
-     *
-     * 目前只实现了目录投影（`AgentBatchToolCatalog.project`），执行侧尚未接入 ——
-     * 模型一旦调用会落到「未知工具」。默认保持开启只为与既有单测的目录断言一致；
-     * 真正要用之前必须先补 `AgentLocalTools` 里的 batch 执行分支。
-     */
-    @Volatile
-    var batchExecutionEnabled: Boolean = true
 }

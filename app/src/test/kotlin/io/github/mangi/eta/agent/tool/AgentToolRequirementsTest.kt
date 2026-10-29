@@ -17,7 +17,6 @@ class AgentToolRequirementsTest {
         val executionOnly = setOf("input_text", "replace_text", "clear_text", "paste_text")
         
         // 自建模块（prompt_kit）在测试环境不注入工具目录，从期望集合中排除；
-        // batch 已开放（ModuleFlags.batchExecutionEnabled = true），会真实注入，故不在排除集内。
         val selfBuiltTools = setOf("prompt_kit")
         assertEquals(AgentToolRequirements.toolNames - executionOnly - selfBuiltTools, tools.names())
         executionOnly.forEach { name -> assertFalse("$name 仅保留执行兼容，不再向模型暴露", name in tools.names()) }
