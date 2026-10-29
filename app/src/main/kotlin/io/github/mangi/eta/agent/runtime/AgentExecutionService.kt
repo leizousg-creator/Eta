@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import io.github.mangi.eta.agent.island.VivoCapsuleExtras
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -123,6 +124,8 @@ internal class AgentExecutionService : Service() {
             // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
+        // vivo 原子岛：把当前状态写进 superx 通知扩展（厂商字段缺失时无副作用）。
+        VivoCapsuleExtras.apply(this, builder, executionText(this, status, taskCount, progress))
         return builder.build()
     }
 
