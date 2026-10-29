@@ -92,6 +92,12 @@ internal object VivoIslandHooks {
         bean.setInt("setOperation", if (state == 0) 2 else 0)
         bean.setString("setId", key)
         bean.invoke("setSbn", StatusBarNotification::class.java, sbn)
+        // 点击处理：AtomIslandBaseLinearLayout 里只有 getIslandClick()==1 时才走
+        // 「handleIslandClickEvent + getClickIslandResp()」，所以两个都要给。
+        sbn.notification?.contentIntent?.let { pending ->
+            bean.invoke("setClickIslandResp", android.app.PendingIntent::class.java, pending)
+            bean.setInt("setIslandClick", 1)
+        }
         bean.setString("setSourcePackageName", sbn.packageName)
         bean.setBool("setScrollRemove", true)
         bean.setBool("setSupportAppPkgDisappear", true)
