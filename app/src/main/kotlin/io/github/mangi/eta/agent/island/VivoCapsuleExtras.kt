@@ -32,6 +32,9 @@ internal object VivoCapsuleExtras {
     private const val KEY_SHOW_TIME = "notification.superx.capsule.showTime"
     private const val KEY_CLICK_RESP = "notification.superx.capsule.clickResp"
     private const val KEY_LANDING_AUTO_HIDE = "notification.superx.capsule.landingAutoHide"
+    private const val KEY_ISLAND = "notification.superx.island"
+    private const val LANDING_JSON =
+        "{\"mType\":\"app\",\"mPkgName\":\"io.github.mangi.eta\",\"isDeepLink\":false}"
 
     fun apply(
         context: Context,
@@ -58,7 +61,40 @@ internal object VivoCapsuleExtras {
                 putParcelable(KEY_CLICK_RESP, open)
                 putBoolean(KEY_LANDING_AUTO_HIDE, true)
             }
-            builder.addExtras(Bundle().apply { putBundle(KEY_CAPSULE, capsule) })
+            builder.addExtras(
+                Bundle().apply {
+                    putBundle(KEY_CAPSULE, capsule)
+                    // 新原子岛分支（SuperXCapsuleDataController.addAtomIslandElementToShow）
+                    // 要求 leftTemplate/rightTemplate/leftInfo/rightInfo 齐全，
+                    // 点击响应放在 island.superx.clickResp。
+                    putBundle(
+                        KEY_ISLAND,
+                        Bundle().apply {
+                            putInt("island.superx.template", -1)
+                            putInt("island.superx.leftTemplate", 3)
+                            putInt("island.superx.rightTemplate", 7)
+                            putBundle(
+                                "island.superx.leftInfo",
+                                Bundle().apply { putParcelable("island.superx.leftInfo.icon", icon) },
+                            )
+                            putBundle(
+                                "island.superx.rightInfo",
+                                Bundle().apply {
+                                    putCharSequence("island.superx.rightInfo.content", content.take(40))
+                                    putParcelable("island.superx.rightInfo.clickResp", open)
+                                },
+                            )
+                            putInt("island.superx.islandClick", 1)
+                            putParcelable("island.superx.clickResp", open)
+                            putString("island.superx.landingPkg", "io.github.mangi.eta")
+                            putString("island.superx.landingInfo", LANDING_JSON)
+                            putInt("island.superx.showTime", showSeconds)
+                            putInt("island.superx.islandType", 2)
+                            putBoolean("island.superx.forceShow", true)
+                        },
+                    )
+                },
+            )
         }.onFailure { Log.w(TAG, "capsule extras failed: ${it.javaClass.simpleName}") }
     }
 
