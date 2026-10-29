@@ -138,7 +138,11 @@ private fun SettingsPageContent(
     // 数字助理：优先走 RoleManager 的角色申请，系统不支持时回退到语音输入设置页。
     val assistantRoleManager = remember { context.getSystemService(RoleManager::class.java) }
     var assistantHolder by remember {
-        mutableStateOf(runCatching { assistantRoleManager?.getRoleHolders(RoleManager.ROLE_ASSISTANT)?.firstOrNull() }.getOrNull())
+        mutableStateOf<String?>(
+            runCatching {
+                assistantRoleManager?.getRoleHolders(RoleManager.ROLE_ASSISTANT)?.firstOrNull()
+            }.getOrNull(),
+        )
     }
     val openAssistantSettings: () -> Unit = {
         val roleIntent = runCatching {
