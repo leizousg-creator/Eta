@@ -38,6 +38,11 @@ internal object VivoIslandHooks {
     @Volatile
     private var lastSignature: String? = null
 
+    private fun diag(logger: ModuleLogger, message: String) {
+        android.util.Log.i("EtaIsland", message)
+        logger.info(message)
+    }
+
     fun install(
         module: XposedModule,
         rootLogger: ModuleLogger,
@@ -57,12 +62,13 @@ internal object VivoIslandHooks {
             val clickClass = HookSupport.findClassOrNull(classLoader, "com.vivo.island.data.AtomIslandsDataController")
             val clickMethod = clickClass?.let { HookSupport.findMethod(it, "handleIslandClickEvent", Int::class.javaPrimitiveType!!) }
             if (clickMethod != null) {
+                diag(logger, "点击观测 hook 已安装")
                 intercept("vivo.island.click", clickMethod, "记录岛的点击事件") { chain ->
-                    logger.info("岛点击事件: ${chain.args.getOrNull(0)}")
+                    diag(logger, "岛点击事件: ${chain.args.getOrNull(0)}")
                     chain.proceed()
                 }
             } else {
-                logger.warn("未找到 AtomIslandsDataController.handleIslandClickEvent，点击无法观测")
+                diag(logger, "未找到 handleIslandClickEvent，点击无法观测")
             }
 
             intercept("vivo.island.capsule", method, "Eta 通知投递到原子岛") { chain ->
@@ -70,7 +76,7 @@ internal object VivoIslandHooks {
                     val sbn = chain.args.getOrNull(0) as? StatusBarNotification
                     if (sbn != null) post(sbn, classLoader, logger)
                 }.onFailure {
-                    logger.warn("原子岛投递失败: ${it.javaClass.simpleName} ${it.message}")
+                    diag(logger, "原子岛投递失败 ${it.javaClass.simpleName}: ${it.message}")
                 }
                 chain.proceed()
             }
@@ -116,7 +122,7 @@ internal object VivoIslandHooks {
         if (state != 0) {
             val icon = capsule.getParcelable(KEY_ICON, Icon::class.java)
             if (content == null || icon == null) {
-                logger.warn("原子岛字段缺失: content=${content != null} icon=${icon != null}")
+                diag(logger, "原子岛字段缺失 content=${content != null} icon=${icon != null}")
                 return
             }
             val typeInfo = Class.forName(TYPE_INFO_CLASS, false, loader)
@@ -147,7 +153,7 @@ internal object VivoIslandHooks {
         val proxyClass = Class.forName(PROXY_CLASS, false, loader)
         val proxy = proxyClass.getField("INSTANCE").get(null)
         proxyClass.getMethod("postIslandDataBean", beanClass).invoke(proxy, bean)
-        logger.info("原子岛已投递: state=$state key=$key showTime=$showTime")
+        diag(logger, "原子岛已投递 state=$state key=$key showTime=$showTime")
     }
 
     private fun Any.invoke(name: String, type: Class<*>, value: Any?) {

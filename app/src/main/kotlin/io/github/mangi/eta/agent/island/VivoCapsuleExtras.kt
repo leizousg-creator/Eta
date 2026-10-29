@@ -37,7 +37,7 @@ internal object VivoCapsuleExtras {
     ) {
         if (content.isBlank()) return
         runCatching {
-            val icon = Icon.createWithResource(context, R.mipmap.ic_launcher)
+            val icon = Icon.createWithResource(context, R.drawable.ic_notification)
             val capsule = Bundle().apply {
                 putInt(KEY_STATE, 1)
                 putString(KEY_CONTENT, content.take(40))
