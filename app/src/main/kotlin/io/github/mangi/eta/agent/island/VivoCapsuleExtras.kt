@@ -1,7 +1,9 @@
 package io.github.mangi.eta.agent.island
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Bundle
 import android.util.Log
@@ -28,6 +30,8 @@ internal object VivoCapsuleExtras {
     private const val KEY_CONTENT = "notification.superx.capsule.content"
     private const val KEY_ICON = "notification.superx.capsule.icon"
     private const val KEY_SHOW_TIME = "notification.superx.capsule.showTime"
+    private const val KEY_CLICK_RESP = "notification.superx.capsule.clickResp"
+    private const val KEY_LANDING_AUTO_HIDE = "notification.superx.capsule.landingAutoHide"
 
     fun apply(
         context: Context,
@@ -38,11 +42,21 @@ internal object VivoCapsuleExtras {
         if (content.isBlank()) return
         runCatching {
             val icon = Icon.createWithResource(context, R.drawable.ic_notification)
+            val open = PendingIntent.getActivity(
+                context,
+                2,
+                Intent(context, io.github.mangi.eta.ui.MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
             val capsule = Bundle().apply {
                 putInt(KEY_STATE, 1)
                 putString(KEY_CONTENT, content.take(40))
                 putParcelable(KEY_ICON, icon)
                 putInt(KEY_SHOW_TIME, showSeconds)
+                // 点击胶囊直接回 Eta：插件会读这两个键决定“点击后做什么”。
+                putParcelable(KEY_CLICK_RESP, open)
+                putBoolean(KEY_LANDING_AUTO_HIDE, true)
             }
             builder.addExtras(Bundle().apply { putBundle(KEY_CAPSULE, capsule) })
         }.onFailure { Log.w(TAG, "capsule extras failed: ${it.javaClass.simpleName}") }
