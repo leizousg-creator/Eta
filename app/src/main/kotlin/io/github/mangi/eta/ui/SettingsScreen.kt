@@ -136,28 +136,16 @@ private fun SettingsPageContent(
     }
     var accessibilityProtectionPending by remember { mutableStateOf(false) }
     // 数字助理：优先走 RoleManager 的角色申请，系统不支持时回退到语音输入设置页。
-    val assistantRoleManager = remember { context.getSystemService(RoleManager::class.java) }
-    var assistantHolder by remember {
-        mutableStateOf<String?>(
-            runCatching {
-                assistantRoleManager?.getRoleHolders(RoleManager.ROLE_ASSISTANT)?.firstOrNull()
-            }.getOrNull(),
-        )
-    }
+    // 这里用反射调用 RoleManager 的公开方法，避免不同 compileSdk 桩里方法缺失导致编译失败。
+    var assistantHolder by remember { mutableStateOf(assistantRoleHolder(context)) }
     val openAssistantSettings: () -> Unit = {
-        val roleIntent = runCatching {
-            assistantRoleManager?.takeIf { it.isRoleAvailable(RoleManager.ROLE_ASSISTANT) }
-                ?.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT)
-        }.getOrNull()
-        val failed = runCatching {
-            context.startActivity(roleIntent ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
-        }.isFailure
+        val intent = assistantRoleRequestIntent(context)
+            ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
+        val failed = runCatching { context.startActivity(intent) }.isFailure
         if (failed) {
             Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
         } else {
-            assistantHolder = runCatching {
-                assistantRoleManager?.getRoleHolders(RoleManager.ROLE_ASSISTANT)?.firstOrNull()
-            }.getOrNull()
+            assistantHolder = assistantRoleHolder(context)
         }
     }
 
@@ -1082,3 +1070,29 @@ private fun SystemizerInstallResult.toToastMessage(context: Context): String =
             ?.let { "$message：$it" }
             ?: message
     }
+
+private const val ASSISTANT_ROLE = "android.app.role.ASSISTANT"
+
+/** 当前数字助理角色的持有者包名；取不到返回 null。 */
+private fun assistantRoleHolder(context: Context): String? = runCatching {
+    val manager = context.getSystemService(RoleManager::class.java)
+    val method = manager?.javaClass?.methods?.firstOrNull {
+        it.name == "getRoleHolders" && it.parameterTypes.size == 1
+    }
+    @Suppress("UNCHECKED_CAST")
+    (method?.invoke(manager, ASSISTANT_ROLE) as? List<String>)?.firstOrNull()
+}.getOrNull()
+
+/** 申请数字助理角色的系统 Intent；系统不支持时返回 null。 */
+private fun assistantRoleRequestIntent(context: Context): Intent? = runCatching {
+    val manager = context.getSystemService(RoleManager::class.java)
+    val available = manager?.javaClass?.methods?.firstOrNull {
+        it.name == "isRoleAvailable" && it.parameterTypes.size == 1
+    }?.invoke(manager, ASSISTANT_ROLE) as? Boolean
+    if (available != true) return@runCatching null
+    val target = manager ?: return@runCatching null
+    val method = target.javaClass.methods.firstOrNull {
+        it.name == "createRequestRoleIntent" && it.parameterTypes.size == 1
+    }
+    method?.invoke(target, ASSISTANT_ROLE) as? Intent
+}.getOrNull()
