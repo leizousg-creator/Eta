@@ -135,17 +135,34 @@ private fun SettingsPageContent(
         mutableStateOf(AccessibilityProtectionClient.isEnabled(context))
     }
     var accessibilityProtectionPending by remember { mutableStateOf(false) }
-    // 数字助理：优先走 RoleManager 的角色申请，系统不支持时回退到语音输入设置页。
-    // 这里用反射调用 RoleManager 的公开方法，避免不同 compileSdk 桩里方法缺失导致编译失败。
-    var assistantHolder by remember { mutableStateOf(assistantRoleHolder(context)) }
+    // 数字助理：
+    //  1) 首选走我们自己的接管机制 —— 写 POWER_KEY_ASSISTANT_TARGET=eta，
+    //     由 SystemServer 侧的 AssistantManager 把 secure assistant /
+    //     voice_interaction_service 改写成 Eta 的组件（不需要 RoleManager 配合）。
+    //  2) 失败时退回系统的角色申请 Intent，再不行退回语音输入设置页。
+    var assistantHolder by remember { mutableStateOf(secureAssistantHolder(context)) }
     val openAssistantSettings: () -> Unit = {
-        val intent = assistantRoleRequestIntent(context)
-            ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
-        val failed = runCatching { context.startActivity(intent) }.isFailure
-        if (failed) {
-            Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
+        val committed = prefs?.let { preference ->
+            putStringSync(
+                prefs = preference,
+                key = Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
+                value = PowerAssistantTarget.ETA.persistedValue,
+            )
+        } ?: false
+        if (committed) {
+            assistantHolder = secureAssistantHolder(context)
+            Toast.makeText(
+                context,
+                "已提交为默认数字助理，接管生效后此行会显示 Eta",
+                Toast.LENGTH_SHORT,
+            ).show()
         } else {
-            assistantHolder = assistantRoleHolder(context)
+            val intent = assistantRoleRequestIntent(context)
+                ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
+            val failed = runCatching { context.startActivity(intent) }.isFailure
+            if (failed) {
+                Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -473,9 +490,8 @@ private fun SettingsPageContent(
                     EtaArrowPreference(
                         title = stringResource(R.string.ui_eta_system_assistant_003e9b),
                         summary = when (val holder = assistantHolder) {
-                            null -> "未设置，点按选择 Eta 为默认数字助理"
-                            context.packageName -> "当前：Eta"
-                            else -> "当前：$holder"
+                            null, "" -> "未设置，点按把 Eta 设为默认数字助理"
+                            else -> if (holder.startsWith(context.packageName)) "当前：Eta" else "当前：$holder"
                         },
                         startAction = {
                             EtaPreferenceIcon(
@@ -1095,4 +1111,9 @@ private fun assistantRoleRequestIntent(context: Context): Intent? = runCatching 
         it.name == "createRequestRoleIntent" && it.parameterTypes.size == 1
     }
     method?.invoke(target, ASSISTANT_ROLE) as? Intent
+}.getOrNull()
+
+/** 读取系统 secure assistant，判断当前生效的数字助理（Eta 的接管也写这里）。 */
+private fun secureAssistantHolder(context: Context): String? = runCatching {
+    Settings.Secure.getString(context.contentResolver, "assistant")?.takeIf { it.isNotBlank() }
 }.getOrNull()
