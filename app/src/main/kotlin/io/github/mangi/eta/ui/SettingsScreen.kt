@@ -135,37 +135,6 @@ private fun SettingsPageContent(
         mutableStateOf(AccessibilityProtectionClient.isEnabled(context))
     }
     var accessibilityProtectionPending by remember { mutableStateOf(false) }
-    // 数字助理：
-    //  1) 首选走我们自己的接管机制 —— 写 POWER_KEY_ASSISTANT_TARGET=eta，
-    //     由 SystemServer 侧的 AssistantManager 把 secure assistant /
-    //     voice_interaction_service 改写成 Eta 的组件（不需要 RoleManager 配合）。
-    //  2) 失败时退回系统的角色申请 Intent，再不行退回语音输入设置页。
-    var assistantHolder by remember { mutableStateOf(secureAssistantHolder(context)) }
-    val openAssistantSettings: () -> Unit = {
-        val committed = prefs?.let { preference ->
-            putStringSync(
-                prefs = preference,
-                key = Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
-                value = PowerAssistantTarget.ETA.persistedValue,
-            )
-        } ?: false
-        if (committed) {
-            assistantHolder = secureAssistantHolder(context)
-            Toast.makeText(
-                context,
-                "已提交为默认数字助理，接管生效后此行会显示 Eta",
-                Toast.LENGTH_SHORT,
-            ).show()
-        } else {
-            val intent = assistantRoleRequestIntent(context)
-                ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
-            val failed = runCatching { context.startActivity(intent) }.isFailure
-            if (failed) {
-                Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     // 关于组：版本信息与更新检查。结果对话框在列表外渲染，状态需要页面级 owner。
     val appPackageInfo = remember {
         context.packageManager.getPackageInfo(context.packageName, 0)
@@ -234,6 +203,38 @@ private fun SettingsPageContent(
     // prefs 绑定到 XposedService：service 到达时切换到 RemotePreferences（跨进程提交到
     // LSPosed 数据库）；未就绪时保持 null，UI 禁止修改。
     var prefs by remember { mutableStateOf(Prefs.remotePreferencesForUi(EtaApp.serviceInstance)) }
+
+    // 数字助理：
+    //  1) 首选走我们自己的接管机制 —— 写 POWER_KEY_ASSISTANT_TARGET=eta，
+    //     由 SystemServer 侧的 AssistantManager 把 secure assistant /
+    //     voice_interaction_service 改写成 Eta 的组件（不需要 RoleManager 配合）。
+    //  2) 失败时退回系统的角色申请 Intent，再不行退回语音输入设置页。
+    var assistantHolder by remember { mutableStateOf(secureAssistantHolder(context)) }
+    val openAssistantSettings: () -> Unit = {
+        val committed = prefs?.let { preference ->
+            putStringSync(
+                prefs = preference,
+                key = Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
+                value = PowerAssistantTarget.ETA.persistedValue,
+            )
+        } ?: false
+        if (committed) {
+            assistantHolder = secureAssistantHolder(context)
+            Toast.makeText(
+                context,
+                "已提交为默认数字助理，接管生效后此行会显示 Eta",
+                Toast.LENGTH_SHORT,
+            ).show()
+        } else {
+            val intent = assistantRoleRequestIntent(context)
+                ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
+            val failed = runCatching { context.startActivity(intent) }.isFailure
+            if (failed) {
+                Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     val agentPrefs = remember { Prefs.localAgentPreferences() }
     var powerAssistantTarget by remember(prefs) {
         mutableStateOf(prefs?.let(Prefs::powerAssistantTarget) ?: enhancementHistory.powerTarget())
