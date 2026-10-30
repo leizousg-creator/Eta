@@ -79,6 +79,7 @@ internal object AssistantManager {
         ) {
             return@OnSharedPreferenceChangeListener
         }
+        android.util.Log.i("EtaAssistant", "prefChanged: $key")
         val context = systemContext ?: return@OnSharedPreferenceChangeListener
         schedulePreferenceSelection(
             context = context,
@@ -97,7 +98,13 @@ internal object AssistantManager {
         val hooks = HookRegistrar(module, rootLogger, "AssistantManager")
         val logger = hooks.logger
         preferenceLogger = logger
-        if (!Prefs.registerRemoteListener(preferenceListener)) {
+        val remoteOk = Prefs.registerRemoteListener(preferenceListener)
+        android.util.Log.i(
+            "EtaAssistant",
+            "install: remoteListener=$remoteOk target=${Prefs.powerAssistantTarget()} " +
+                "component=${Prefs.getString(Prefs.Keys.POWER_KEY_ASSISTANT_TARGET)}",
+        )
+        if (!remoteOk) {
             logger.warn("AssistantManager: RemotePreferences 不可用，无法监听助理选择变化")
         }
         return hooks.install {
@@ -138,6 +145,11 @@ internal object AssistantManager {
                                 "AssistantManager: boot completed 时无法取得 mContext"
                             }
                         } else {
+                            android.util.Log.i(
+                                "EtaAssistant",
+                                "bootCompleted: target=${Prefs.powerAssistantTarget()} raw=" +
+                                    Prefs.getString(Prefs.Keys.POWER_KEY_ASSISTANT_TARGET),
+                            )
                             schedulePreferenceSelection(
                                 context = context,
                                 logger = logger,
@@ -931,6 +943,10 @@ internal object AssistantManager {
             userId,
             forceRefresh
         ) || changed
+        android.util.Log.i(
+            "EtaAssistant",
+            "writeSecure: target=${binding.target} component=${binding.componentName} changed=$changed",
+        )
         if (changed) {
             logger.debug { "AssistantManager: 已写入 ${binding.displayName} 助理 secure 配置" }
         }
