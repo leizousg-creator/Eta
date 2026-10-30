@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui
 
+import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.device.AssistantSecureWriter
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -209,28 +211,42 @@ private fun SettingsPageContent(
     //     由 SystemServer 侧的 AssistantManager 把 secure assistant /
     //     voice_interaction_service 改写成 Eta 的组件（不需要 RoleManager 配合）。
     //  2) 失败时退回系统的角色申请 Intent，再不行退回语音输入设置页。
-    var assistantHolder by remember { mutableStateOf(secureAssistantHolder(context)) }
+    var assistantHolder by remember { mutableStateOf(AssistantSecureWriter.currentAssistant(context)) }
     val openAssistantSettings: () -> Unit = {
-        val committed = prefs?.let { preference ->
-            putStringSync(
-                prefs = preference,
-                key = Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
-                value = PowerAssistantTarget.ETA.persistedValue,
-            )
-        } ?: false
-        if (committed) {
-            assistantHolder = secureAssistantHolder(context)
-            Toast.makeText(
-                context,
-                "已提交为默认数字助理，接管生效后此行会显示 Eta",
-                Toast.LENGTH_SHORT,
-            ).show()
+        // 有 root 就直接改 secure（vivo 的 RoleManager 不给第三方角色）；
+        // 没 root 时退回写偏好 + 系统页。
+        if (RootAccess.isGranted) {
+            coroutineScope.launch {
+                val ok = AssistantSecureWriter.apply(context)
+                assistantHolder = AssistantSecureWriter.currentAssistant(context)
+                Toast.makeText(
+                    context,
+                    if (ok) "已把 Eta 设为默认数字助理" else "写入失败，请确认 root 授权",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         } else {
-            val intent = assistantRoleRequestIntent(context)
-                ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
-            val failed = runCatching { context.startActivity(intent) }.isFailure
-            if (failed) {
-                Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
+            val committed = prefs?.let { preference ->
+                putStringSync(
+                    prefs = preference,
+                    key = Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
+                    value = PowerAssistantTarget.ETA.persistedValue,
+                )
+            } ?: false
+            if (committed) {
+                assistantHolder = AssistantSecureWriter.currentAssistant(context)
+                Toast.makeText(
+                    context,
+                    "已提交为默认数字助理，接管生效后此行会显示 Eta",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                val intent = assistantRoleRequestIntent(context)
+                    ?: Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
+                val failed = runCatching { context.startActivity(intent) }.isFailure
+                if (failed) {
+                    Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -1112,9 +1128,4 @@ private fun assistantRoleRequestIntent(context: Context): Intent? = runCatching 
         it.name == "createRequestRoleIntent" && it.parameterTypes.size == 1
     }
     method?.invoke(target, ASSISTANT_ROLE) as? Intent
-}.getOrNull()
-
-/** 读取系统 secure assistant，判断当前生效的数字助理（Eta 的接管也写这里）。 */
-private fun secureAssistantHolder(context: Context): String? = runCatching {
-    Settings.Secure.getString(context.contentResolver, "assistant")?.takeIf { it.isNotBlank() }
 }.getOrNull()
