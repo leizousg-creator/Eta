@@ -59,7 +59,7 @@ class DebianEnvironmentInstallerTest {
 
     @Test
     fun aptMirrorsKeepDomesticCandidatesBeforeOfficialFallback() {
-        assertEquals(listOf("tuna", "official"), DebianEnvironmentInstaller.APT_MIRRORS.map { it.id })
+        assertEquals(listOf("aliyun", "ustc", "official"), DebianEnvironmentInstaller.APT_MIRRORS.map { it.id })
         assertTrue(DebianEnvironmentInstaller.APT_MIRRORS.dropLast(1).all { it.archiveBaseUrl.startsWith("https://mirrors.") })
         assertEquals(
             "https://security.debian.org/debian-security",
@@ -67,8 +67,10 @@ class DebianEnvironmentInstallerTest {
         )
         val script = DebianEnvironmentInstaller.aptMirrorScript()
         assertTrue(script.contains("apt-get -o Acquire::Retries=2"))
-        assertFalse(script.contains("mirrors.ustc.edu.cn"))
-        assertFalse(script.contains("mirrors.aliyun.com"))
+        // 2026-11 实测：清华源在部分移动网络对 InRelease 返回 403，改用阿里云打头、中科大兜底。
+        assertFalse(script.contains("mirrors.tuna.tsinghua.edu.cn"))
+        assertTrue(script.contains("mirrors.aliyun.com"))
+        assertTrue(script.contains("mirrors.ustc.edu.cn"))
     }
 
     @Test

@@ -118,7 +118,7 @@ class DebianAptRecoveryTest {
                       kill -TERM "${'$'}PPID"; exit 143
                     fi
                     if [ -e "${'$'}ETA_FIXTURE/domestic-download-fails" ]; then
-                      case "${'$'}(cat "${'$'}ETA_FIXTURE/sources.list")" in *mirrors.tuna*) exit 100 ;; esac
+                      case "${'$'}(cat "${'$'}ETA_FIXTURE/sources.list")" in *mirrors.*) exit 100 ;; esac
                     fi
                     if [ -e "${'$'}ETA_FIXTURE/post-install-unconfigured" ]; then touch "${'$'}ETA_FIXTURE/unconfigured"; fi ;;
                   *) exit 99 ;;
