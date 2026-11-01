@@ -27,8 +27,8 @@ private const val WATCHDOG_TICK_MS = 500L
 internal fun readProviderSse(
     stream: InputStream,
     runController: AgentRunController,
-    onEvent: (event: String, data: String) -> Boolean,
     idleTimeoutMs: Long = DEFAULT_SSE_IDLE_TIMEOUT_MS,
+    onEvent: (event: String, data: String) -> Boolean,
 ): SseReadOutcome {
     var event = ""
     val dataLines = mutableListOf<String>()
