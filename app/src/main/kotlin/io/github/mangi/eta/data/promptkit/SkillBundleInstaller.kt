@@ -21,9 +21,9 @@ import java.util.zip.ZipInputStream
  */
 object SkillBundleInstaller {
     /** 技能包版本；换新包时递增，触发一次补装。 */
-    const val BUNDLE_VERSION = 5
+    const val BUNDLE_VERSION = 6
 
-    private const val BUNDLE_ASSET = "skill-bundles/pojia-v4.zip"
+    private const val BUNDLE_ASSET = "skill-bundles/pojia-v6.zip"
     private const val BUNDLE_ROOT = "skills"
     private const val MARKER_NAME = ".skill-bundle.json"
     private val SAFE_ID = Regex("^[A-Za-z0-9._-]{1,64}$")
@@ -41,7 +41,8 @@ object SkillBundleInstaller {
 
         val allIds = LinkedHashSet<String>()
         val created = HashSet<String>()
-        val skipped = HashSet<String>()
+        var createdFiles = 0
+        var skippedFiles = 0
         var hasPreviousMarker = marker.isFile && marker.readText().contains("\"version\":$BUNDLE_VERSION")
 
         ZipInputStream(BufferedInputStream(appContext.assets.open(BUNDLE_ASSET))).use { zip ->
@@ -55,24 +56,32 @@ object SkillBundleInstaller {
                     continue
                 }
                 allIds.add(skillId)
-                val target = File(skillsDir, skillId)
-                if (skillId in skipped || (skillId !in created && target.exists())) {
-                    skipped.add(skillId)
+                val out = File(skillsDir, relative)
+                if (entry.isDirectory) {
+                    // 目录条目直接建出来，内容由下面的文件条目补齐。
+                    out.mkdirs()
                     zip.closeEntry()
                     entry = zip.nextEntry
                     continue
                 }
-                if (!entry.isDirectory) {
-                    val out = File(skillsDir, relative)
-                    val parent = out.parentFile
-                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                        zip.closeEntry()
-                        entry = zip.nextEntry
-                        continue
-                    }
-                    out.outputStream().use { sink -> zip.copyTo(sink) }
-                    created.add(skillId)
+                // 按文件补缺：技能目录已存在也要继续走，否则升级后新增的 references
+                // 永远补不进来（旧逻辑是整目录跳过）。已存在的文件一律不覆盖。
+                if (out.exists()) {
+                    skippedFiles++
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                    continue
                 }
+                val parent = out.parentFile
+                if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                    skippedFiles++
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                    continue
+                }
+                out.outputStream().use { sink -> zip.copyTo(sink) }
+                created.add(skillId)
+                createdFiles++
                 zip.closeEntry()
                 entry = zip.nextEntry
             }
@@ -83,19 +92,19 @@ object SkillBundleInstaller {
             File(skillsDir, SkillBundlePolicy.IDS_FILE).writeText(allIds.sorted().joinToString("\n"))
         }
 
-        if (hasPreviousMarker && created.isEmpty()) {
+        if (hasPreviousMarker && createdFiles == 0) {
             return 0
         }
         runCatching {
             marker.writeText(
-                "{\"version\":$BUNDLE_VERSION,\"installed\":${created.size},\"bundle\":${allIds.size}," +
+                "{\"version\":$BUNDLE_VERSION,\"installed\":$createdFiles,\"bundle\":${allIds.size}," +
                     "\"at\":${System.currentTimeMillis()}}",
             )
         }
         AndroidAgentLogger.info(
-            "skill bundle installed: version=$BUNDLE_VERSION new=${created.size} " +
-                "skipped=${skipped.size} bundle=${allIds.size}",
+            "skill bundle installed: version=$BUNDLE_VERSION newFiles=$createdFiles " +
+                "skills=${created.size} skippedFiles=$skippedFiles bundle=${allIds.size}",
         )
-        return created.size
+        return createdFiles
     }
 }
