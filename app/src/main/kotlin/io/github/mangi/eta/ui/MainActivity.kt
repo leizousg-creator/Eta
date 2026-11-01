@@ -133,7 +133,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         launchRequests.saveTo(outState)
-        super.onSaveInstanceState(outState)
+        // 返回栈由 ComponentActivity 序列化：某个 AppRoute 缺 @Serializable 时这里会抛
+        // "Serializer for subclass ... is not found in the polymorphic scope of ..."，
+        // 而且是在切后台/选文件时被动触发，直接把整个进程带崩。兜底记日志并跳过，
+        // 代价只是这次恢复回到首页，不该为了一个漏注解的页面杀掉正在跑的任务。
+        try {
+            super.onSaveInstanceState(outState)
+        } catch (error: Throwable) {
+            AndroidAgentLogger.warn(
+                "Agent UI save state failed: ${error.javaClass.simpleName} ${error.message}",
+            )
+        }
     }
 
     private fun updateApplicationNightMode(themeMode: AppearanceThemeMode) {
