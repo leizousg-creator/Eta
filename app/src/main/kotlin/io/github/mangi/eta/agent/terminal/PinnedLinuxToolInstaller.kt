@@ -171,7 +171,6 @@ internal class PinnedLinuxToolInstaller(
 internal object PinnedLinuxToolArtifacts {
     private const val UV_VERSION = "0.12.7"
     private const val NODE_VERSION = "26.8.1"
-    private const val GITHUB_PROXY_PREFIX = "https://gh-proxy.com/"
 
     fun artifactFor(
         tool: ManagedLinuxTool,
@@ -229,7 +228,7 @@ internal object PinnedLinuxToolArtifacts {
             url = officialUrl,
             sha256 = sha256,
             sizeBytes = sizeBytes,
-            preferredUrls = listOf(GITHUB_PROXY_PREFIX + officialUrl),
+            preferredUrls = GITHUB_PROXY_PREFIXES.map { prefix -> prefix + officialUrl },
         )
     }
 

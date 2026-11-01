@@ -322,11 +322,21 @@ internal class DebianEnvironmentInstaller(
             "xz-utils", "zip", "zstd", "fd-find",
         )
 
-        /** 真机链路只保留一个国内镜像和官方源，避免慢镜像串行拖长安装。 */
+        /**
+         * 真机链路按顺序试这些源，第一个能跑通 apt update 的会被写回 sources.list。
+         *
+         * 2026-11 实测：清华源在部分移动网络对 InRelease 返回 403，
+         * 阿里云与中科大正常，所以阿里云打头、清华不再列入，官方源兜底。
+         */
         internal val APT_MIRRORS = listOf(
             DebianAptMirror(
-                id = "tuna",
-                archiveBaseUrl = "https://mirrors.tuna.tsinghua.edu.cn/debian",
+                id = "aliyun",
+                archiveBaseUrl = "https://mirrors.aliyun.com/debian",
+                securityBaseUrl = "https://security.debian.org/debian-security",
+            ),
+            DebianAptMirror(
+                id = "ustc",
+                archiveBaseUrl = "https://mirrors.ustc.edu.cn/debian",
                 securityBaseUrl = "https://security.debian.org/debian-security",
             ),
             DebianAptMirror(
@@ -431,9 +441,5 @@ internal class DebianEnvironmentInstaller(
                 preferredUrls = GITHUB_PROXY_PREFIXES.map { prefix -> prefix + officialUrl },
             )
         }
-
-        private val GITHUB_PROXY_PREFIXES = listOf(
-            "https://gh-proxy.com/",
-        )
     }
 }
