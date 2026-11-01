@@ -55,6 +55,9 @@ sealed interface AppRoute : NavKey {
     data object PromptKit : AppRoute
 
     @Serializable
+    data object OutboundRewrite : AppRoute
+
+    @Serializable
     data object AppearanceSettings : AppRoute
 
     @Serializable

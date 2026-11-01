@@ -37,6 +37,7 @@ class AppRouteSerializationTest {
             AppRoute.SystemEnhance,
             AppRoute.Settings,
             AppRoute.PromptKit,
+            AppRoute.OutboundRewrite,
             AppRoute.AppearanceSettings,
             AppRoute.SpeechSettings,
             AppRoute.SpeechRecognition,

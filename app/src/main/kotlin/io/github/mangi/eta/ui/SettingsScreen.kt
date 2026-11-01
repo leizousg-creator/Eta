@@ -380,6 +380,14 @@ private fun SettingsPageContent(
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
+                        title = "出站改写",
+                        summary = "发送前把刺头词换成中性词（界面仍显示原样）；输出被截断时自动续写",
+                        startAction = { EtaPreferenceIcon(icon = Icons.Rounded.FilterAlt, tint = EtaPreferenceColors.Orange) },
+                        onClick = { onNavigate(AppRoute.OutboundRewrite) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
                         title = stringResource(R.string.route_mcp_servers),
                         startAction = {
                             EtaPreferenceIcon(

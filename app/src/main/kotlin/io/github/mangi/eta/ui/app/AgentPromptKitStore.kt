@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import io.github.mangi.eta.data.promptkit.PromptKitBridge
 import io.github.mangi.eta.data.promptkit.PromptKitManifest
 import io.github.mangi.eta.data.promptkit.PromptKitSkillSync
+import io.github.mangi.eta.data.promptkit.PromptKitTemplates
 import io.github.mangi.eta.data.promptkit.SkillBundlePolicy
 import java.io.File
 import io.github.mangi.eta.data.promptkit.PromptKitVersion
@@ -160,6 +161,27 @@ internal class AgentPromptKitStore(private val scope: CoroutineScope) {
                 }
             }
             withContext(Dispatchers.Main) { state = fromManifest(manifest) }
+        }
+    }
+
+    fun insertTemplate(templateId: String) {
+        val template = PromptKitTemplates.find(templateId) ?: return
+        // 当前版本已经有正文就另开一个版本，避免一键操作把用户写好的东西冲掉。
+        val reusable = state.activeVersionId?.takeIf { (state.activeVersion?.chars ?: 0) == 0 }
+        state = state.copy(isSaving = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            val id = reusable ?: nextVersionId(PromptKitBridge.manifest())
+            PromptKitBridge.storeOrNull()?.upsertVersion(id = id, name = template.name, body = template.body)
+            val manifest = PromptKitBridge.update { it.copy(enabled = true, activeVersionId = id) }
+            withContext(Dispatchers.Main) {
+                state = fromManifest(manifest).copy(
+                    notice = if (reusable == null) {
+                        "已用「${template.name}」模板新建版本 $id"
+                    } else {
+                        "已把「${template.name}」模板写入版本 $id"
+                    },
+                )
+            }
         }
     }
 

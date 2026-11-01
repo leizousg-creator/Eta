@@ -16,6 +16,7 @@ import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
+import io.github.mangi.eta.data.model.OutboundRewriteSettings
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.model.SubagentSettings
 import io.github.mangi.eta.data.model.WebToolsSettings
@@ -31,6 +32,7 @@ internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
     private val WEB_TOOLS_SETTINGS = stringPreferencesKey("web_tools_settings_v1")
     private val SUBAGENT_SETTINGS = stringPreferencesKey("subagent_settings_v1")
+    private val OUTBOUND_SETTINGS = stringPreferencesKey("outbound_rewrite_v1")
     private val speechJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -164,6 +166,7 @@ internal object SettingsDataStore {
             prefs[AUTO_MEMORY_ENABLED] = updated.autoMemoryEnabled
             prefs[AUTO_SKILLS_ENABLED] = updated.autoSkillsEnabled
             prefs.putAppearance(updated.appearance.normalized())
+            prefs.putOutbound(updated.outbound)
         }
     }
 
@@ -305,7 +308,19 @@ internal object SettingsDataStore {
             predictiveBackEnabled = this[APPEARANCE_PREDICTIVE_BACK_ENABLED] ?: true,
             interfaceScale = this[APPEARANCE_INTERFACE_SCALE] ?: 1f,
         ).normalized(),
+        outbound = decodeOutbound(this[OUTBOUND_SETTINGS]),
     )
+
+    private fun decodeOutbound(raw: String?): OutboundRewriteSettings {
+        if (raw.isNullOrBlank()) return OutboundRewriteSettings()
+        return runCatching { speechJson.decodeFromString<OutboundRewriteSettings>(raw) }
+            .getOrDefault(OutboundRewriteSettings())
+            .normalized()
+    }
+
+    private fun MutablePreferences.putOutbound(settings: OutboundRewriteSettings) {
+        this[OUTBOUND_SETTINGS] = speechJson.encodeToString(settings.normalized())
+    }
 
     private fun MutablePreferences.putAppearance(settings: AppearanceSettings) {
         this[APPEARANCE_THEME_MODE] = settings.themeMode.persistedValue

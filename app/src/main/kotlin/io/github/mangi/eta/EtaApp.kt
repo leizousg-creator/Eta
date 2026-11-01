@@ -15,6 +15,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
@@ -27,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -55,6 +57,9 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         RootAccess.initialize(this)
         applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)
+        applicationScope.launch {
+            AgentOutboundRepository.flow().collect { settings -> AgentOutboundRepository.publish(settings) }
+        }
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled
         }

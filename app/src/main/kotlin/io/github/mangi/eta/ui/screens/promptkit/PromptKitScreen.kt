@@ -35,6 +35,7 @@ import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
+import io.github.mangi.eta.data.promptkit.PromptKitTemplates
 import io.github.mangi.eta.ui.model.PromptKitAction
 import io.github.mangi.eta.ui.model.PromptKitUiState
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -120,6 +121,25 @@ internal fun PromptKitScreen(
                                     if (state.keywordOnly) "关键词模式" else "全程注入"
                             },
                         )
+                    }
+                }
+
+                item(key = "templates-title") { EtaPreferenceGroupTitle("内置人设模板") }
+                item(key = "templates-group") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        PromptKitTemplates.all.forEachIndexed { index, template ->
+                            if (index > 0) EtaPreferenceDivider(hasLeading = false)
+                            EtaPreference(
+                                title = template.name,
+                                summary = template.summary,
+                                enabled = !state.isLoading && !state.isSaving,
+                                onClick = { onAction(PromptKitAction.ApplyTemplate(template.id)) },
+                            )
+                        }
                     }
                 }
 

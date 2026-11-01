@@ -10,4 +10,5 @@ data class Settings(
     val autoMemoryEnabled: Boolean = true,
     val autoSkillsEnabled: Boolean = true,
     val appearance: AppearanceSettings = AppearanceSettings(),
+    val outbound: OutboundRewriteSettings = OutboundRewriteSettings(),
 )

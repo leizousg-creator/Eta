@@ -93,4 +93,6 @@ sealed interface PromptKitAction {
     data object DismissNotice : PromptKitAction
     /** 修改版本显示名（id 不变）。 */
     data class RenameVersion(val id: String, val name: String) : PromptKitAction
+    /** 用内置人设模板写入正文；当前版本已有正文时会新建版本，不覆盖。 */
+    data class ApplyTemplate(val templateId: String) : PromptKitAction
 }

@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.ui.model.PromptKitAction
 import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
+import io.github.mangi.eta.ui.screens.settings.OutboundRewriteScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -50,6 +51,7 @@ import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
@@ -666,7 +668,19 @@ fun AgentAppRoot(
                             PromptKitAction.SaveKeywords -> promptKit.saveKeywords()
                             PromptKitAction.DismissNotice -> promptKit.dismissNotice()
                             is PromptKitAction.RenameVersion -> promptKit.renameVersion(action.id, action.name)
+                            is PromptKitAction.ApplyTemplate -> promptKit.insertTemplate(action.templateId)
                         }
+                    },
+                )
+            }
+            entry<AppRoute.OutboundRewrite>(swipeDismiss = swipeDismiss) {
+                val outboundSettings by AgentOutboundRepository.stateFlow.collectAsState()
+                val outboundScope = rememberCoroutineScope()
+                OutboundRewriteScreen(
+                    settings = outboundSettings,
+                    onBack = { popRoute() },
+                    onUpdate = { transform ->
+                        outboundScope.launch { AgentOutboundRepository.update(transform) }
                     },
                 )
             }

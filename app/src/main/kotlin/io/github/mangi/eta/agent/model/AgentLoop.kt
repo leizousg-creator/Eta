@@ -5,6 +5,7 @@ import io.github.mangi.eta.agent.runtime.AgentModelInterruptedException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
+import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -13,6 +14,10 @@ import kotlinx.coroutines.supervisorScope
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Future
+
+/** 输出被长度上限截断后自动续写时追加的指令。 */
+private const val AUTO_CONTINUE_PROMPT =
+    "上一条回答因达到输出长度上限被截断。请从断点处继续，不要重复已经输出的内容，也不要重新开头。"
 
 /**
  * 单次 Agent run 的纯编排循环。
@@ -91,6 +96,7 @@ internal class AgentLoop(
 
     fun run(): Result {
         var round = 1
+        var autoContinueCount = 0
         var precedingTools: JSONArray? = null
 
         while (true) {
@@ -111,8 +117,12 @@ internal class AgentLoop(
             }
             publishTranscript()
             if (purpose.allowsTools) context.compact()
-            val requestMessages = AssistantScreenContextProjection.project(
-                roleplayContext?.projectMessages(messages) ?: messages,
+            val outbound = AgentOutboundRepository.current()
+            val requestMessages = OutboundRewrite.rewrite(
+                AssistantScreenContextProjection.project(
+                    roleplayContext?.projectMessages(messages) ?: messages,
+                ),
+                outbound,
             )
             var roundInputTokens: Int? = null
             val reasoningLengthBeforeRound = accumulatedReasoning.length
@@ -197,6 +207,24 @@ internal class AgentLoop(
                     toolNames = toolCalls.map { it.name },
                 )
             )
+
+            // 输出上限截断、又没有工具调用：自动追加一轮续写，省掉用户手动点「继续」。
+            // 有工具调用时不续写——截断的工具参数没有执行价值，交给下面的拒执分支处理。
+            if (providerResponse.stopReason == AssistantStopReason.OUTPUT_LIMIT &&
+                toolCalls.isEmpty() &&
+                outbound.autoContinueEnabled &&
+                autoContinueCount < outbound.maxAutoContinues &&
+                assistantMessage.optString("content").isNotBlank()
+            ) {
+                autoContinueCount += 1
+                appendMessage(
+                    AgentConversationCodec.userTextMessage(AUTO_CONTINUE_PROMPT)
+                        .put("_eta_message_id", "user-$operationId-continue-$autoContinueCount"),
+                )
+                publishTranscript()
+                round += 1
+                continue
+            }
 
             if (toolCalls.isNotEmpty()) {
                 val outcomes = executeToolBatch(round, toolCalls, providerResponse.stopReason)
