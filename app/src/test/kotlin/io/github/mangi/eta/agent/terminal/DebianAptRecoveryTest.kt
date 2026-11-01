@@ -75,7 +75,8 @@ class DebianAptRecoveryTest {
         val fixture = fixture()
         fixture.flag("domestic-download-fails")
         fixture.install().assertSuccess()
-        assertEquals(2, fixture.calls.count { it.endsWith(" update") })
+        // 三个源依次尝试：两个国内源都失败，最后一次走官方兜底。
+        assertEquals(3, fixture.calls.count { it.endsWith(" update") })
         assertTrue(fixture.file("sources.list").readText().contains("https://deb.debian.org/debian"))
     }
 

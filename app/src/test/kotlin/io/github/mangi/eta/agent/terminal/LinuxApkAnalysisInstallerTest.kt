@@ -25,10 +25,10 @@ class LinuxApkAnalysisInstallerTest {
 
         assertEquals(listOf("jadx", "apktool", "smali", "baksmali"), artifacts.map { it.id })
         assertTrue(artifacts.all { artifact -> artifact.url.startsWith("https://github.com/") })
-        assertTrue(artifacts.all { artifact -> artifact.preferredUrls.size == 1 })
+        assertTrue(artifacts.all { artifact -> artifact.preferredUrls.size == GITHUB_PROXY_PREFIXES.size })
         assertTrue(
             artifacts.all { artifact ->
-                artifact.preferredUrls.single().startsWith("https://gh-proxy.com/")
+                artifact.preferredUrls.all { preferred -> preferred.startsWith("https://gh") }
             },
         )
         assertTrue(
