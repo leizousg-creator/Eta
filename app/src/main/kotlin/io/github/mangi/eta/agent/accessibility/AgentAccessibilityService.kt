@@ -1725,7 +1725,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 NodeActionResult.failure("SERVICE_RECONNECTED", "无障碍服务已重连，请重新观察屏幕"),
             )
         }
-        val indexed = snapshot.indexedNodes.firstOrNull { it.index == index }
+        var indexed = snapshot.indexedNodes.firstOrNull { it.index == index }
             ?: return NodeValidation.Invalid(
                 NodeActionResult.failure("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index"),
             )
@@ -1743,9 +1743,12 @@ class AgentAccessibilityService : AccessibilityService() {
             windowContentGeneration(snapshot.windowId) != snapshot.contentGeneration &&
             !snapshot.hasUnambiguousIdentity(indexed)
         ) {
-            return NodeValidation.Invalid(
-                NodeActionResult.failure("STALE_CONTENT", "窗口内容已经变化，请重新观察屏幕"),
-            )
+            // 内容代际变了、原下标又不再唯一：先按语义在**当前**窗口重新定位一次。
+            // 一次界面刷新（加载完成、列表重排）就整批操作作废太重，定得下来就继续。
+            indexed = relinkAfterContentChange(snapshot, indexed)
+                ?: return NodeValidation.Invalid(
+                    NodeActionResult.failure("STALE_CONTENT", "窗口内容已经变化，请重新观察屏幕"),
+                )
         }
         val node = indexed.node
         if (!runCatching { node.refresh() }.getOrDefault(false)) {
@@ -1764,6 +1767,34 @@ class AgentAccessibilityService : AccessibilityService() {
             )
         }
         return NodeValidation.Valid(indexed)
+    }
+
+    /**
+     * 内容代际变化后，用当前窗口重新索引并定位同一个节点。
+     *
+     * 只在「新树里唯一命中」时返回：同名兄弟节点（列表项、多个相同按钮）一律放弃，
+     * 交给上层让模型重新观察，避免把点击落到错的位置上。
+     * 原快照本身被截断时也不做重定位——看不全就可能漏掉另一个匹配。
+     */
+    private fun relinkAfterContentChange(snapshot: NodeSnapshot, target: IndexedNode): IndexedNode? {
+        if (snapshot.truncated) return null
+        val fresh = runCatching {
+            captureNodeSnapshot(snapshot.indexedNodes.size.coerceIn(1, 120), snapshot.displayId)
+        }.getOrNull() ?: return null
+        if (fresh.windowId != snapshot.windowId || fresh.packageName != snapshot.packageName) return null
+        val matches = fresh.indexedNodes.filter { candidate ->
+            if (target.uniqueId.isNotBlank()) {
+                candidate.uniqueId == target.uniqueId
+            } else {
+                candidate.sameSemanticIdentity(target)
+            }
+        }
+        val hit = matches.singleOrNull() ?: return null
+        AndroidAgentLogger.info(
+            "accessibility relink after content change: index=${target.index} -> ${hit.index} " +
+                "nodes=${fresh.indexedNodes.size}",
+        )
+        return hit
     }
 
     private fun findNode(
