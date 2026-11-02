@@ -269,6 +269,18 @@ internal object VirtualDisplayController {
         if (useRootLaunch) {
             val userId = DeviceToolContract.appUserId(appContext)
             val component = launchIntent.component?.flattenToShortString()
+            // 该包已在主屏有任务时，am start --display 会复用主屏那个任务，最后还是落主屏。
+            // 先结束主屏实例再在虚拟屏启动，这也是「先手动开过、再让 Agent 开」必落主屏的原因。
+            if (mainDisplayHasTaskFor(packageName, rootAvailable)) {
+                AndroidAgentLogger.info("virtual display: stop main-display task of $packageName before launch")
+                val stopExec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
+                try {
+                    stopExec.execute("am force-stop ${DeviceToolContract.quote(packageName)}", 5_000L)
+                } finally {
+                    stopExec.close()
+                }
+                runCatching { Thread.sleep(250L) }
+            }
             if (component.isNullOrBlank() && launchIntent.action.isNullOrBlank()) {
                 AndroidAgentLogger.warn("Virtual display launch rejected: intent has neither component nor action")
                 return null
@@ -688,6 +700,24 @@ internal object VirtualDisplayController {
     }
 
     @android.annotation.SuppressLint("WrongConstant")
+    /** 主屏（displayId=0）是否还有该包的任务；拿不到就当作没有，别误杀。 */
+    private fun mainDisplayHasTaskFor(packageName: String, rootAvailable: () -> Boolean): Boolean {
+        if (!rootAvailable() || packageName.isBlank()) return false
+        val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
+        return try {
+            val res = exec.execute(
+                "dumpsys activity activities | grep 'Task{' | grep -F " +
+                    DeviceToolContract.quote(packageName) + " | grep -c 'displayId=0'",
+                timeoutMillis = 6_000L,
+            )
+            (res.stdout.trim().lines().lastOrNull()?.trim()?.toIntOrNull() ?: 0) > 0
+        } catch (_: Throwable) {
+            false
+        } finally {
+            exec.close()
+        }
+    }
+
     private fun tryCreateInProcessVirtualDisplay(
         appContext: Context,
         surface: android.view.Surface,
