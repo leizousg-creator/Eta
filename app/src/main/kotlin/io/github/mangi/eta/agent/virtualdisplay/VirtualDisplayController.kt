@@ -699,7 +699,6 @@ internal object VirtualDisplayController {
         return source.scale(targetW, targetH)
     }
 
-    @android.annotation.SuppressLint("WrongConstant")
     /** 主屏（displayId=0）是否还有该包的任务；拿不到就当作没有，别误杀。 */
     private fun mainDisplayHasTaskFor(packageName: String, rootAvailable: () -> Boolean): Boolean {
         if (!rootAvailable() || packageName.isBlank()) return false
@@ -718,6 +717,7 @@ internal object VirtualDisplayController {
         }
     }
 
+    @android.annotation.SuppressLint("WrongConstant")
     private fun tryCreateInProcessVirtualDisplay(
         appContext: Context,
         surface: android.view.Surface,
