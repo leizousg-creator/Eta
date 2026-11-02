@@ -244,43 +244,62 @@ internal object VirtualDisplayController {
         val appContext = context.applicationContext
         mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
 
-        val startedInProcess = runCatching {
-            val intent = Intent(launchIntent).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-            }
-            val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
-            appContext.startActivity(intent, options.toBundle())
-            true
-        }.getOrElse { throwable ->
-            AndroidAgentLogger.debug {
-                "Virtual display startActivity in-process fallback: type=${throwable.safeLogType()}"
-            }
+        val useRootLaunch = rootAvailable()
+        // 普通应用调用 setLaunchDisplayId 在多数 ROM 上会被忽略，任务照样落在主屏；
+        // root 下的 `am start --display` 才是可靠的跨屏启动方式。有 root 就直接走它，
+        // 不再先 in-process 起一次，避免同一个 app 被拉起两遍。
+        val startedInProcess = if (useRootLaunch) {
             false
+        } else {
+            runCatching {
+                val intent = Intent(launchIntent).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                }
+                val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
+                appContext.startActivity(intent, options.toBundle())
+                true
+            }.getOrElse { throwable ->
+                AndroidAgentLogger.debug {
+                    "Virtual display startActivity in-process fallback: type=${throwable.safeLogType()}"
+                }
+                false
+            }
         }
 
-        if (!startedInProcess || rootAvailable()) {
-            // Root 下补发一次指定 displayId 的 am start，确保后台启动限制或跨屏栈迁移生效
-            if (rootAvailable()) {
-                val userId = DeviceToolContract.appUserId(appContext)
-                val component = launchIntent.component?.flattenToShortString()
-                val cmd = if (!component.isNullOrBlank()) {
-                    "am start --user $userId --display $displayId -n ${DeviceToolContract.quote(component)}"
-                } else {
-                    "monkey -p ${DeviceToolContract.quote(packageName)} -c android.intent.category.LAUNCHER 1"
-                }
-                if (!startedInProcess) {
-                    val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
-                    try {
-                        val res = exec.execute(cmd, timeoutMillis = 6_000L)
-                        if (res.exitCode != 0 && !startedInProcess) return null
-                    } finally {
-                        exec.close()
-                    }
-                }
-            } else if (!startedInProcess) {
+        if (useRootLaunch) {
+            val userId = DeviceToolContract.appUserId(appContext)
+            val component = launchIntent.component?.flattenToShortString()
+            if (component.isNullOrBlank() && launchIntent.action.isNullOrBlank()) {
+                AndroidAgentLogger.warn("Virtual display launch rejected: intent has neither component nor action")
                 return null
             }
+            val cmd = if (!component.isNullOrBlank()) {
+                "am start --user $userId --display $displayId -n ${DeviceToolContract.quote(component)}"
+            } else {
+                // 有 action 没组件时也带 action/data 走 am start；
+                // 不再退回 monkey——monkey 指定不了 display，只会落到主屏。
+                buildString {
+                    append("am start --user ").append(userId).append(" --display ").append(displayId)
+                    launchIntent.action?.takeIf { it.isNotBlank() }
+                        ?.let { append(" -a ").append(DeviceToolContract.quote(it)) }
+                    launchIntent.dataString?.takeIf { it.isNotBlank() }
+                        ?.let { append(" -d ").append(DeviceToolContract.quote(it)) }
+                }
+            }
+            val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
+            try {
+                val res = exec.execute(cmd, timeoutMillis = 6_000L)
+                if (res.exitCode != 0) {
+                    AndroidAgentLogger.warn("Virtual display root launch failed: exit=${res.exitCode}")
+                    return null
+                }
+            } finally {
+                exec.close()
+            }
+        } else if (!startedInProcess) {
+            return null
         }
+
 
         synchronized(lock) {
             val current = mutableSnapshots.value
