@@ -61,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.mangi.eta.core.DiagnosticsBundle
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
@@ -384,6 +385,26 @@ private fun SettingsPageContent(
                         summary = "发送前把刺头词换成中性词（界面仍显示原样）；输出被截断时自动续写",
                         startAction = { EtaPreferenceIcon(icon = Icons.Rounded.FilterAlt, tint = EtaPreferenceColors.Orange) },
                         onClick = { onNavigate(AppRoute.OutboundRewrite) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = "导出诊断包",
+                        summary = "把版本、设备状态与最近日志打成 zip，存到 Download/Eta诊断包",
+                        startAction = { EtaPreferenceIcon(icon = Icons.Rounded.BugReport, tint = EtaPreferenceColors.Blue) },
+                        onClick = {
+                            coroutineScope.launch {
+                                val result = runCatching { DiagnosticsBundle.export(context) }
+                                Toast.makeText(
+                                    context,
+                                    result.fold(
+                                        { file -> "已导出：${file.parentFile?.name}/${file.name}" },
+                                        { error -> "导出失败：${error.javaClass.simpleName}" },
+                                    ),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
                     )
 
                     EtaPreferenceDivider()
