@@ -111,6 +111,7 @@ internal object VirtualDisplayCommandMain {
         val width = request.optInt("width", 1080).coerceIn(320, 4096)
         val height = request.optInt("height", 2400).coerceIn(320, 4096)
         val densityDpi = request.optInt("density_dpi", 420).coerceIn(120, 960)
+        val refreshRate = request.optInt("refresh_rate", 60).coerceIn(60, 165).toFloat()
 
         val surface = acquireSurfaceFromApp(userId, token)
         if (surface == null || !surface.isValid) {
@@ -125,7 +126,7 @@ internal object VirtualDisplayCommandMain {
             }
         }
 
-        val virtualDisplay = createTrustedVirtualDisplay(surface, width, height, densityDpi)
+        val virtualDisplay = createTrustedVirtualDisplay(surface, width, height, densityDpi, refreshRate)
         if (virtualDisplay == null) {
             surface.release()
             println(RESULT_PREFIX + JSONObject().put("ok", false).put("code", "CREATE_DISPLAY_FAILED"))
@@ -222,6 +223,7 @@ internal object VirtualDisplayCommandMain {
         width: Int,
         height: Int,
         densityDpi: Int,
+        refreshRate: Float,
     ): android.hardware.display.VirtualDisplay? = runCatching {
         val activityThreadClass = Class.forName("android.app.ActivityThread")
         val thread = activityThreadClass.getMethod("systemMain").invoke(null)
@@ -235,6 +237,7 @@ internal object VirtualDisplayCommandMain {
             )
                 .setSurface(surface)
                 .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
+                .setRequestedRefreshRate(refreshRate)
                 .build()
             val dmgClass = Class.forName("android.hardware.display.DisplayManagerGlobal")
             val dmg = dmgClass.getMethod("getInstance").invoke(null)

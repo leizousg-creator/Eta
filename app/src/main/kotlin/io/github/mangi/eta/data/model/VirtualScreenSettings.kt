@@ -12,9 +12,12 @@ import kotlinx.serialization.Serializable
 data class VirtualScreenSettings(
     val idleReclaimEnabled: Boolean = true,
     val idleTimeoutMinutes: Int = DEFAULT_IDLE_MINUTES,
+    /** 目标刷新率：建屏时作为 VirtualDisplayConfig 的建议刷新率。 */
+    val frameRate: Int = DEFAULT_FRAME_RATE,
 ) {
     fun normalized(): VirtualScreenSettings = copy(
         idleTimeoutMinutes = idleTimeoutMinutes.coerceIn(MIN_IDLE_MINUTES, MAX_IDLE_MINUTES),
+        frameRate = frameRate.coerceIn(MIN_FRAME_RATE, MAX_FRAME_RATE),
     )
 
     /** 给调度器用的毫秒值；关闭回收时返回 0。 */
@@ -25,5 +28,8 @@ data class VirtualScreenSettings(
         const val MIN_IDLE_MINUTES = 1
         const val MAX_IDLE_MINUTES = 120
         const val DEFAULT_IDLE_MINUTES = 20
+        const val MIN_FRAME_RATE = 60
+        const val MAX_FRAME_RATE = 165
+        const val DEFAULT_FRAME_RATE = 60
     }
 }

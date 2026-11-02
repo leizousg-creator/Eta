@@ -182,6 +182,7 @@ internal object VirtualDisplayController {
                 width = width,
                 height = height,
                 densityDpi = densityDpi,
+                refreshRate = VirtualScreenSettingsRepository.current().frameRate.toFloat(),
             )
             if (createdInProcess != null) {
                 val id = createdInProcess.display?.displayId ?: Display.INVALID_DISPLAY
@@ -674,6 +675,7 @@ internal object VirtualDisplayController {
         width: Int,
         height: Int,
         densityDpi: Int,
+        refreshRate: Float,
     ): VirtualDisplay? = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching { HiddenApiBypass.addHiddenApiExemptions("Landroid/hardware/display/") }
@@ -688,6 +690,7 @@ internal object VirtualDisplayController {
             )
                 .setSurface(surface)
                 .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
+                .setRequestedRefreshRate(refreshRate)
                 .build()
             dm.createVirtualDisplay(config)
         } else {
@@ -730,6 +733,7 @@ internal object VirtualDisplayController {
             .put("width", width)
             .put("height", height)
             .put("density_dpi", densityDpi)
+            .put("refresh_rate", VirtualScreenSettingsRepository.current().frameRate)
             .toString() + "\n"
 
         thread(name = "eta-vd-bridge-stdout", isDaemon = true) {

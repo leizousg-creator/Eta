@@ -438,6 +438,21 @@ private fun SettingsPageContent(
                     )
 
                     EtaPreferenceDivider()
+                    EtaPreference(
+                        title = "目标刷新率",
+                        summary = "${virtualScreenSettings.frameRate} Hz（点击切换 60 / 90 / 120 / 165 Hz）",
+                        onClick = {
+                            coroutineScope.launch {
+                                VirtualScreenSettingsRepository.update { current ->
+                                    val options = listOf(60, 90, 120, 165)
+                                    val index = options.indexOf(current.frameRate).coerceAtLeast(0)
+                                    current.copy(frameRate = options[(index + 1) % options.size])
+                                }
+                            }
+                        },
+                    )
+
+                    EtaPreferenceDivider()
                     EtaArrowPreference(
                         title = stringResource(R.string.route_mcp_servers),
                         startAction = {
