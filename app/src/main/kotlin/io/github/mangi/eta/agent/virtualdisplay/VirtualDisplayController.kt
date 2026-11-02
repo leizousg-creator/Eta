@@ -778,7 +778,7 @@ internal object VirtualDisplayController {
 
         rootBridgeProcess = process
         processSupervisor = supervisor
-        startIdleWatchdog(context)
+        startIdleWatchdog(appContext)
         return id
     }
 
