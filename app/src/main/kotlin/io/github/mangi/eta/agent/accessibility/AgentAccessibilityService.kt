@@ -1826,24 +1826,25 @@ class AgentAccessibilityService : AccessibilityService() {
         clickableAncestor: NodeActionTarget? = null,
         longClickableAncestor: NodeActionTarget? = null,
         scrollableAncestor: NodeActionTarget? = null,
-    ) {
+    ): String? {
         if (out.size >= maxNodes) {
             traversal.truncated = true
-            return
+            return null
         }
         if (depth > MAX_UI_TREE_DEPTH || traversal.visitedNodes >= traversal.maxVisitedNodes) {
             traversal.truncated = true
-            return
+            return null
         }
         if (!traversal.activePath.add(node)) {
             traversal.truncated = true
-            return
+            return null
         }
         traversal.visitedNodes++
+        var label: String? = null
         try {
             // 不可见父节点的后代不会成为可操作目标，尽早裁掉这类大分支。
             val visible = node.isVisibleToUser
-            if (depth > 0 && !visible) return
+            if (depth > 0 && !visible) return null
 
             val bounds = node.bounds()
             val text = node.realText().take(120)
@@ -1879,9 +1880,11 @@ class AgentAccessibilityService : AccessibilityService() {
                 hasScrollCapability ||
                 focused ||
                 editable
+            var indexedAt = -1
             if (visible && bounds.width() > 2 && bounds.height() > 2 && useful) {
+                indexedAt = out.size
                 out += IndexedNode(
-                    index = out.size,
+                    index = indexedAt,
                     node = node,
                     uniqueId = node.uniqueId.orEmpty(),
                     windowId = node.windowId,
@@ -1906,16 +1909,17 @@ class AgentAccessibilityService : AccessibilityService() {
                     scrollTarget = scrollTarget,
                 )
             }
+            var childLabel: String? = null
             for (index in 0 until node.childCount) {
                 if (
                     out.size >= maxNodes ||
                     traversal.visitedNodes >= traversal.maxVisitedNodes
                 ) {
                     traversal.truncated = true
-                    return
+                    return childLabel
                 }
                 val child = runCatching { node.getChild(index) }.getOrNull() ?: continue
-                collectNodes(
+                val collected = collectNodes(
                     node = child,
                     out = out,
                     maxNodes = maxNodes,
@@ -1925,10 +1929,22 @@ class AgentAccessibilityService : AccessibilityService() {
                     longClickableAncestor = longClickTarget,
                     scrollableAncestor = scrollTarget,
                 )
+                if (childLabel.isNullOrBlank() && !collected.isNullOrBlank()) childLabel = collected
+            }
+            label = when {
+                text.isNotBlank() -> text
+                desc.isNotBlank() -> desc
+                else -> childLabel
+            }
+            if (indexedAt >= 0 && !label.isNullOrBlank()) {
+                // 容器节点常常自身没有文本；把子树里第一个标签存下来，
+                // 点它时才能和同名兄弟区分（采集期算一次，校验时不再遍历）。
+                out[indexedAt] = out[indexedAt].copy(subtreeLabel = label)
             }
         } finally {
             traversal.activePath.remove(node)
         }
+        return label
     }
 
     private fun AccessibilityNodeInfo.bounds(): Rect =
@@ -2320,6 +2336,8 @@ class AgentAccessibilityService : AccessibilityService() {
         val clickTarget: NodeActionTarget?,
         val longClickTarget: NodeActionTarget?,
         val scrollTarget: NodeActionTarget?,
+        /** 自身没有 text/desc 时的子树标签，用来区分同名容器（如两个 RelativeLayout）。 */
+        val subtreeLabel: String = "",
     ) {
         fun hasStrongIdentity(): Boolean = identity().strong
 
@@ -2329,7 +2347,8 @@ class AgentAccessibilityService : AccessibilityService() {
                 className == other.className &&
                 viewId == other.viewId &&
                 text == other.text &&
-                desc == other.desc
+                desc == other.desc &&
+                subtreeLabel == other.subtreeLabel
 
         fun identityMatches(refreshed: AccessibilityNodeInfo): Boolean =
             identity().matches(refreshed.toIdentity())
