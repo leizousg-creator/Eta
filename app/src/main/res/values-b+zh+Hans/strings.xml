@@ -1454,4 +1454,8 @@
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>
+  <string name="accessibility_lost_channel">无障碍状态</string>
+  <string name="accessibility_lost_title">无障碍服务已断开</string>
+  <string name="accessibility_lost_body">点屏幕、读界面的能力已经失效：%1$s\n点这条通知，到系统设置里重新开启「Eta Agent」。</string>
+  <string name="accessibility_lost_unbound">系统解除了无障碍绑定</string>
 </resources>

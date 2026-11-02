@@ -1362,4 +1362,8 @@
   <string name="chat_queue_remove">移除排隊訊息</string>
   <string name="chat_queue_images_only">[%1$d 張圖片]</string>
   <string name="chat_queue_files_only">[%1$d 個檔案]</string>
+  <string name="accessibility_lost_channel">無障礙狀態</string>
+  <string name="accessibility_lost_title">無障礙服務已中斷</string>
+  <string name="accessibility_lost_body">點螢幕、讀介面的能力已經失效：%1$s\n點這條通知，到系統設定裡重新開啟「Eta Agent」。</string>
+  <string name="accessibility_lost_unbound">系統解除了無障礙綁定</string>
 </resources>

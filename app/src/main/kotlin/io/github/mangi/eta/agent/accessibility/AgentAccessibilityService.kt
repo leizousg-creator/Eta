@@ -35,6 +35,7 @@ import io.github.mangi.eta.agent.device.ScrollEvidence
 import io.github.mangi.eta.agent.device.ScrollEvidenceContract
 import io.github.mangi.eta.agent.device.ScrollMovementSource
 import io.github.mangi.eta.agent.device.RootScrollMotionContract
+import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AndroidAgentLogger
 import java.util.ArrayDeque
 import java.util.concurrent.ArrayBlockingQueue
@@ -96,9 +97,11 @@ class AgentAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        AccessibilityHealthNotifier.onConnected(this)
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        AccessibilityHealthNotifier.onDisconnected(this, getString(R.string.accessibility_lost_unbound))
         clearCurrentInstance()
         return super.onUnbind(intent)
     }
