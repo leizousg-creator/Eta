@@ -17,6 +17,7 @@ import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
 import io.github.mangi.eta.data.model.OutboundRewriteSettings
+import io.github.mangi.eta.data.model.VirtualScreenSettings
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.model.SubagentSettings
 import io.github.mangi.eta.data.model.WebToolsSettings
@@ -33,6 +34,7 @@ internal object SettingsDataStore {
     private val WEB_TOOLS_SETTINGS = stringPreferencesKey("web_tools_settings_v1")
     private val SUBAGENT_SETTINGS = stringPreferencesKey("subagent_settings_v1")
     private val OUTBOUND_SETTINGS = stringPreferencesKey("outbound_rewrite_v1")
+    private val VIRTUAL_SCREEN_SETTINGS = stringPreferencesKey("virtual_screen_settings_v1")
     private val speechJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -167,6 +169,7 @@ internal object SettingsDataStore {
             prefs[AUTO_SKILLS_ENABLED] = updated.autoSkillsEnabled
             prefs.putAppearance(updated.appearance.normalized())
             prefs.putOutbound(updated.outbound)
+            prefs.putVirtualScreen(updated.virtualScreen)
         }
     }
 
@@ -309,6 +312,7 @@ internal object SettingsDataStore {
             interfaceScale = this[APPEARANCE_INTERFACE_SCALE] ?: 1f,
         ).normalized(),
         outbound = decodeOutbound(this[OUTBOUND_SETTINGS]),
+        virtualScreen = decodeVirtualScreen(this[VIRTUAL_SCREEN_SETTINGS]),
     )
 
     private fun decodeOutbound(raw: String?): OutboundRewriteSettings {
@@ -320,6 +324,17 @@ internal object SettingsDataStore {
 
     private fun MutablePreferences.putOutbound(settings: OutboundRewriteSettings) {
         this[OUTBOUND_SETTINGS] = speechJson.encodeToString(settings.normalized())
+    }
+
+    private fun decodeVirtualScreen(raw: String?): VirtualScreenSettings {
+        if (raw.isNullOrBlank()) return VirtualScreenSettings()
+        return runCatching { speechJson.decodeFromString<VirtualScreenSettings>(raw) }
+            .getOrDefault(VirtualScreenSettings())
+            .normalized()
+    }
+
+    private fun MutablePreferences.putVirtualScreen(settings: VirtualScreenSettings) {
+        this[VIRTUAL_SCREEN_SETTINGS] = speechJson.encodeToString(settings.normalized())
     }
 
     private fun MutablePreferences.putAppearance(settings: AppearanceSettings) {

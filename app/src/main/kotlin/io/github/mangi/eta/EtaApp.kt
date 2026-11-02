@@ -16,6 +16,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentOutboundRepository
+import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
@@ -59,6 +60,9 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         SettingsDataStore.init(this)
         applicationScope.launch {
             AgentOutboundRepository.flow().collect { settings -> AgentOutboundRepository.publish(settings) }
+        }
+        applicationScope.launch {
+            VirtualScreenSettingsRepository.flow().collect { settings -> VirtualScreenSettingsRepository.publish(settings) }
         }
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled

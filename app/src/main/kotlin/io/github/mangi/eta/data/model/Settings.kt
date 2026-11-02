@@ -11,4 +11,5 @@ data class Settings(
     val autoSkillsEnabled: Boolean = true,
     val appearance: AppearanceSettings = AppearanceSettings(),
     val outbound: OutboundRewriteSettings = OutboundRewriteSettings(),
+    val virtualScreen: VirtualScreenSettings = VirtualScreenSettings(),
 )

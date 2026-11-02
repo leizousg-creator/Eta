@@ -69,7 +69,9 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.data.model.VirtualScreenSettings
 import io.github.mangi.eta.data.update.AppLatestRelease
 import io.github.mangi.eta.data.update.AppUpdateChecker
 import io.github.mangi.eta.systemizer.GoogleAppSystemizerInstaller
@@ -189,6 +191,7 @@ private fun SettingsPageContent(
 
     // Provider / Model 选中状态展示
     val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
+    val virtualScreenSettings by VirtualScreenSettingsRepository.stateFlow.collectAsState()
     val selectedProviderId by RuntimeConfigRepository.selectedProviderIdFlow()
         .collectAsState(initial = null)
     val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow()
@@ -403,6 +406,33 @@ private fun SettingsPageContent(
                                     ),
                                     Toast.LENGTH_LONG,
                                 ).show()
+                            }
+                        },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaSwitchPreference(
+                        title = "虚拟屏空闲回收",
+                        summary = "任务结束或长时间没有交互时自动收起虚拟屏，避免一块屏一直挂着",
+                        checked = virtualScreenSettings.idleReclaimEnabled,
+                        onCheckedChange = { enabled ->
+                            coroutineScope.launch {
+                                VirtualScreenSettingsRepository.update { it.copy(idleReclaimEnabled = enabled) }
+                            }
+                        },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaPreference(
+                        title = "空闲多久后收起",
+                        summary = "${virtualScreenSettings.idleTimeoutMinutes} 分钟（点击切换 5 / 10 / 20 / 30 分钟）",
+                        onClick = {
+                            coroutineScope.launch {
+                                VirtualScreenSettingsRepository.update { current ->
+                                    val options = listOf(5, 10, 20, 30)
+                                    val index = options.indexOf(current.idleTimeoutMinutes).coerceAtLeast(0)
+                                    current.copy(idleTimeoutMinutes = options[(index + 1) % options.size])
+                                }
                             }
                         },
                     )

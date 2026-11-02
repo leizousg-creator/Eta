@@ -14,6 +14,7 @@ import android.media.ImageReader
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
 import android.view.WindowManager
@@ -25,6 +26,7 @@ import io.github.mangi.eta.agent.device.DeviceToolContract
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.core.safeLogType
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -73,6 +75,54 @@ internal object VirtualDisplayController {
     private var latestFullBitmap: Bitmap? = null
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
+
+    // ---- 空闲回收：任务结束或长时间无交互时自动收起虚拟屏，别让屏一直挂着 ----
+
+    private const val IDLE_CHECK_INTERVAL_MS = 30_000L
+
+    private var idleHandler: Handler? = null
+    private var idleWatching = false
+
+    @Volatile
+    private var lastInteractionAtElapsedMs = 0L
+
+    /** 任何真实交互都续命一次；由工具调用与画布手势共同触发。 */
+    fun noteInteraction() {
+        lastInteractionAtElapsedMs = SystemClock.elapsedRealtime()
+    }
+
+    private fun startIdleWatchdog(context: Context) {
+        val appContext = context.applicationContext
+        synchronized(lock) { stopIdleWatchdogLocked() }
+        noteInteraction()
+        val handler = Handler(Looper.getMainLooper())
+        idleHandler = handler
+        idleWatching = true
+        val tick = object : Runnable {
+            override fun run() {
+                if (!idleWatching) return
+                val timeoutMs = VirtualScreenSettingsRepository.current().idleTimeoutMs
+                if (timeoutMs > 0) {
+                    val idle = SystemClock.elapsedRealtime() - lastInteractionAtElapsedMs
+                    if (idle >= timeoutMs) {
+                        AndroidAgentLogger.info(
+                            "virtual display idle reclaim: idle=${idle / 1000}s timeout=${timeoutMs / 1000}s",
+                        )
+                        runCatching { release(appContext) }
+                        return
+                    }
+                }
+                handler.postDelayed(this, IDLE_CHECK_INTERVAL_MS)
+            }
+        }
+        handler.postDelayed(tick, IDLE_CHECK_INTERVAL_MS)
+    }
+
+    private fun stopIdleWatchdogLocked() {
+        idleWatching = false
+        idleHandler?.removeCallbacksAndMessages(null)
+        idleHandler = null
+    }
 
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
         rootAvailable || lsposedAvailable
@@ -145,6 +195,7 @@ internal object VirtualDisplayController {
                         height = height,
                     )
                     AndroidAgentLogger.info("Virtual display created in-process: displayId=$id size=${width}x$height")
+                    startIdleWatchdog(appContext)
                     return id
                 }
                 runCatching { createdInProcess.release() }
@@ -187,6 +238,7 @@ internal object VirtualDisplayController {
         launchIntent: Intent,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
+        noteInteraction()
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
         mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
@@ -251,6 +303,7 @@ internal object VirtualDisplayController {
         targetLabel: String,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
+        noteInteraction()
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
         val started = runCatching {
@@ -335,6 +388,7 @@ internal object VirtualDisplayController {
      * 提取虚拟屏最新一帧的完整 Bitmap 副本（供 observe_screen 使用，调用方负责 recycle）。
      */
     fun captureScreenshotBitmap(waitUpToMs: Long = 450L): Bitmap? {
+        noteInteraction()
         val deadline = SystemClock.elapsedRealtime() + waitUpToMs.coerceAtLeast(0L)
         while (true) {
             synchronized(lock) {
@@ -397,6 +451,7 @@ internal object VirtualDisplayController {
         longPress: Boolean = false,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ) {
+        noteInteraction()
         val snapshot = mutableSnapshots.value
         if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return
         val x = (normalizedX.coerceIn(0f, 1f) * (snapshot.width - 1)).roundToInt()
@@ -431,6 +486,7 @@ internal object VirtualDisplayController {
         durationMs: Int = 320,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ) {
+        noteInteraction()
         val snapshot = mutableSnapshots.value
         if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return
         val x1 = (startX.coerceIn(0f, 1f) * (snapshot.width - 1)).roundToInt()
@@ -476,6 +532,7 @@ internal object VirtualDisplayController {
         context: Context?,
         rootAvailable: () -> Boolean,
     ) {
+        stopIdleWatchdogLocked()
         highFrequencyPreview = false
         activeDisplayId = Display.DEFAULT_DISPLAY
         mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
@@ -721,6 +778,7 @@ internal object VirtualDisplayController {
 
         rootBridgeProcess = process
         processSupervisor = supervisor
+        startIdleWatchdog(context)
         return id
     }
 
