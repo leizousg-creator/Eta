@@ -419,6 +419,35 @@ internal object VirtualDisplayController {
             rootAvailable = rootAvailable,
         )
 
+        if (!moved) {
+            // 迁移失败时任务多半还在虚拟屏里，这时 release 会让画面直接消失（观感等同闪退）。
+            // 保持在虚拟屏、把状态复位，用户还能继续在画布里操作。
+            synchronized(lock) {
+                mutableSnapshots.value = mutableSnapshots.value.copy(
+                    materializingToMain = false,
+                    userControlling = false,
+                )
+                highFrequencyPreview = false
+            }
+            AndroidAgentLogger.warn("virtual display handoff failed; keep display ${snapshot.displayId}")
+            return false
+        }
+
+        // moveRootTaskToDisplay 只挪位置不置前，不补这一步的话用户看到的仍是 Eta 自己，
+        // 目标 app 停在主屏后台——点了「全屏」却什么也没弹出来，正是这次误报闪退的原因。
+        if (rootAvailable() && snapshot.packageName.isNotBlank()) {
+            val executor = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
+            try {
+                executor.execute(
+                    "monkey -p ${DeviceToolContract.quote(snapshot.packageName)} " +
+                        "-c android.intent.category.LAUNCHER 1",
+                    timeoutMillis = 6_000L,
+                )
+            } finally {
+                executor.close()
+            }
+        }
+
         // 留出 260ms 让 VirtualDisplayMaterializeOverlay 完成从画板到物理全屏的弹簧贴合动画
         try {
             Thread.sleep(260L)
@@ -427,7 +456,7 @@ internal object VirtualDisplayController {
         }
 
         release(appContext, rootAvailable)
-        return moved
+        return true
     }
 
     /**
