@@ -147,7 +147,19 @@ internal object VirtualDisplayCommandMain {
         try {
             while (true) {
                 val line = reader.readLine() ?: break
-                if (line.trim() == "release") break
+                val trimmed = line.trim()
+                if (trimmed == "release") break
+                if (!trimmed.startsWith("{")) continue
+                val command = runCatching { JSONObject(trimmed) }.getOrNull() ?: continue
+                if (command.optString("action") != "set_surface") continue
+                val nextToken = command.optString("surface_token")
+                val nextSurface = acquireSurfaceFromApp(userId, nextToken) ?: continue
+                if (!nextSurface.isValid) continue
+                // 不 release 旧 surface：它可能是宿主进程那边的 ImageReader 画布，
+                // 在这里 release 会把宿主的接收端一起收掉。
+                runCatching { virtualDisplay.surface = nextSurface }
+                println("$READY_PREFIX$displayId")
+                System.out.flush()
             }
         } catch (_: Throwable) {
             // 宿主关闭管道或取消任务

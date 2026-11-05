@@ -64,6 +64,10 @@ internal object VirtualDisplayController {
     private var frameThread: HandlerThread? = null
     private var frameHandler: Handler? = null
     private var imageReader: ImageReader? = null
+
+    /** 画面是否已切到 UI 的 SurfaceView（直投）。 */
+    @Volatile
+    private var hostSurfaceAttached: Boolean = false
     private var inProcessVirtualDisplay: VirtualDisplay? = null
     private var rootBridgeProcess: Process? = null
     private var processSupervisor: ShellProcessSupervisor? = null
@@ -718,6 +722,63 @@ internal object VirtualDisplayController {
     }
 
     @android.annotation.SuppressLint("WrongConstant")
+    /**
+     * 把画面直接投到 UI 的 SurfaceView（host surface 直投）。
+     *
+     * 平时的路径是 ImageReader → 解码成 Bitmap → Compose 重绘，每帧多两三次拷贝；
+     * 直投时 VirtualDisplay 的 surface 换成 SurfaceView 的 surface，由 SurfaceFlinger
+     * 直接合成，延迟接近原生。用不了就返回 false，调用方继续走 ImageReader。
+     */
+    fun attachHostSurface(surface: Surface): Boolean {
+        if (!surface.isValid) return false
+        val bridge = synchronized(lock) { rootBridgeProcess }
+        val inProcess = synchronized(lock) { inProcessVirtualDisplay }
+        if (bridge != null) {
+            val token = VirtualDisplaySurfaceRegistry.register(surface)
+            val payload = JSONObject()
+                .put("action", "set_surface")
+                .put("surface_token", token)
+                .toString() + "\n"
+            val sent = runCatching {
+                bridge.outputStream.write(payload.toByteArray())
+                bridge.outputStream.flush()
+                true
+            }.getOrDefault(false)
+            if (sent) hostSurfaceAttached = true
+            return sent
+        }
+        if (inProcess != null) {
+            val ok = runCatching { inProcess.surface = surface }.isSuccess
+            if (ok) hostSurfaceAttached = true
+            return ok
+        }
+        return false
+    }
+
+    /** 从直投切回 ImageReader（截图、后台观察都依赖它）。 */
+    fun detachHostSurface() {
+        if (!hostSurfaceAttached) return
+        hostSurfaceAttached = false
+        val bridge = synchronized(lock) { rootBridgeProcess }
+        val inProcess = synchronized(lock) { inProcessVirtualDisplay }
+        val readerSurface = synchronized(lock) { imageReader?.surface }
+        if (bridge != null && readerSurface != null) {
+            val token = VirtualDisplaySurfaceRegistry.register(readerSurface)
+            val payload = JSONObject()
+                .put("action", "set_surface")
+                .put("surface_token", token)
+                .toString() + "\n"
+            runCatching {
+                bridge.outputStream.write(payload.toByteArray())
+                bridge.outputStream.flush()
+            }
+        } else if (inProcess != null && readerSurface != null) {
+            runCatching { inProcess.surface = readerSurface }
+        }
+    }
+
+    val isHostSurfaceAttached: Boolean get() = hostSurfaceAttached
+
     private fun tryCreateInProcessVirtualDisplay(
         appContext: Context,
         surface: android.view.Surface,
