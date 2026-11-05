@@ -201,7 +201,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         AgentOverlayClearance.detach(clearanceHost)
-        VirtualDisplayController.release(this)
+        if (shouldKeepVirtualDisplay()) {
+            // stopSelf 之后服务会被销毁，这里再无条件 release 就把刚保留的虚拟屏收掉了，
+            // 空出来的回收职责交给空闲看门狗。
+            AndroidAgentLogger.info("keep virtual display after service destroy")
+        } else {
+            VirtualDisplayController.release(this)
+        }
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -1448,6 +1454,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
     }
 
+    /** 虚拟屏里还有 app 在跑时，run 结束与服务销毁都不该把它一起收掉。 */
+    private fun shouldKeepVirtualDisplay(): Boolean {
+        val snapshot = VirtualDisplayController.snapshots.value
+        return snapshot.active &&
+            CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId) &&
+            snapshot.packageName.isNotBlank()
+    }
+
     private fun dismissAndStop() {
         // stopSelf 不会销毁仍被客户端绑定的服务；窗口关闭后不再保留完整请求与结果历史。
         displayedRun?.completedContext = null
@@ -1456,17 +1470,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         if (runs.all().isEmpty() && !guiControl.state.value.userPaused) {
             // 虚拟屏里还有 app 在跑时不跟着 run 一起收：工具结果一返回就把屏销毁的话，
             // 用户看到的是「刚开就自己关」。真正回收交给空闲看门狗（无交互超时）。
-            val virtualScreen = VirtualDisplayController.snapshots.value
-            val keepVirtualScreen = virtualScreen.active &&
-                CanvasRoutingPolicy.isVirtualDisplay(virtualScreen.displayId) &&
-                virtualScreen.packageName.isNotBlank()
-            if (!keepVirtualScreen) {
-                VirtualDisplayController.release(this)
-            } else {
+            if (shouldKeepVirtualDisplay()) {
                 AndroidAgentLogger.info(
-                    "keep virtual display ${virtualScreen.displayId} after run end: " +
-                        virtualScreen.packageName,
+                    "keep virtual display ${VirtualDisplayController.snapshots.value.displayId} after run end",
                 )
+            } else {
+                VirtualDisplayController.release(this)
             }
             stopSelf()
         }
