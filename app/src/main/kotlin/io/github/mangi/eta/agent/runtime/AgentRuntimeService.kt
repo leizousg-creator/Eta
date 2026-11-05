@@ -52,6 +52,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
+import io.github.mangi.eta.agent.virtualdisplay.CanvasRoutingPolicy
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplaySnapshot
 import io.github.mangi.eta.config.Prefs
@@ -1453,7 +1454,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         displayedRun = null
         removeOverlayWindows()
         if (runs.all().isEmpty() && !guiControl.state.value.userPaused) {
-            VirtualDisplayController.release(this)
+            // 虚拟屏里还有 app 在跑时不跟着 run 一起收：工具结果一返回就把屏销毁的话，
+            // 用户看到的是「刚开就自己关」。真正回收交给空闲看门狗（无交互超时）。
+            val virtualScreen = VirtualDisplayController.snapshots.value
+            val keepVirtualScreen = virtualScreen.active &&
+                CanvasRoutingPolicy.isVirtualDisplay(virtualScreen.displayId) &&
+                virtualScreen.packageName.isNotBlank()
+            if (!keepVirtualScreen) {
+                VirtualDisplayController.release(this)
+            } else {
+                AndroidAgentLogger.info(
+                    "keep virtual display ${virtualScreen.displayId} after run end: " +
+                        virtualScreen.packageName,
+                )
+            }
             stopSelf()
         }
     }
