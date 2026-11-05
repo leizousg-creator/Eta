@@ -653,6 +653,11 @@ internal object VirtualDisplayController {
         rootAvailable: () -> Boolean,
     ) {
         stopIdleWatchdogLocked()
+        if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)) {
+            AndroidAgentLogger.info(
+                "virtual display release: display=$activeDisplayId host=$hostSurfaceAttached",
+            )
+        }
         highFrequencyPreview = false
         activeDisplayId = Display.DEFAULT_DISPLAY
         mutableSnapshots.value = VirtualDisplaySnapshot.Inactive

@@ -915,12 +915,18 @@ internal class AgentLocalTools(
             null
         }
 
+        var canvasFallback: String? = null
         val finalDisplayId = if (launchedVirtualId != null && CanvasRoutingPolicy.isVirtualDisplay(launchedVirtualId)) {
             activeDisplayId = launchedVirtualId
             launchedVirtualId
         } else {
             activeDisplayId = Display.DEFAULT_DISPLAY
             context.startActivity(launchIntent)
+            if (targetCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
+                // 要求虚拟屏却落到主屏时别装作成功：模型和用户都需要知道画布变了。
+                canvasFallback = "VIRTUAL_SCREEN_FAILED"
+                logger.warn("Agent local tool launch_app fell back to main: virtual display unavailable")
+            }
             Display.DEFAULT_DISPLAY
         }
         val finalCanvas = if (CanvasRoutingPolicy.isVirtualDisplay(finalDisplayId)) {
@@ -937,6 +943,7 @@ internal class AgentLocalTools(
             .put("package_name", app.packageName)
             .put("canvas", finalCanvas)
             .put("display_id", finalDisplayId)
+            .apply { canvasFallback?.let { put("canvas_fallback", it) } }
             .toString()
     }
 
