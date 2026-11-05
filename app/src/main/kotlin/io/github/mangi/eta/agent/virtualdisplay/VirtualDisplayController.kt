@@ -722,7 +722,6 @@ internal object VirtualDisplayController {
         }
     }
 
-    @android.annotation.SuppressLint("WrongConstant")
     /**
      * 把画面直接投到 UI 的 SurfaceView（host surface 直投）。
      *
@@ -780,6 +779,7 @@ internal object VirtualDisplayController {
 
     val isHostSurfaceAttached: Boolean get() = hostSurfaceAttached
 
+    @android.annotation.SuppressLint("WrongConstant")
     private fun tryCreateInProcessVirtualDisplay(
         appContext: Context,
         surface: android.view.Surface,
