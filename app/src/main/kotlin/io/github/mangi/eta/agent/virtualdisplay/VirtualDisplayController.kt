@@ -69,6 +69,14 @@ internal object VirtualDisplayController {
     /** 画面是否已切到 UI 的 SurfaceView（直投）。 */
     @Volatile
     private var hostSurfaceAttached: Boolean = false
+
+    /** 直投用的 Surface，截图兜底时切回可复用。 */
+    @Volatile
+    private var hostSurfaceRef: Surface? = null
+
+    /** 缓存 context，截屏走 cache 目录。 */
+    @Volatile
+    private var appContextRef: Context? = null
     private var inProcessVirtualDisplay: VirtualDisplay? = null
     private var rootBridgeProcess: Process? = null
     private var processSupervisor: ShellProcessSupervisor? = null
@@ -162,6 +170,7 @@ internal object VirtualDisplayController {
             }
         }
         val appContext = context.applicationContext
+        appContextRef = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
         synchronized(lock) {
             if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
@@ -426,6 +435,17 @@ internal object VirtualDisplayController {
      */
     fun captureScreenshotBitmap(waitUpToMs: Long = 450L): Bitmap? {
         noteInteraction()
+        val displayId = synchronized(lock) { activeDisplayId }
+        if (hostSurfaceAttached && CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
+            // 直投时画面直接进 SurfaceFlinger，ImageReader 拿不到帧：
+            // 先走系统截图，失败再临时切回 ImageReader 收一帧。
+            captureViaScreencap(displayId)?.let { return it }
+            return captureViaTemporaryReader(waitUpToMs)
+        }
+        return waitForLatestFrame(waitUpToMs)
+    }
+
+    private fun waitForLatestFrame(waitUpToMs: Long): Bitmap? {
         val deadline = SystemClock.elapsedRealtime() + waitUpToMs.coerceAtLeast(0L)
         while (true) {
             synchronized(lock) {
@@ -443,6 +463,40 @@ internal object VirtualDisplayController {
                 return null
             }
         }
+    }
+
+    /** root 下按 displayId 截图；写进应用私有缓存再解码，避免跨域读文件的权限问题。 */
+    private fun captureViaScreencap(displayId: Int): Bitmap? {
+        val context = appContextRef ?: return null
+        if (!RootAccess.isGranted) return null
+        val file = java.io.File(context.cacheDir, "eta-virtual-shot.png")
+        val executor = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = { RootAccess.isGranted })
+        return try {
+            val result = executor.execute(
+                "screencap -p -d $displayId ${DeviceToolContract.quote(file.absolutePath)}",
+                timeoutMillis = 8_000L,
+            )
+            if (result.exitCode != 0 || !file.isFile) {
+                AndroidAgentLogger.warn("virtual display screencap failed: exit=${result.exitCode}")
+                null
+            } else {
+                android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+            }
+        } catch (_: Throwable) {
+            null
+        } finally {
+            runCatching { file.delete() }
+            executor.close()
+        }
+    }
+
+    /** 截图兜底：临时切回 ImageReader 收一帧，再切回直投（会闪一下，但保证有图）。 */
+    private fun captureViaTemporaryReader(waitUpToMs: Long): Bitmap? {
+        val host = hostSurfaceRef ?: return null
+        detachHostSurface()
+        val bitmap = waitForLatestFrame(waitUpToMs)
+        attachHostSurface(host)
+        return bitmap
     }
 
     fun emitTapEffect(x: Int, y: Int, longPress: Boolean = false) {
@@ -744,12 +798,18 @@ internal object VirtualDisplayController {
                 bridge.outputStream.flush()
                 true
             }.getOrDefault(false)
-            if (sent) hostSurfaceAttached = true
+            if (sent) {
+                hostSurfaceAttached = true
+                hostSurfaceRef = surface
+            }
             return sent
         }
         if (inProcess != null) {
             val ok = runCatching { inProcess.surface = surface }.isSuccess
-            if (ok) hostSurfaceAttached = true
+            if (ok) {
+                hostSurfaceAttached = true
+                hostSurfaceRef = surface
+            }
             return ok
         }
         return false
