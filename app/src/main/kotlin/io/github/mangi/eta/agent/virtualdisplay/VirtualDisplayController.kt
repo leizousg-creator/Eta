@@ -17,6 +17,7 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
+import android.view.Surface
 import android.view.WindowManager
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.scale
