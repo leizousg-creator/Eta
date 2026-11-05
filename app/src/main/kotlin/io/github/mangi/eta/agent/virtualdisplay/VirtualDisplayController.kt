@@ -662,8 +662,16 @@ internal object VirtualDisplayController {
     ) {
         stopIdleWatchdogLocked()
         if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)) {
+            // 排查用：把调用栈里的 Eta 帧打出来，直接看清是谁释放的（一次排查后可删）。
+            val stack = Throwable().stackTrace
+                .asSequence()
+                .filter { frame -> frame.className.startsWith("io.github.mangi.eta") }
+                .take(4)
+                .joinToString(" <- ") { frame ->
+                    frame.className.substringAfterLast('.') + "." + frame.methodName + ":" + frame.lineNumber
+                }
             AndroidAgentLogger.info(
-                "virtual display release: display=$activeDisplayId host=$hostSurfaceAttached",
+                "virtual display release: display=$activeDisplayId host=$hostSurfaceAttached from=$stack",
             )
         }
         highFrequencyPreview = false

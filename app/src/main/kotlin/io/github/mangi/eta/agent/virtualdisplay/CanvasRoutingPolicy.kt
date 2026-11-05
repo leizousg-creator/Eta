@@ -92,9 +92,13 @@ internal object CanvasRoutingPolicy {
             if (normalizedTarget == ownPackage || normalizedTarget in MAIN_DISPLAY_ONLY_PACKAGES) {
                 return CanvasTarget.MAIN_DISPLAY
             }
-            // 同包名应用正处于物理主屏前台：若在虚拟屏启动，Android 会将该 Task 从主屏抽走，直接破坏用户当前视线。
+            // 同包名应用正处于物理主屏前台：若在虚拟屏启动，Android 会将该 Task 从主屏抽走，
+            // 直接破坏用户当前视线。但「明确要求 virtual」时不适用——调用方已经知道要占用它，
+            // 启动路径里也会先把主屏实例清掉，否则全屏投射之后就再也开不回虚拟屏。
             val normalizedForeground = foregroundPackageOnMainDisplay?.trim().orEmpty()
-            if (normalizedForeground.isNotEmpty() && normalizedTarget == normalizedForeground) {
+            if (requested != RequestedDisplay.VIRTUAL &&
+                normalizedForeground.isNotEmpty() && normalizedTarget == normalizedForeground
+            ) {
                 return CanvasTarget.MAIN_DISPLAY
             }
         }
