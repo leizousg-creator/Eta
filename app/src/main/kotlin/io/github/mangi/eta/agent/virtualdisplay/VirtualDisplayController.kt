@@ -254,7 +254,15 @@ internal object VirtualDisplayController {
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
         noteInteraction()
-        val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
+        // 刚 handoff 完就重新建屏时，上一个虚拟屏与桥接进程可能还没清理干净，第一次会失败；
+        // 等一下重试一次，避免用户看到「全屏之后再也开不了虚拟屏」。
+        val displayId = ensureVirtualDisplay(context, rootAvailable)
+            ?: run {
+                AndroidAgentLogger.info("virtual display create failed once, retry after 600ms")
+                runCatching { Thread.sleep(600L) }
+                ensureVirtualDisplay(context, rootAvailable)
+            }
+            ?: return null
         val appContext = context.applicationContext
         mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
 
