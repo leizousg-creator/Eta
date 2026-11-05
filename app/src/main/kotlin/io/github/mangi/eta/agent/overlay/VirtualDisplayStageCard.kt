@@ -8,6 +8,14 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.runtime.DisposableEffect
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewOutlineProvider
+import android.graphics.Outline
+import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -221,7 +229,14 @@ internal fun VirtualDisplayStageSection(
             contentAlignment = Alignment.Center,
         ) {
             val frame = snapshot.frame
-            if (frame != null) {
+            if (snapshot.userControlling && !isPaused) {
+                // 接管态：画面直接投到 SurfaceView，由 SurfaceFlinger 合成，
+                // 比 ImageReader 解码成 Bitmap 再重绘少两次拷贝。
+                VirtualScreenHostSurface(
+                    cornerRadius = StageCanvasCorner,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (frame != null) {
                 Image(
                     bitmap = frame,
                     contentDescription = snapshot.appName.ifBlank {
@@ -490,3 +505,48 @@ internal val StageCanvasHeight = 336.dp
 internal val StageCapsuleWidth = 296.dp
 internal val MicroLensCapsuleWidth = 264.dp
 internal val DefaultCapsuleWidth = 248.dp
+
+/**
+ * 接管态的画面宿主：SurfaceView + host surface 直投。
+ *
+ * 不接管时仍用 Bitmap（省电、可做微缩取景）；接管时把 SurfaceView 的 surface 交给
+ * VirtualDisplay，画面由 SurfaceFlinger 直接合成，触摸仍走上层手势 → root 注入。
+ */
+@Composable
+private fun VirtualScreenHostSurface(
+    cornerRadius: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val cornerPx = with(LocalDensity.current) { cornerRadius.toPx() }
+    DisposableEffect(Unit) {
+        onDispose { VirtualDisplayController.detachHostSurface() }
+    }
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            SurfaceView(context).apply {
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        VirtualDisplayController.attachHostSurface(holder.surface)
+                    }
+
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                        VirtualDisplayController.attachHostSurface(holder.surface)
+                    }
+
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        VirtualDisplayController.detachHostSurface()
+                    }
+                })
+                // SurfaceView 自己是一层独立 surface，Compose 的 clip 管不到，
+                // 用 outline 自己裁圆角；个别机型无效时最多露出直角，不影响画面。
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, cornerPx)
+                    }
+                }
+                clipToOutline = true
+            }
+        },
+    )
+}
