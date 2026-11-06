@@ -12,6 +12,7 @@
     <string name="settings_virtual_display_title">Background virtual display</string>
     <string name="overlay_virtual_canvas_auto">Background canvas</string>
     <string name="overlay_virtual_canvas_takeover">Manual control</string>
+  <string name="overlay_virtual_canvas_paused">Paused</string>
     <string name="overlay_virtual_takeover">Take over</string>
     <string name="overlay_virtual_continue">Continue</string>
     <string name="overlay_virtual_fullscreen">Fullscreen</string>

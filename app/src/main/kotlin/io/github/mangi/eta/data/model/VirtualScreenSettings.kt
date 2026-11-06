@@ -27,7 +27,7 @@ data class VirtualScreenSettings(
     companion object {
         const val MIN_IDLE_MINUTES = 1
         const val MAX_IDLE_MINUTES = 120
-        const val DEFAULT_IDLE_MINUTES = 5
+        const val DEFAULT_IDLE_MINUTES = 1
         const val MIN_FRAME_RATE = 60
         const val MAX_FRAME_RATE = 165
         const val DEFAULT_FRAME_RATE = 60

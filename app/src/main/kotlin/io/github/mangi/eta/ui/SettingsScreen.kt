@@ -425,11 +425,11 @@ private fun SettingsPageContent(
                     EtaPreferenceDivider()
                     EtaPreference(
                         title = "空闲多久后收起",
-                        summary = "${virtualScreenSettings.idleTimeoutMinutes} 分钟（点击切换 5 / 10 / 20 / 30 分钟）",
+                        summary = "${virtualScreenSettings.idleTimeoutMinutes} 分钟（点击切换 1 / 3 / 5 / 10 分钟）",
                         onClick = {
                             coroutineScope.launch {
                                 VirtualScreenSettingsRepository.update { current ->
-                                    val options = listOf(5, 10, 20, 30)
+                                    val options = listOf(1, 3, 5, 10)
                                     val index = options.indexOf(current.idleTimeoutMinutes).coerceAtLeast(0)
                                     current.copy(idleTimeoutMinutes = options[(index + 1) % options.size])
                                 }

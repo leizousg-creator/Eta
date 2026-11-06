@@ -271,11 +271,13 @@ internal fun VirtualDisplayStageSection(
                 .padding(horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 「等你继续」和「你在手动操作」是两种状态：先前合成一句，run 被暂停时也会写成
+            // 「手动接管中」，与实际是否由用户接管无关。
             val modeLabel = stringResource(
-                if (snapshot.userControlling || isPaused) {
-                    R.string.overlay_virtual_canvas_takeover
-                } else {
-                    R.string.overlay_virtual_canvas_auto
+                when {
+                    snapshot.userControlling -> R.string.overlay_virtual_canvas_takeover
+                    isPaused -> R.string.overlay_virtual_canvas_paused
+                    else -> R.string.overlay_virtual_canvas_auto
                 },
             )
             val footerTitle = if (snapshot.appName.isNotBlank()) {

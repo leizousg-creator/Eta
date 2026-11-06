@@ -12,6 +12,7 @@
   <string name="settings_virtual_display_title">背景虛擬螢幕執行</string>
   <string name="overlay_virtual_canvas_auto">背景畫布</string>
   <string name="overlay_virtual_canvas_takeover">手動接管中</string>
+  <string name="overlay_virtual_canvas_paused">已暫停</string>
   <string name="overlay_virtual_takeover">接管</string>
   <string name="overlay_virtual_continue">繼續</string>
   <string name="overlay_virtual_fullscreen">全螢幕</string>

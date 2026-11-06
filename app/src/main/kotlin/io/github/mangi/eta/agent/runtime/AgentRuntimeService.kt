@@ -157,7 +157,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 val wasActive = virtualDisplayState.value.active
                 virtualDisplayState.value = snapshot
                 if (wasActive != snapshot.active) {
-                    if (!snapshot.active) VirtualDisplayController.setStageExpanded(false)
+                    if (!snapshot.active) {
+                        VirtualDisplayController.setStageExpanded(false)
+                        // 虚拟屏被空闲看门狗回收后，胶囊再没有任何可展示的内容（微缩镜没有画面、
+                        // 画廊视窗也没了），留着只会挡住对话；只有仍在执行的 run 才需要继续显示进度。
+                        if (displayedRun == null) removeAmbientWindows()
+                    }
                     updateCapsuleWindowBounds()
                     displayedRun?.let(::syncActiveRunOverlayVisibility)
                 }
