@@ -161,7 +161,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         VirtualDisplayController.setStageExpanded(false)
                         // 虚拟屏被空闲看门狗回收后，胶囊再没有任何可展示的内容（微缩镜没有画面、
                         // 画廊视窗也没了），留着只会挡住对话；只有仍在执行的 run 才需要继续显示进度。
-                        if (displayedRun == null) removeAmbientWindows()
+                        if (displayedRun == null) {
+                            removeAmbientWindows()
+                            // 窗口全撤、也没有 run 在跑，就没有继续驻留的理由：
+                            // 不然服务会一直挂着，等到系统回收才结束。
+                            if (runs.all().isEmpty() && !guiControl.state.value.userPaused) stopSelf()
+                        }
                     }
                     updateCapsuleWindowBounds()
                     displayedRun?.let(::syncActiveRunOverlayVisibility)

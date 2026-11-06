@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.app
 
 import android.content.ContentResolver
 import android.content.Context
+import io.github.mangi.eta.core.AndroidAgentLogger
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,11 +34,19 @@ internal class AgentSkillsStore(
     var skillsState by mutableStateOf(AgentSkillsUiState(isLoading = true))
         private set
 
-    fun refreshSkills() {
+    /**
+     * 重新读取技能列表。
+     *
+     * [forceRefresh] 只在「目录内容可能刚变过」时传 true（导入、删除、开关技能）。
+     * 单纯进页面用默认值复用索引缓存：索引要扫 116 个技能目录、读 1.2 MB 的 SKILL.md
+     * 才能建起来，每次都重扫会让页面先白一下。
+     */
+    fun refreshSkills(forceRefresh: Boolean = false) {
         scope.launch(Dispatchers.IO) {
+            val startedAt = System.currentTimeMillis()
             val entries = runCatching {
                 SkillRuntime.createIndexService(appContext)
-                    .listSkillsForManagement(forceRefresh = true)
+                    .listSkillsForManagement(forceRefresh = forceRefresh)
             }.getOrElse {
                 withContext(Dispatchers.Main) {
                     skillsState = skillsState.copy(
@@ -68,6 +77,10 @@ internal class AgentSkillsStore(
                     capabilities = capabilities,
                 )
             }
+            AndroidAgentLogger.info(
+                "skills.refresh cost=${System.currentTimeMillis() - startedAt}ms " +
+                    "count=${items.size} force=$forceRefresh",
+            )
             withContext(Dispatchers.Main) {
                 skillsState = skillsState.copy(skills = items, isLoading = false)
             }
@@ -95,7 +108,7 @@ internal class AgentSkillsStore(
                     },
                 )
             }
-            refreshSkills()
+            refreshSkills(forceRefresh = true)
         }
     }
 
@@ -128,7 +141,7 @@ internal class AgentSkillsStore(
                     },
                 )
             }
-            refreshSkills()
+            refreshSkills(forceRefresh = true)
         }
     }
 
@@ -254,7 +267,7 @@ internal class AgentSkillsStore(
                         )
                     },
                 )
-                if (installed != null) refreshSkills()
+                if (installed != null) refreshSkills(forceRefresh = true)
             }
 
             is SkillZipImportOutcome.Conflict -> {
@@ -310,7 +323,7 @@ internal class AgentSkillsStore(
                     notice = skillZipFailureNotice(outcome.code),
                 )
                 if (outcome.code == SkillZipImportOutcome.FailureCode.RECOVERY_REQUIRED) {
-                    refreshSkills()
+                    refreshSkills(forceRefresh = true)
                 }
             }
         }
@@ -361,7 +374,7 @@ internal class AgentSkillsStore(
                     },
                 )
             }
-            if (succeeded) refreshSkills()
+            if (succeeded) refreshSkills(forceRefresh = true)
         }
     }
 
