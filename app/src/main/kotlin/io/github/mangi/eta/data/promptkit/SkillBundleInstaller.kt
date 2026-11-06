@@ -109,8 +109,11 @@ object SkillBundleInstaller {
         }
 
         // 包内技能 id 清单：供范围策略使用（与是否本次新装无关）。
+        // 包根可能夹带 manifest.json 之类的散文件，它们不是技能：只登记有 SKILL.md 的目录，
+        // 否则「仅使用技能包内技能」的范围清单和日志里的 bundle 计数都会多算一项。
+        val skillIds = allIds.filter { File(skillsDir, "$it/SKILL.md").isFile }
         runCatching {
-            File(skillsDir, SkillBundlePolicy.IDS_FILE).writeText(allIds.sorted().joinToString("\n"))
+            File(skillsDir, SkillBundlePolicy.IDS_FILE).writeText(skillIds.sorted().joinToString("\n"))
         }
 
         if (hasPreviousMarker && createdFiles == 0) {
@@ -118,13 +121,13 @@ object SkillBundleInstaller {
         }
         runCatching {
             marker.writeText(
-                "{\"version\":$BUNDLE_VERSION,\"installed\":$createdFiles,\"bundle\":${allIds.size}," +
+                "{\"version\":$BUNDLE_VERSION,\"installed\":$createdFiles,\"bundle\":${skillIds.size}," +
                     "\"at\":${System.currentTimeMillis()}}",
             )
         }
         AndroidAgentLogger.info(
             "skill bundle installed: version=$BUNDLE_VERSION newFiles=$createdFiles " +
-                "skills=${created.size} skippedFiles=$skippedFiles bundle=${allIds.size}",
+                "skills=${created.size} skippedFiles=$skippedFiles bundle=${skillIds.size}",
         )
         return createdFiles
     }
