@@ -257,8 +257,15 @@ class SkillIndexService(
             }
         }
 
-    fun listInstalledSkills(): List<SkillIndexEntry> =
-        listSkillsForManagement().filter { it.installed && it.enabled }
+    /**
+     * 已安装且已启用的技能。
+     *
+     * [forceRefresh] 用于「刚往技能目录里补了文件」的场景（随包技能包安装、外部导入）：
+     * 管理列表在进程内有缓存，只认 forceRefresh=false 的调用会看不到新建的技能目录，
+     * 于是把这些技能漏在镜像之外——同步前必须能强制重扫一次。
+     */
+    fun listInstalledSkills(forceRefresh: Boolean = false): List<SkillIndexEntry> =
+        listSkillsForManagement(forceRefresh).filter { it.installed && it.enabled }
 
     fun findInstalledSkill(identifier: String): SkillIndexEntry? {
         val normalized = SkillParser.normalizeSkillLookup(identifier)

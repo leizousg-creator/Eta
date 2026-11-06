@@ -40,7 +40,8 @@ object PromptKitSkillSync {
             0
         }
         if (bundled > 0) AndroidAgentLogger.info("promptkit sync: bundle installed skills=$bundled")
-        val result = syncInternal(context, force)
+        // 这次补进新文件时，索引缓存里的旧快照看不到新目录，必须重扫一次。
+        val result = syncInternal(context, force, refreshIndex = bundled > 0)
         // 纯文件取证：EtaTrace 这条链路在真机上出现过「同步跑了但一行都没有」的情况，
         // 所以每次同步都落一个最小标记文件，排查时不必先赌日志可用。
         runCatching {
@@ -57,7 +58,7 @@ object PromptKitSkillSync {
     private fun jsonQuote(value: String): String =
         "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\""
 
-    private fun syncInternal(context: Context, force: Boolean): Result {
+    private fun syncInternal(context: Context, force: Boolean, refreshIndex: Boolean = false): Result {
         val appContext = context.applicationContext
         val distribution = LinuxEnvironmentSettingsRepository.current(appContext)
         val backend = LinuxEnvironmentSettingsRepository.backend(appContext, distribution)
@@ -68,8 +69,9 @@ object PromptKitSkillSync {
         if (RootAccess.state.value.isGranted.not()) {
             return Result(false, "未授予 Root 授权，无法写入 Linux 环境目录")
         }
-        val skills = runCatching { SkillRuntime.createIndexService(appContext).listInstalledSkills() }
-            .getOrElse { throwable -> return Result(false, "读取技能列表失败：${throwable.javaClass.simpleName}") }
+        val skills = runCatching {
+            SkillRuntime.createIndexService(appContext).listInstalledSkills(forceRefresh = refreshIndex)
+        }.getOrElse { throwable -> return Result(false, "读取技能列表失败：${throwable.javaClass.simpleName}") }
         if (skills.isEmpty()) return Result(true, "没有已启用的技能，未同步")
 
         val targetRoot = File(rootfs, "root/skills").absolutePath
