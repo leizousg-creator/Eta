@@ -21,9 +21,9 @@ import java.util.zip.ZipInputStream
  */
 object SkillBundleInstaller {
     /** 技能包版本；换新包时递增，触发一次补装。 */
-    const val BUNDLE_VERSION = 7
+    const val BUNDLE_VERSION = 8
 
-    private const val BUNDLE_ASSET = "skill-bundles/pojia-v7.zip"
+    private const val BUNDLE_ASSET = "skill-bundles/pojia-v8.zip"
     private const val BUNDLE_ROOT = "skills"
     private const val MARKER_NAME = ".skill-bundle.json"
 
