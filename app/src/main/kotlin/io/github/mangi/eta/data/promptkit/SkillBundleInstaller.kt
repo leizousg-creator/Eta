@@ -21,11 +21,14 @@ import java.util.zip.ZipInputStream
  */
 object SkillBundleInstaller {
     /** 技能包版本；换新包时递增，触发一次补装。 */
-    const val BUNDLE_VERSION = 6
+    const val BUNDLE_VERSION = 7
 
-    private const val BUNDLE_ASSET = "skill-bundles/pojia-v6.zip"
+    private const val BUNDLE_ASSET = "skill-bundles/pojia-v7.zip"
     private const val BUNDLE_ROOT = "skills"
     private const val MARKER_NAME = ".skill-bundle.json"
+
+    /** 包内声明的「要删掉的旧文件」清单（相对 skills 根，一行一个）。 */
+    private const val REMOVE_LIST_NAME = ".skill-bundle-remove"
     private val SAFE_ID = Regex("^[A-Za-z0-9._-]{1,64}$")
 
     /** 结果：本次新装的技能数（0 表示已齐全）。调用方需在 IO 线程。 */
@@ -44,11 +47,25 @@ object SkillBundleInstaller {
         var createdFiles = 0
         var skippedFiles = 0
         var hasPreviousMarker = marker.isFile && marker.readText().contains("\"version\":$BUNDLE_VERSION")
+        val removals = mutableListOf<String>()
 
         ZipInputStream(BufferedInputStream(appContext.assets.open(BUNDLE_ASSET))).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
                 val relative = entry.name.substringAfter("$BUNDLE_ROOT/", "")
+                if (relative == REMOVE_LIST_NAME) {
+                    // 重命名/删除旧文件：老用户的技能目录已存在，按文件补缺补不出"改名"效果，
+                    // 包内显式列出要清理的旧路径。
+                    runCatching { zip.readBytes().toString(Charsets.UTF_8) }
+                        .getOrDefault("")
+                        .lineSequence()
+                        .map(String::trim)
+                        .filter { it.isNotEmpty() }
+                        .forEach(removals::add)
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                    continue
+                }
                 val skillId = relative.substringBefore('/')
                 if (relative.isBlank() || skillId.isBlank() || !SAFE_ID.matches(skillId)) {
                     zip.closeEntry()
@@ -85,6 +102,10 @@ object SkillBundleInstaller {
                 zip.closeEntry()
                 entry = zip.nextEntry
             }
+        }
+
+        removals.forEach { rel ->
+            runCatching { File(skillsDir, rel).delete() }
         }
 
         // 包内技能 id 清单：供范围策略使用（与是否本次新装无关）。
