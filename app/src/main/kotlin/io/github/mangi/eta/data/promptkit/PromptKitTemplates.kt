@@ -14,7 +14,9 @@ internal data class PromptKitTemplate(
     val id: String,
     val name: String,
     val summary: String,
-    val body: String,
+    val body: String = "",
+    /** 正文放在 assets 里的大模板用这个字段，body 留空。 */
+    val assetName: String? = null,
 )
 
 internal object PromptKitTemplates {
@@ -109,6 +111,24 @@ internal object PromptKitTemplates {
                 输出：
                 - 只给成品，不写「我为你写了」这类说明。
             """.trimIndent(),
+        ),
+        PromptKitTemplate(
+            id = "frost-v4",
+            name = "破甲 V4（通用）",
+            summary = "V4 通用版 · Linux 环境适配",
+            assetName = "promptkit-presets/v4.md",
+        ),
+        PromptKitTemplate(
+            id = "frost-v5-sol56",
+            name = "破甲 V5 · GPT-5.6 Sol",
+            summary = "Sol 事务提交规范 · 适合 GPT-5.6",
+            assetName = "promptkit-presets/v5-gpt56-sol.md",
+        ),
+        PromptKitTemplate(
+            id = "frost-v5-astra6",
+            name = "破甲 V5 · GPT-6 Astra",
+            summary = "Astra 事务提交规范 · 适合 GPT-6.0",
+            assetName = "promptkit-presets/v5-gpt6-astra.md",
         ),
     )
 

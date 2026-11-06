@@ -170,8 +170,16 @@ internal class AgentPromptKitStore(private val scope: CoroutineScope) {
         val reusable = state.activeVersionId?.takeIf { (state.activeVersion?.chars ?: 0) == 0 }
         state = state.copy(isSaving = true, notice = null)
         scope.launch(Dispatchers.IO) {
+            // 大模板（破甲 V4/V5）正文放在 assets 里，body 为空时读文件。
+            val body = template.body.ifBlank { readTemplateAsset(template.assetName) }
+            if (body.isBlank()) {
+                withContext(Dispatchers.Main) {
+                    state = state.copy(isSaving = false, notice = "模板正文为空：${template.name}")
+                }
+                return@launch
+            }
             val id = reusable ?: nextVersionId(PromptKitBridge.manifest())
-            PromptKitBridge.storeOrNull()?.upsertVersion(id = id, name = template.name, body = template.body)
+            PromptKitBridge.storeOrNull()?.upsertVersion(id = id, name = template.name, body = body)
             val manifest = PromptKitBridge.update { it.copy(enabled = true, activeVersionId = id) }
             withContext(Dispatchers.Main) {
                 state = fromManifest(manifest).copy(
@@ -183,6 +191,14 @@ internal class AgentPromptKitStore(private val scope: CoroutineScope) {
                 )
             }
         }
+    }
+
+    private fun readTemplateAsset(name: String?): String {
+        if (name.isNullOrBlank()) return ""
+        val context = PromptKitBridge.contextOrNull() ?: return ""
+        return runCatching {
+            context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) }
+        }.getOrDefault("")
     }
 
     fun createVersion() {
