@@ -1182,6 +1182,10 @@
   <string name="mcp_bearer_token">Bearer Token</string>
   <string name="mcp_delete_confirm">删除 %1$s？此操作无法撤销。</string>
   <string name="mcp_read_only_tool">只读工具</string>
+  <string name="mcp_enable_all_tools">全部开启</string>
+  <string name="mcp_disable_all_tools">全部关闭</string>
+  <string name="mcp_tools_enabled_count">已启用 %1$d / %2$d</string>
+  <string name="mcp_enable_all_tools_summary">其中 %1$d 个工具可能修改数据或访问外部服务，确认全部开启？</string>
   <string name="mcp_may_modify_data">可能修改数据或访问外部服务</string>
   <string name="data_backup_title">数据备份</string>
   <string name="data_backup_actions">备份</string>

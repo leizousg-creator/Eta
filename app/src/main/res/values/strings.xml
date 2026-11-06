@@ -1198,6 +1198,10 @@
   <string name="mcp_bearer_token">Bearer token</string>
   <string name="mcp_delete_confirm">Delete %1$s? This cannot be undone.</string>
   <string name="mcp_read_only_tool">Read-only tool</string>
+  <string name="mcp_enable_all_tools">Enable all tools</string>
+  <string name="mcp_disable_all_tools">Disable all tools</string>
+  <string name="mcp_tools_enabled_count">%1$d of %2$d enabled</string>
+  <string name="mcp_enable_all_tools_summary">%1$d of them may modify data or reach external services. Enable all?</string>
   <string name="mcp_may_modify_data">May modify data or call an external service</string>
   <string name="data_backup_title">Data backup</string>
   <string name="data_backup_actions">Backup</string>

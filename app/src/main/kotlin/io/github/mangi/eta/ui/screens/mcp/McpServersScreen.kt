@@ -239,6 +239,7 @@ internal fun McpServerDetailScreen(
     val server = servers.firstOrNull { it.id == serverId }
     var working by remember { mutableStateOf(false) }
     var pendingRiskyTool by remember { mutableStateOf<McpToolDefinition?>(null) }
+    var pendingBulkEnable by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var showToken by remember { mutableStateOf(false) }
     var token by remember { mutableStateOf("") }
@@ -318,6 +319,43 @@ internal fun McpServerDetailScreen(
                         icon = Icons.Rounded.Refresh,
                     )
                 } else {
+                    val enabledCount = server.tools.count { it.name in server.enabledToolNames }
+                    val pendingRiskyCount = server.tools.count {
+                        it.readOnlyHint != true && it.name !in server.enabledToolNames
+                    }
+                    EtaArrowPreference(
+                        title = stringResource(R.string.mcp_enable_all_tools),
+                        summary = stringResource(R.string.mcp_tools_enabled_count, enabledCount, server.tools.size),
+                        enabled = !working && enabledCount < server.tools.size,
+                        onClick = {
+                            if (pendingRiskyCount > 0) {
+                                pendingBulkEnable = true
+                            } else {
+                                working = true
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        runCatching { McpServerRepository.setAllToolsEnabled(serverId, true) }
+                                    }
+                                    working = false
+                                }
+                            }
+                        },
+                    )
+                    EtaPreferenceDivider(hasLeading = false)
+                    EtaArrowPreference(
+                        title = stringResource(R.string.mcp_disable_all_tools),
+                        enabled = !working && enabledCount > 0,
+                        onClick = {
+                            working = true
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    runCatching { McpServerRepository.setAllToolsEnabled(serverId, false) }
+                                }
+                                working = false
+                            }
+                        },
+                    )
+                    EtaPreferenceDivider(hasLeading = false)
                     server.tools.forEachIndexed { index, tool ->
                         if (index > 0) EtaPreferenceDivider(hasLeading = false)
                         val checked = tool.name in server.enabledToolNames
@@ -370,6 +408,34 @@ internal fun McpServerDetailScreen(
                         McpServerRepository.setToolEnabled(serverId, tool.name, true)
                     }
                     pendingRiskyTool = null
+                },
+            )
+        }
+    }
+
+    if (pendingBulkEnable) {
+        val riskyCount = server?.let { current ->
+            current.tools.count { it.readOnlyHint != true && it.name !in current.enabledToolNames }
+        } ?: 0
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.mcp_enable_risky_tool),
+            summary = stringResource(R.string.mcp_enable_all_tools_summary, riskyCount),
+            onDismissRequest = { pendingBulkEnable = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.mcp_enable_all_tools),
+                destructive = true,
+                onCancel = { pendingBulkEnable = false },
+                onConfirm = {
+                    pendingBulkEnable = false
+                    working = true
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            runCatching { McpServerRepository.setAllToolsEnabled(serverId, true) }
+                        }
+                        working = false
+                    }
                 },
             )
         }

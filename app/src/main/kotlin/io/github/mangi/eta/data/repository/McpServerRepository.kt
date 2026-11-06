@@ -74,6 +74,23 @@ internal object McpServerRepository {
         update(server.copy(enabledToolNames = names))
     }
 
+    /**
+     * 批量启用/停用某个服务器的全部工具，返回本次生效的工具数。
+     *
+     * 语义与单工具开关一致：`enabledToolNames` 是白名单，空集即全部停用；
+     * 全开只覆盖服务器当前已发布的工具，刷新后新工具仍需手动确认（危险工具不该被静默带开）。
+     */
+    suspend fun setAllToolsEnabled(serverId: String, enabled: Boolean): Int {
+        val server = requireNotNull(serverById(serverId)) { "MCP 服务器不存在" }
+        val names: Set<String> = if (enabled) {
+            server.tools.mapTo(LinkedHashSet()) { it.name }
+        } else {
+            emptySet()
+        }
+        if (names != server.enabledToolNames) update(server.copy(enabledToolNames = names))
+        return names.size
+    }
+
     suspend fun delete(serverId: String) {
         val previous = requireNotNull(serverById(serverId)) { "MCP 服务器不存在" }
         val secretStore = secrets()
