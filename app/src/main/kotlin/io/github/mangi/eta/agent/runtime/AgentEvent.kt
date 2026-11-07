@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.core.toSafeLogToken
 
 internal sealed interface AgentEvent {
@@ -64,7 +65,8 @@ internal sealed interface AgentEvent {
         val reasonCode: String,
     ) : AgentEvent {
         val displayMessage: String
-            get() = "模型请求暂时中断，${delayMs / 1000} 秒后重试（$attempt/$maxAttempts）；此前工具结果已保留。"
+            get() = "模型请求暂时中断（${AgentModelFailure.reasonText(reasonCode)}），" +
+                "${delayMs / 1000} 秒后重试（$attempt/$maxAttempts）；此前工具结果已保留。"
 
         override fun toLogLine(): String =
             "model_retry_scheduled round=$round, attempt=$attempt, delay_ms=$delayMs, code=${reasonCode.toSafeLogToken()}"

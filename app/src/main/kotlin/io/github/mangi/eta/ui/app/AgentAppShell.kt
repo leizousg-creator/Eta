@@ -434,6 +434,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.SystemEnhance -> stringResource(R.string.route_system_enhancements)
     is AppRoute.PromptKit -> "提示词包"
     is AppRoute.OutboundRewrite -> "出站改写"
+    is AppRoute.NetworkProxy -> "网络与重试"
     is AppRoute.Settings -> stringResource(R.string.route_settings)
     is AppRoute.SpeechSettings -> stringResource(R.string.speech_settings_title)
     is AppRoute.SpeechRecognition -> stringResource(R.string.speech_recognition_title)

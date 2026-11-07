@@ -13,7 +13,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.IOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 
 class AgentModelRetryTest {
@@ -80,8 +82,22 @@ class AgentModelRetryTest {
             assertFalse(AgentModelFailure.http(status, "").retryable)
         }
         assertFalse(AgentModelFailure.http(429, """{"error":{"code":"insufficient_quota"}}""").retryable)
-        assertNull(AgentModelFailure.transport(SSLHandshakeException("certificate")))
         assertNull(AgentModelFailure.transport(org.json.JSONException("invalid JSON")))
+        with(requireNotNull(AgentModelFailure.transport(SocketTimeoutException()))) {
+            assertEquals("MODEL_TIMEOUT", code)
+            assertTrue(retryable)
+        }
+        with(requireNotNull(AgentModelFailure.transport(SSLHandshakeException("certificate")))) {
+            assertEquals("MODEL_TLS_FAILED", code)
+            assertTrue(retryable)
+        }
+        with(requireNotNull(AgentModelFailure.transport(UnknownHostException("api.invalid")))) {
+            assertEquals("MODEL_DNS_FAILED", code)
+        }
+        with(requireNotNull(AgentModelFailure.transport(ConnectException("refused")))) {
+            assertEquals("MODEL_CONNECT_REFUSED", code)
+        }
+        assertEquals("DNS 解析失败", AgentModelFailure.reasonText("MODEL_DNS_FAILED"))
         assertTrue(AgentModelFailure.stream(JSONObject().put("type", "overloaded_error"), "过载").retryable)
         assertFalse(AgentModelFailure.stream(JSONObject().put("type", "authentication_error"), "认证失败").retryable)
         assertFalse(AgentModelFailure.http(503, "secret request text").message.orEmpty().contains("secret"))

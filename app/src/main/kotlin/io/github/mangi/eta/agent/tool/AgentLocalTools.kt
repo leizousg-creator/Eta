@@ -18,6 +18,7 @@ import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentPlanMode
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.device.LocalNetworkPermission
 import io.github.mangi.eta.agent.web.AgentWebTools
@@ -205,6 +206,11 @@ internal class AgentLocalTools(
                 return@runCatching textResult(errorResult("ROOT_REQUIRED", "此操作需要 Root 授权，本次未执行"))
             }
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
+            if (AgentPlanMode.enabled && !AgentPlanMode.allowsTool(toolCall.name)) {
+                return@runCatching textResult(
+                    errorResult("PLAN_MODE_READ_ONLY", AgentPlanMode.blockedMessage(toolCall.name)),
+                )
+            }
             memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
             if (guiGeneration != null && publishedObservation.get().generation != guiGeneration) {
                 publishedObservation.set(PublishedObservation())

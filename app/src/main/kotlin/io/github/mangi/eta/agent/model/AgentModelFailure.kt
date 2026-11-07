@@ -1,9 +1,13 @@
 package io.github.mangi.eta.agent.model
 
 import org.json.JSONObject
+import java.io.EOFException
 import java.io.IOException
 import java.io.InterruptedIOException
-import java.net.ProtocolException
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
 /** Provider 边界只分类失败；重试预算与上下文由 Loop 持有。 */
@@ -78,19 +82,74 @@ internal class AgentModelFailure(
 
         fun incompleteStream(message: String) = AgentModelFailure("STREAM_INCOMPLETE", true, message)
 
+        /**
+         * 传输层失败分类。
+         *
+         * 顺序有意义：SocketTimeoutException 属于 InterruptedIOException，ConnectException 属于
+         * SocketException，SSLException / UnknownHostException / EOFException 都继承 IOException，
+         * 必须从具体到宽泛依次判断，否则会被更宽的分支吞掉。
+         */
         fun transport(failure: Exception): AgentModelFailure? = when (failure) {
             is AgentModelFailure -> failure
+            is SocketTimeoutException -> AgentModelFailure(
+                "MODEL_TIMEOUT", true,
+                "模型请求超时（等待响应超过 ${AgentHttpClient.MODEL_READ_TIMEOUT_MS / 60_000} 分钟）。",
+                failure,
+            )
             is InterruptedIOException -> AgentModelFailure(
                 "MODEL_TIMEOUT", true,
                 "模型请求等待超时（连接或写入超时，或读取响应等待超过 ${AgentHttpClient.MODEL_READ_TIMEOUT_MS / 60_000} 分钟）。",
                 failure,
             )
-            is SSLException, is ProtocolException -> null
+            is SSLException -> AgentModelFailure(
+                "MODEL_TLS_FAILED", true,
+                "SSL 握手失败：证书校验未通过或被中间设备拦截，请确认接口使用 https、代理未解密 TLS。",
+                failure,
+            )
+            is UnknownHostException -> AgentModelFailure(
+                "MODEL_DNS_FAILED", true,
+                "DNS 解析失败：域名无法解析，请检查接口地址是否写错，或当前网络/代理的 DNS 是否可用。",
+                failure,
+            )
+            is ConnectException -> AgentModelFailure(
+                "MODEL_CONNECT_REFUSED", true,
+                "连接被拒绝：目标地址没有服务在监听，请检查供应商地址与端口。",
+                failure,
+            )
+            is SocketException -> AgentModelFailure(
+                "MODEL_CONNECTION_RESET", true,
+                "连接被中断：对端重置或网络切换，常见于代理不稳定或服务端主动断开。",
+                failure,
+            )
+            is EOFException -> AgentModelFailure(
+                "MODEL_STREAM_EOF", true,
+                "连接被对端关闭：响应未读完就结束，可能是服务端超时或代理中断。",
+                failure,
+            )
             is IOException -> AgentModelFailure(
                 "MODEL_CONNECTION_FAILED", true, "模型连接中断或暂时无法建立，请检查网络与服务商状态。", failure,
             )
             else -> null
         }
+
+        /** 重试气泡里展示的短原因，按 [code] 归类；未收录的退回「网络异常」。 */
+        fun reasonText(code: String): String = when (code) {
+            "MODEL_TIMEOUT" -> "等待响应超时"
+            "MODEL_TLS_FAILED" -> "SSL 握手失败"
+            "MODEL_DNS_FAILED" -> "DNS 解析失败"
+            "MODEL_CONNECT_REFUSED" -> "连接被拒绝"
+            "MODEL_CONNECTION_RESET" -> "连接被中断"
+            "MODEL_STREAM_EOF" -> "服务端提前断开"
+            "MODEL_CONNECTION_FAILED" -> "网络连接中断"
+            "STREAM_INCOMPLETE" -> "响应流未完整"
+            "HTTP_408" -> "服务端超时"
+            "HTTP_429" -> "触发速率限制"
+            "HTTP_500", "HTTP_502", "HTTP_504", "HTTP_524", "HTTP_529" -> "服务端异常"
+            "HTTP_503" -> "服务端负载过高"
+            "PROVIDER_STREAM_ERROR" -> "服务端返回错误流"
+            else -> if (code.startsWith("HTTP_")) "HTTP ${code.removePrefix("HTTP_")}" else "网络异常"
+        }
+
 
         private fun isContextOverflow(error: JSONObject?): Boolean {
             if (error == null) return false

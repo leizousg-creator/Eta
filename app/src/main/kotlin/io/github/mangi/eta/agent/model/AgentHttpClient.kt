@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.net.withEtaProxy
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -34,6 +35,7 @@ internal object AgentHttpClient {
 
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .withEtaProxy()
             .connectTimeout(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)

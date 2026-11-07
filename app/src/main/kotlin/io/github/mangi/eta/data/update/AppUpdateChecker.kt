@@ -1,5 +1,6 @@
 package io.github.mangi.eta.data.update
 
+import io.github.mangi.eta.agent.net.withEtaProxy
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
@@ -62,6 +63,7 @@ internal object AppUpdateChecker {
     }
 
     private val client = OkHttpClient.Builder()
+        .withEtaProxy()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

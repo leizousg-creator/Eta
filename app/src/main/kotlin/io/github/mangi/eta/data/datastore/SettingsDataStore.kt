@@ -11,11 +11,13 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.mangi.eta.data.model.AgentRetrySettings
 import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
+import io.github.mangi.eta.data.model.NetworkProxySettings
 import io.github.mangi.eta.data.model.OutboundRewriteSettings
 import io.github.mangi.eta.data.model.VirtualScreenSettings
 import io.github.mangi.eta.data.model.SpeechSettings
@@ -35,6 +37,8 @@ internal object SettingsDataStore {
     private val SUBAGENT_SETTINGS = stringPreferencesKey("subagent_settings_v1")
     private val OUTBOUND_SETTINGS = stringPreferencesKey("outbound_rewrite_v1")
     private val VIRTUAL_SCREEN_SETTINGS = stringPreferencesKey("virtual_screen_settings_v1")
+    private val NETWORK_PROXY_SETTINGS = stringPreferencesKey("network_proxy_settings_v1")
+    private val AGENT_RETRY_SETTINGS = stringPreferencesKey("agent_retry_settings_v1")
     private val speechJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -74,6 +78,46 @@ internal object SettingsDataStore {
     suspend fun setWebToolsSettings(settings: WebToolsSettings) {
         ensureInitialized()
         dataStore.edit { it[WEB_TOOLS_SETTINGS] = speechJson.encodeToString(settings) }
+    }
+
+    fun networkProxyFlow(): Flow<NetworkProxySettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[NETWORK_PROXY_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<NetworkProxySettings>(raw) }.getOrNull()
+                }?.normalized() ?: NetworkProxySettings()
+            }
+    }
+
+    suspend fun networkProxy(): NetworkProxySettings = networkProxyFlow().first()
+
+    suspend fun setNetworkProxy(settings: NetworkProxySettings) {
+        ensureInitialized()
+        dataStore.edit { it[NETWORK_PROXY_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
+    }
+
+    fun agentRetryFlow(): Flow<AgentRetrySettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[AGENT_RETRY_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<AgentRetrySettings>(raw) }.getOrNull()
+                }?.normalized() ?: AgentRetrySettings()
+            }
+    }
+
+    suspend fun agentRetry(): AgentRetrySettings = agentRetryFlow().first()
+
+    suspend fun setAgentRetry(settings: AgentRetrySettings) {
+        ensureInitialized()
+        dataStore.edit { it[AGENT_RETRY_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
     }
 
     fun subagentSettingsFlow(): Flow<SubagentSettings> {

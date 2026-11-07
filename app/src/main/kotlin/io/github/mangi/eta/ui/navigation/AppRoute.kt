@@ -58,6 +58,9 @@ sealed interface AppRoute : NavKey {
     data object OutboundRewrite : AppRoute
 
     @Serializable
+    data object NetworkProxy : AppRoute
+
+    @Serializable
     data object AppearanceSettings : AppRoute
 
     @Serializable

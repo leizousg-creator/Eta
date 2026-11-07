@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui
 
+import io.github.mangi.eta.agent.model.AgentPlanMode
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.AssistantSecureWriter
 import android.content.ComponentName
@@ -392,6 +393,14 @@ private fun SettingsPageContent(
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
+                        title = "网络与重试",
+                        summary = "填代理地址或粘贴单节点链接（http/socks5）；并调节模型请求的重试次数与退避",
+                        startAction = { EtaPreferenceIcon(icon = Icons.Rounded.Language, tint = EtaPreferenceColors.Blue) },
+                        onClick = { onNavigate(AppRoute.NetworkProxy) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
                         title = "导出诊断包",
                         summary = "把版本、设备状态与最近日志打成 zip，存到 Download/Eta诊断包",
                         startAction = { EtaPreferenceIcon(icon = Icons.Rounded.BugReport, tint = EtaPreferenceColors.Blue) },
@@ -449,6 +458,18 @@ private fun SettingsPageContent(
                                     current.copy(frameRate = options[(index + 1) % options.size])
                                 }
                             }
+                        },
+                    )
+
+                    EtaPreferenceDivider()
+                    val planModeState = remember { mutableStateOf(AgentPlanMode.enabled) }
+                    EtaSwitchPreference(
+                        title = "计划模式",
+                        summary = "只做只读探索并给出方案，写操作在执行入口被拦截；关掉开关后才会真正动手",
+                        checked = planModeState.value,
+                        onCheckedChange = { enabled ->
+                            planModeState.value = enabled
+                            AgentPlanMode.set(enabled)
                         },
                     )
 

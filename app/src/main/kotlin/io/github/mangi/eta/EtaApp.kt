@@ -16,6 +16,8 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentOutboundRepository
+import io.github.mangi.eta.data.repository.AgentRetryRepository
+import io.github.mangi.eta.data.repository.NetworkProxyRepository
 import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
@@ -60,6 +62,12 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         SettingsDataStore.init(this)
         applicationScope.launch {
             AgentOutboundRepository.flow().collect { settings -> AgentOutboundRepository.publish(settings) }
+        }
+        applicationScope.launch {
+            NetworkProxyRepository.flow().collect { settings -> NetworkProxyRepository.publish(settings) }
+        }
+        applicationScope.launch {
+            AgentRetryRepository.flow().collect { settings -> AgentRetryRepository.publish(settings) }
         }
         applicationScope.launch {
             VirtualScreenSettingsRepository.flow().collect { settings -> VirtualScreenSettingsRepository.publish(settings) }

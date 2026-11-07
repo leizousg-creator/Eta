@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.app
 import io.github.mangi.eta.ui.model.PromptKitAction
 import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
 import io.github.mangi.eta.ui.screens.settings.OutboundRewriteScreen
+import io.github.mangi.eta.ui.screens.settings.NetworkProxyScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -52,6 +53,8 @@ import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.repository.AgentOutboundRepository
+import io.github.mangi.eta.data.repository.AgentRetryRepository
+import io.github.mangi.eta.data.repository.NetworkProxyRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
@@ -681,6 +684,31 @@ fun AgentAppRoot(
                     onBack = { popRoute() },
                     onUpdate = { transform ->
                         outboundScope.launch { AgentOutboundRepository.update(transform) }
+                    },
+                )
+            }
+            entry<AppRoute.NetworkProxy>(swipeDismiss = swipeDismiss) {
+                val proxySettings by NetworkProxyRepository.stateFlow.collectAsState()
+                val retrySettings by AgentRetryRepository.stateFlow.collectAsState()
+                val networkScope = rememberCoroutineScope()
+                NetworkProxyScreen(
+                    proxy = proxySettings,
+                    retry = retrySettings,
+                    onBack = { popRoute() },
+                    onUpdateProxy = { transform ->
+                        networkScope.launch { NetworkProxyRepository.update(transform) }
+                    },
+                    onUpdateRetry = { transform ->
+                        networkScope.launch { AgentRetryRepository.update(transform) }
+                    },
+                    onImportLink = { link ->
+                        val parsed = NetworkProxyRepository.parseLink(link, proxySettings)
+                        if (parsed != null) {
+                            networkScope.launch { NetworkProxyRepository.update { parsed } }
+                            true
+                        } else {
+                            false
+                        }
                     },
                 )
             }

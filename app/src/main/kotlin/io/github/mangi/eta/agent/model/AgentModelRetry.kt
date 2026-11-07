@@ -48,16 +48,22 @@ internal class AgentModelRetry(
                     classified.code, false, classified.message.orEmpty(), classified,
                 )
                 if (!classified.retryable) throw classified
-                if (retries == MAX_RETRIES) {
+                val policy = AgentRetryPolicy.settings()
+                if (retries >= policy.maxRetries) {
+                    val exhausted = if (policy.maxRetries == 0) {
+                        "重试已关闭（可在设置里开启）。"
+                    } else {
+                        "已重试 $retries 次仍未恢复。"
+                    }
                     throw AgentModelFailure(
                         classified.code, false,
-                        "${classified.message} 已重试 $MAX_RETRIES 次仍未恢复，已保留此前完成的工具结果。",
+                        "${classified.message}$exhausted 已保留此前完成的工具结果。",
                         classified,
                     )
                 }
                 retries += 1
-                val delayMs = BASE_DELAY_MS shl (retries - 1)
-                onEvent(AgentEvent.ModelRetryScheduled(round, retries, MAX_RETRIES, delayMs.toInt(), classified.code))
+                val delayMs = policy.baseDelayMs.toLong() shl (retries - 1)
+                onEvent(AgentEvent.ModelRetryScheduled(round, retries, policy.maxRetries, delayMs.toInt(), classified.code))
                 waitBeforeRetry(controller, delayMs)
                 controller.throwIfCancelled()
                 // 展示保留失败尝试，模型上下文与最终思考摘要只接纳成功尝试。
@@ -65,10 +71,5 @@ internal class AgentModelRetry(
                 round += 1
             }
         }
-    }
-
-    companion object {
-        private const val MAX_RETRIES = 3
-        private const val BASE_DELAY_MS = 2_000L
     }
 }
