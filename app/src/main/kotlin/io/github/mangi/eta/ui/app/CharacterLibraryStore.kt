@@ -187,9 +187,10 @@ internal class CharacterLibraryStore(
         characters = io { CharacterRepository.list() }
     }
 
-    fun restoreDefaultCharacter() = runOperation("默认角色恢复失败，请重试") {
-        io { CharacterRepository.createDefaultCharacter() }
+    fun restoreDefaultCharacter() = runOperation("内置角色恢复失败，请重试") {
+        val added = io { CharacterRepository.restoreBuiltinCharacters() }
         characters = io { CharacterRepository.list() }
+        notice = if (added == 0) "内置角色都已在库里，没有新增" else "已恢复 $added 个内置角色"
     }
 
     fun delete(id: String, onDeleted: () -> Unit) = runOperation("角色删除失败，请重试") {

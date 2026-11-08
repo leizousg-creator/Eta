@@ -30,6 +30,9 @@ internal object CharacterRepository {
     const val MAX_FILE_BYTES = CharacterCardPng.MAX_FILE_BYTES
     private const val SEED_PREFS = "eta_roleplay"
     private const val KEY_DEFAULT_CHARACTER_SEEDED = "default_character_seeded"
+
+    /** 随包发布的内置角色卡目录（assets 下），文件名前缀决定角色库中的顺序。 */
+    private const val BUILTIN_CHARACTER_DIR = "builtin_characters"
     @Volatile private var context: Context? = null
 
     /** 仅绑定上下文；普通工作台启动不读取角色库。 */
@@ -100,7 +103,9 @@ internal object CharacterRepository {
         val prefs = appContext().getSharedPreferences(SEED_PREFS, Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY_DEFAULT_CHARACTER_SEEDED, false)) return@withContext
         if (dao().characters().isEmpty()) {
-            createDefaultCharacterStored()
+            builtinCharacters().forEach { card ->
+                runCatching { createStored(validated(card), avatarBytes = null) }
+            }
         }
         prefs.edit().putBoolean(KEY_DEFAULT_CHARACTER_SEEDED, true).apply()
     }
@@ -108,6 +113,35 @@ internal object CharacterRepository {
     /** 用户主动恢复内置默认角色；与一次性播种互不影响。 */
     suspend fun createDefaultCharacter(): CharacterProfile = withContext(Dispatchers.IO) {
         createDefaultCharacterStored()
+    }
+
+    /** 恢复全部内置角色：已存在同名角色的跳过，返回新增数量。 */
+    suspend fun restoreBuiltinCharacters(): Int = withContext(Dispatchers.IO) {
+        val names = dao().characters().mapTo(mutableSetOf()) { it.name }
+        var added = 0
+        for (card in builtinCharacters()) {
+            val valid = runCatching { validated(card) }.getOrNull() ?: continue
+            if (!names.add(valid.name)) continue
+            runCatching { createStored(valid, avatarBytes = null) }.onSuccess { added++ }
+        }
+        added
+    }
+
+    /** 内置角色卡来自 assets/builtin_characters 目录下的 JSON（按文件名排序）；读不到时退回单张小满。 */
+    private fun builtinCharacters(): List<CharacterCard> {
+        val assets = appContext().assets
+        val files = runCatching { assets.list(BUILTIN_CHARACTER_DIR) }.getOrNull()
+            ?.filter { it.endsWith(".json", ignoreCase = true) }
+            ?.sorted()
+            .orEmpty()
+        val cards = files.mapNotNull { file ->
+            runCatching {
+                assets.open("$BUILTIN_CHARACTER_DIR/$file").use { input ->
+                    CharacterCardCodec.decodeJson(input.bufferedReader().readText())
+                }
+            }.getOrNull()
+        }
+        return cards.ifEmpty { listOf(defaultCharacterCard()) }
     }
 
     private suspend fun createDefaultCharacterStored(): CharacterProfile =
