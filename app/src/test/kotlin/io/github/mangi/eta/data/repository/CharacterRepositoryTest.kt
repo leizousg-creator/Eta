@@ -57,17 +57,24 @@ class CharacterRepositoryTest {
     }
 
     @Test
-    fun defaultCharacterSeedsOnlyIntoEmptyLibraryAndNeverResurrects() = runBlocking {
+    fun builtinCharactersSeedOnlyIntoEmptyLibraryAndNeverResurrects() = runBlocking {
         CharacterRepository.ensureDefaultCharacter()
-        assertEquals(listOf("小满"), CharacterRepository.list().map { it.card.name })
+        val seeded = CharacterRepository.list().map { it.card.name }.sorted()
+        assertTrue(seeded.isNotEmpty())
+        assertTrue(seeded.contains("小满"))
+        assertEquals(seeded.size, seeded.distinct().size)
+        // 再次播种不重复插入
         CharacterRepository.ensureDefaultCharacter()
-        assertEquals(1, CharacterRepository.list().size)
-        CharacterRepository.delete(CharacterRepository.list().single().id)
+        assertEquals(seeded.size, CharacterRepository.list().size)
+        // 用户删光后不再自动播种
+        CharacterRepository.list().forEach { CharacterRepository.delete(it.id) }
         CharacterRepository.ensureDefaultCharacter()
         assertEquals(emptyList<String>(), CharacterRepository.list().map { it.id })
-        // 用户主动恢复时不受播种标记限制。
-        CharacterRepository.createDefaultCharacter()
-        assertEquals(listOf("小满"), CharacterRepository.list().map { it.card.name })
+        // 主动恢复内置角色：补齐缺失的卡并返回新增数量
+        assertEquals(seeded.size, CharacterRepository.restoreBuiltinCharacters())
+        assertEquals(seeded, CharacterRepository.list().map { it.card.name }.sorted())
+        // 已存在同名角色时不再重复
+        assertEquals(0, CharacterRepository.restoreBuiltinCharacters())
     }
 
     @Test
