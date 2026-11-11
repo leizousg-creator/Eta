@@ -68,6 +68,13 @@ internal object VirtualDisplayCommandMain {
     const val READY_PREFIX = "ETA_VD_READY:"
     const val RESULT_PREFIX = "ETA_VD_RESULT:"
 
+    // 静态强引用持有 VirtualDisplay 与 Surface，防止 ART 局部栈帧优化在等待期间提前触发 GC finalize 销毁虚拟屏。
+    @Volatile
+    private var retainedVirtualDisplay: android.hardware.display.VirtualDisplay? = null
+
+    @Volatile
+    private var retainedSurface: Surface? = null
+
     @JvmStatic
     @Suppress("DEPRECATION")
     fun main(args: Array<String>) {
@@ -106,12 +113,15 @@ internal object VirtualDisplayCommandMain {
     }
 
     private fun holdVirtualDisplay(request: JSONObject, reader: BufferedReader) {
+        if (!CanvasRoutingPolicy.supportsBackgroundDisplay(android.os.Build.VERSION.SDK_INT)) {
+            println(RESULT_PREFIX + JSONObject().put("ok", false).put("code", "DISPLAY_ISOLATION_UNSUPPORTED"))
+            exitProcess(1)
+        }
         val userId = request.optInt("user_id", 0)
         val token = request.optString("surface_token")
         val width = request.optInt("width", 1080).coerceIn(320, 4096)
         val height = request.optInt("height", 2400).coerceIn(320, 4096)
         val densityDpi = request.optInt("density_dpi", 420).coerceIn(120, 960)
-        val refreshRate = request.optInt("refresh_rate", 60).coerceIn(60, 165).toFloat()
 
         val surface = acquireSurfaceFromApp(userId, token)
         if (surface == null || !surface.isValid) {
@@ -120,13 +130,9 @@ internal object VirtualDisplayCommandMain {
         }
 
         // 优先切换至 SYSTEM_UID (1000) 以通过 DisplayManagerService 对 ADD_TRUSTED_DISPLAY 与 CAPTURE_VIDEO_OUTPUT 的校验
-        runCatching {
-            if (Process.myUid() == Process.ROOT_UID) {
-                android.system.Os.setuid(Process.SYSTEM_UID)
-            }
-        }
+        switchToSystemUidIfPossible()
 
-        val virtualDisplay = createTrustedVirtualDisplay(surface, width, height, densityDpi, refreshRate)
+        val virtualDisplay = createTrustedVirtualDisplay(surface, width, height, densityDpi)
         if (virtualDisplay == null) {
             surface.release()
             println(RESULT_PREFIX + JSONObject().put("ok", false).put("code", "CREATE_DISPLAY_FAILED"))
@@ -141,34 +147,92 @@ internal object VirtualDisplayCommandMain {
             exitProcess(1)
         }
 
+        retainedVirtualDisplay = virtualDisplay
+        retainedSurface = surface
+        if (!CanvasRoutingPolicy.hasRequiredDisplayFlags(virtualDisplay.display.flags) ||
+            !applyDisplayImePolicyHide(displayId)
+        ) {
+            releaseRetainedDisplay()
+            println(RESULT_PREFIX + JSONObject().put("ok", false).put("code", "DISPLAY_ISOLATION_UNAVAILABLE"))
+            exitProcess(1)
+        }
+
         println("$READY_PREFIX$displayId")
         System.out.flush()
 
-        try {
-            while (true) {
-                val line = reader.readLine() ?: break
-                val trimmed = line.trim()
-                if (trimmed == "release") break
-                if (!trimmed.startsWith("{")) continue
-                val command = runCatching { JSONObject(trimmed) }.getOrNull() ?: continue
-                if (command.optString("action") != "set_surface") continue
-                val nextToken = command.optString("surface_token")
-                val nextSurface = acquireSurfaceFromApp(userId, nextToken) ?: continue
-                if (!nextSurface.isValid) continue
-                // 不 release 旧 surface：它可能是宿主进程那边的 ImageReader 画布，
-                // 在这里 release 会把宿主的接收端一起收掉。
-                runCatching { virtualDisplay.surface = nextSurface }
-                println("$READY_PREFIX$displayId")
-                System.out.flush()
+        val mainHandler = android.os.Handler(Looper.getMainLooper())
+        Thread({
+            try {
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    val trimmed = line.trim()
+                    if (trimmed == "release") break
+                    if (!trimmed.startsWith("{")) continue
+                    val command = runCatching { JSONObject(trimmed) }.getOrNull() ?: continue
+                    if (command.optString("action") != "set_surface") continue
+                    val nextToken = command.optString("surface_token")
+                    val nextSurface = acquireSurfaceFromApp(userId, nextToken) ?: continue
+                    if (!nextSurface.isValid) continue
+                    // 不 release 旧 surface：它可能是宿主进程那边的 ImageReader 画布，
+                    // 在这里 release 会把宿主的接收端一起收掉。
+                    runCatching { virtualDisplay.surface = nextSurface }
+                    println("$READY_PREFIX$displayId")
+                    System.out.flush()
+                }
+            } catch (_: Throwable) {
+                // 宿主关闭管道或取消任务
+            } finally {
+                mainHandler.post {
+                    releaseRetainedDisplay()
+                    exitProcess(0)
+                }
             }
-        } catch (_: Throwable) {
-            // 宿主关闭管道或取消任务
+        }, "eta-vd-stdin-watcher").apply {
+            isDaemon = true
+            start()
+        }
+
+        try {
+            Looper.loop()
         } finally {
-            runCatching { virtualDisplay.release() }
-            runCatching { surface.release() }
+            releaseRetainedDisplay()
         }
         exitProcess(0)
     }
+
+    private fun releaseRetainedDisplay() {
+        val vd = retainedVirtualDisplay
+        val surf = retainedSurface
+        retainedVirtualDisplay = null
+        retainedSurface = null
+        runCatching { vd?.release() }
+        runCatching { surf?.release() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun switchToSystemUidIfPossible() {
+        runCatching {
+            if (Process.myUid() == Process.ROOT_UID) {
+                android.system.Os.setuid(Process.SYSTEM_UID)
+            }
+        }
+    }
+
+    private fun applyDisplayImePolicyHide(displayId: Int): Boolean = runCatching {
+        if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) return@runCatching false
+        switchToSystemUidIfPossible()
+        val wmgClass = Class.forName("android.view.WindowManagerGlobal")
+        val wms = wmgClass.getMethod("getWindowManagerService").invoke(null) ?: return@runCatching false
+        val setPolicy = wms.javaClass.methods.firstOrNull {
+            it.name == "setDisplayImePolicy" && it.parameterCount == 2
+        } ?: return@runCatching false
+        setPolicy.invoke(wms, displayId, CanvasRoutingPolicy.DISPLAY_IME_POLICY_HIDE)
+        val getPolicy = wms.javaClass.methods.firstOrNull {
+            it.name == "getDisplayImePolicy" && it.parameterCount == 1
+        }
+        val actual = getPolicy?.invoke(wms, displayId) as? Int
+        actual == CanvasRoutingPolicy.DISPLAY_IME_POLICY_HIDE
+    }.getOrDefault(false)
 
     private fun acquireSurfaceFromApp(userId: Int, surfaceToken: String): Surface? {
         val activityManager = Class.forName("android.app.ActivityManager")
@@ -235,7 +299,6 @@ internal object VirtualDisplayCommandMain {
         width: Int,
         height: Int,
         densityDpi: Int,
-        refreshRate: Float,
     ): android.hardware.display.VirtualDisplay? = runCatching {
         val activityThreadClass = Class.forName("android.app.ActivityThread")
         val thread = activityThreadClass.getMethod("systemMain").invoke(null)
@@ -249,7 +312,6 @@ internal object VirtualDisplayCommandMain {
             )
                 .setSurface(surface)
                 .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
-                .setRequestedRefreshRate(refreshRate)
                 .build()
             val dmgClass = Class.forName("android.hardware.display.DisplayManagerGlobal")
             val dmg = dmgClass.getMethod("getInstance").invoke(null)

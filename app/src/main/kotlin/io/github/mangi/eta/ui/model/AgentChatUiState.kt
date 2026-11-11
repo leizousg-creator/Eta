@@ -24,6 +24,7 @@ internal data class AgentChatUiState(
     val pendingFileReferences: List<PendingFileReferenceUi> = emptyList(),
     val queuedMessages: List<QueuedMessageUi> = emptyList(),
     val inputSyncVersion: Int = 0,
+    val focusInputOnSync: Boolean = true,
     val appliedRuntimeRunIds: List<String> = emptyList(),
     val messageEdit: MessageEditUiState? = null,
     val roleplay: RoleplayBinding? = null,
@@ -107,6 +108,13 @@ data class TokenUsageUi(
     val cachedTokens: Int? = null,
     /** 本次请求耗时（毫秒）；用于派生 tokens/秒。 */
     val requestDurationMs: Long? = null,
+    val stepCount: Int? = null,
+    val llmMs: Long? = null,
+    val toolMs: Long? = null,
+    val ttftMs: Long? = null,
+    val ttftSteps: Int? = null,
+    val decodeMs: Long? = null,
+    val decodeTokens: Int? = null,
 ) {
     /** 派生：输出 tokens / 秒；上游没有该字段，状态胶囊需要它。 */
     val averageTokensPerSecond: Double?
@@ -123,7 +131,20 @@ data class TokenUsageUi(
             inputTokens == null &&
             outputTokens == null &&
             reasoningTokens == null &&
-            cachedTokens == null
+            cachedTokens == null &&
+            stepCount == null &&
+            llmMs == null &&
+            toolMs == null &&
+            ttftMs == null &&
+            ttftSteps == null &&
+            decodeMs == null &&
+            decodeTokens == null
+
+    val hasPerformanceStats: Boolean
+        get() = (llmMs != null && llmMs > 0L) ||
+            (toolMs != null && toolMs > 0L) ||
+            (ttftMs != null && (ttftSteps ?: 1) > 0) ||
+            (decodeMs != null && decodeMs > 0L && (decodeTokens ?: outputTokens ?: 0) > 0)
 }
 
 @Immutable

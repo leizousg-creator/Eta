@@ -17,6 +17,7 @@ import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
+import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.NetworkProxySettings
 import io.github.mangi.eta.data.model.OutboundRewriteSettings
 import io.github.mangi.eta.data.model.VirtualScreenSettings
@@ -149,6 +150,7 @@ internal object SettingsDataStore {
     private val AUTO_MEMORY_ENABLED = booleanPreferencesKey("auto_memory_enabled")
     private val AUTO_SKILLS_ENABLED = booleanPreferencesKey("auto_skills_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
+    private val APPEARANCE_UI_STYLE = stringPreferencesKey("appearance_ui_style")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
     private val APPEARANCE_PALETTE_STYLE = stringPreferencesKey("appearance_palette_style")
@@ -318,6 +320,23 @@ internal object SettingsDataStore {
         }
     }
 
+    suspend fun selectUiStyle(style: AppearanceUiStyle) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            prefs[APPEARANCE_UI_STYLE] = style.persistedValue
+        }
+    }
+
+    suspend fun hasSavedUiStyle(): Boolean {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .first()
+            .contains(APPEARANCE_UI_STYLE)
+    }
+
     private fun ensureInitialized() {
         check(::dataStore.isInitialized) {
             "SettingsDataStore.init(context) must be called in Application.onCreate()"
@@ -342,6 +361,7 @@ internal object SettingsDataStore {
         autoMemoryEnabled = this[AUTO_MEMORY_ENABLED] ?: true,
         autoSkillsEnabled = this[AUTO_SKILLS_ENABLED] ?: true,
         appearance = AppearanceSettings(
+            uiStyle = AppearanceUiStyle.fromPersistedValue(this[APPEARANCE_UI_STYLE]),
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,
             paletteStyle = AppearancePaletteStyle.fromPersistedValue(this[APPEARANCE_PALETTE_STYLE]),
@@ -382,6 +402,10 @@ internal object SettingsDataStore {
     }
 
     private fun MutablePreferences.putAppearance(settings: AppearanceSettings) {
+        val currentStyle = AppearanceUiStyle.fromPersistedValue(this[APPEARANCE_UI_STYLE])
+        if (contains(APPEARANCE_UI_STYLE) || settings.uiStyle != currentStyle) {
+            this[APPEARANCE_UI_STYLE] = settings.uiStyle.persistedValue
+        }
         this[APPEARANCE_THEME_MODE] = settings.themeMode.persistedValue
         this[APPEARANCE_MONET_ENABLED] = settings.monetEnabled
         this[APPEARANCE_PALETTE_STYLE] = settings.paletteStyle.persistedValue

@@ -246,13 +246,43 @@ internal object VirtualDisplayController {
     /**
      * 在虚拟屏上启动指定应用，并对其施加后台音频焦点静默保护。
      */
+    /** 从无障碍事件里观察到的前台包：同步虚拟屏快照的应用名，并压掉该应用在物理屏的音频焦点。 */
+    fun onTopPackageObserved(
+        context: Context,
+        observedPackage: String,
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ) {
+        val pkg = observedPackage.trim()
+        if (pkg.isBlank() || pkg == "android" || pkg == "com.android.systemui" || pkg == context.packageName) return
+        val current = synchronized(lock) { mutableSnapshots.value }
+        if (!current.active || current.packageName == pkg) return
+        val appContext = context.applicationContext
+        val resolvedName = runCatching {
+            val pm = appContext.packageManager
+            val info = pm.getApplicationInfo(pkg, 0)
+            pm.getApplicationLabel(info).toString().trim().takeIf { it.isNotBlank() }
+        }.getOrNull() ?: pkg
+        mutePackageAudioFocusIfPossible(appContext, pkg, rootAvailable)
+        synchronized(lock) {
+            val latest = mutableSnapshots.value
+            if (latest.active && latest.packageName != pkg) {
+                mutableSnapshots.value = latest.copy(
+                    packageName = pkg,
+                    appName = resolvedName,
+                )
+            }
+        }
+    }
+
     fun launchAppOnVirtualDisplay(
         context: Context,
         packageName: String,
         appName: String,
         launchIntent: Intent,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
+        checkCancellation: () -> Unit = {},
     ): Int? {
+        checkCancellation()
         noteInteraction()
         // 刚 handoff 完就重新建屏时，上一个虚拟屏与桥接进程可能还没清理干净，第一次会失败；
         // 等一下重试一次，避免用户看到「全屏之后再也开不了虚拟屏」。
@@ -356,7 +386,9 @@ internal object VirtualDisplayController {
         intent: Intent,
         targetLabel: String,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
+        checkCancellation: () -> Unit = {},
     ): Int? {
+        checkCancellation()
         noteInteraction()
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
