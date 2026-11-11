@@ -35,6 +35,8 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsVoice
 import androidx.compose.material.icons.rounded.Smartphone
@@ -76,9 +78,11 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.model.AgentPlanMode
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.core.DiagnosticsBundle
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
 import io.github.mangi.eta.data.update.AppUpdateChecker
 import io.github.mangi.eta.systemizer.GoogleAppSystemizerInstaller
@@ -258,6 +262,7 @@ private fun SettingsPageContent(
 
     // Provider / Model 选中状态展示
     val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
+    val virtualScreenSettings by VirtualScreenSettingsRepository.stateFlow.collectAsState()
     val selectedProviderId by RuntimeConfigRepository.selectedProviderIdFlow()
         .collectAsState(initial = null)
     val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow()
@@ -454,6 +459,39 @@ private fun SettingsPageContent(
                         },
                         icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Green) },
                     )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "提示词包",
+                        summary = "多版本附加提示词；开启后可把技能包同步进 Linux 环境",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Green) },
+                        onClick = { onNavigate(AppRoute.PromptKit) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "出站改写",
+                        summary = "发送前把刺头词换成中性词（界面仍显示原样）；输出被截断时自动续写",
+                        icon = { CouiSettingsIcon(Icons.Rounded.FilterAlt, SettingsIconColors.Orange) },
+                        onClick = { onNavigate(AppRoute.OutboundRewrite) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "导出诊断包",
+                        summary = "把版本、设备状态与最近日志打成 zip，存到 Download/Eta诊断包",
+                        icon = { CouiSettingsIcon(Icons.Rounded.BugReport, SettingsIconColors.Blue) },
+                        onClick = {
+                            coroutineScope.launch {
+                                val result = runCatching { DiagnosticsBundle.export(context) }
+                                Toast.makeText(
+                                    context,
+                                    result.fold(
+                                        { file -> "已导出：${file.parentFile?.name}/${file.name}" },
+                                        { error -> "导出失败：${error.javaClass.simpleName}" },
+                                    ),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
+                    )
                 }
 
                 Group(title = stringResource(R.string.ui_tool_a72ef1)) {
@@ -481,6 +519,48 @@ private fun SettingsPageContent(
                         key = Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED,
                         icon = Icons.Rounded.Layers,
                         iconTint = SettingsIconColors.Blue,
+                    )
+                    CouiIconDivider()
+                    CouiSwitchPreference(
+                        title = "虚拟屏空闲回收",
+                        summary = "任务结束或长时间没有交互时自动收起虚拟屏，避免一块屏一直挂着",
+                        checked = virtualScreenSettings.idleReclaimEnabled,
+                        onCheckedChange = { enabled ->
+                            coroutineScope.launch {
+                                VirtualScreenSettingsRepository.update { it.copy(idleReclaimEnabled = enabled) }
+                            }
+                        },
+                        icon = { CouiSettingsIcon(Icons.Rounded.Timer, SettingsIconColors.Green) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "空闲多久后收起",
+                        summary = "${virtualScreenSettings.idleTimeoutMinutes} 分钟（点击切换 1 / 3 / 5 / 10 分钟）",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Timer, SettingsIconColors.Blue) },
+                        onClick = {
+                            coroutineScope.launch {
+                                VirtualScreenSettingsRepository.update { current ->
+                                    val options = listOf(1, 3, 5, 10)
+                                    val idx = options.indexOf(current.idleTimeoutMinutes).coerceAtLeast(0)
+                                    current.copy(idleTimeoutMinutes = options[(idx + 1) % options.size])
+                                }
+                            }
+                        },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "目标刷新率",
+                        summary = "${virtualScreenSettings.frameRate} Hz（点击切换 60 / 90 / 120 / 165 Hz）",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Speed, SettingsIconColors.Orange) },
+                        onClick = {
+                            coroutineScope.launch {
+                                VirtualScreenSettingsRepository.update { current ->
+                                    val options = listOf(60, 90, 120, 165)
+                                    val idx = options.indexOf(current.frameRate).coerceAtLeast(0)
+                                    current.copy(frameRate = options[(idx + 1) % options.size])
+                                }
+                            }
+                        },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -875,6 +955,33 @@ private fun SettingsPageContent(
                             },
                             onClick = { onNavigate(AppRoute.Characters) },
                         )
+                        ArrowPreference(
+                            title = "提示词包",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Layers, tint = SettingsIconColors.Green) },
+                            onClick = { onNavigate(AppRoute.PromptKit) },
+                        )
+                        ArrowPreference(
+                            title = "出站改写",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.FilterAlt, tint = SettingsIconColors.Orange) },
+                            onClick = { onNavigate(AppRoute.OutboundRewrite) },
+                        )
+                        ArrowPreference(
+                            title = "导出诊断包",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.BugReport, tint = SettingsIconColors.Blue) },
+                            onClick = {
+                                coroutineScope.launch {
+                                    val result = runCatching { DiagnosticsBundle.export(context) }
+                                    Toast.makeText(
+                                        context,
+                                        result.fold(
+                                            { file -> "已导出：${file.parentFile?.name}/${file.name}" },
+                                            { error -> "导出失败：${error.javaClass.simpleName}" },
+                                        ),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            },
+                        )
                     }
                 }
 
@@ -903,6 +1010,41 @@ private fun SettingsPageContent(
                             key = Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED,
                             icon = Icons.Rounded.Layers,
                             iconTint = SettingsIconColors.Blue,
+                        )
+                        ArrowPreference(
+                            title = "虚拟屏空闲回收：" + if (virtualScreenSettings.idleReclaimEnabled) "开" else "关",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Timer, tint = SettingsIconColors.Green) },
+                            onClick = {
+                                coroutineScope.launch {
+                                    VirtualScreenSettingsRepository.update { it.copy(idleReclaimEnabled = !it.idleReclaimEnabled) }
+                                }
+                            },
+                        )
+                        ArrowPreference(
+                            title = "空闲回收时长：" + virtualScreenSettings.idleTimeoutMinutes + " 分钟",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Timer, tint = SettingsIconColors.Blue) },
+                            onClick = {
+                                coroutineScope.launch {
+                                    VirtualScreenSettingsRepository.update { current ->
+                                        val options = listOf(1, 3, 5, 10)
+                                        val i = options.indexOf(current.idleTimeoutMinutes).coerceAtLeast(0)
+                                        current.copy(idleTimeoutMinutes = options[(i + 1) % options.size])
+                                    }
+                                }
+                            },
+                        )
+                        ArrowPreference(
+                            title = "虚拟屏刷新率：" + virtualScreenSettings.frameRate + " Hz",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Speed, tint = SettingsIconColors.Orange) },
+                            onClick = {
+                                coroutineScope.launch {
+                                    VirtualScreenSettingsRepository.update { current ->
+                                        val options = listOf(60, 90, 120, 165)
+                                        val i = options.indexOf(current.frameRate).coerceAtLeast(0)
+                                        current.copy(frameRate = options[(i + 1) % options.size])
+                                    }
+                                }
+                            },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.ui_linux_tool_environment_314d22),
