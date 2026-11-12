@@ -191,6 +191,7 @@ internal class AgentLoop(
                 discardPendingToolImageMessage()
             }
             if (completedRound == null) {
+                // ETA-FORK: 插话中断后按新指令重规划
                 onEvent(AgentEvent.ModelRequestInterrupted(round))
                 round += 1
                 continue

@@ -461,6 +461,7 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
+                        // ETA-FORK: 六个 fork 专有入口（提示词包/出站改写/诊断包/虚拟屏三项）
                         title = "提示词包",
                         summary = "多版本附加提示词；开启后可把技能包同步进 Linux 环境",
                         icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Green) },

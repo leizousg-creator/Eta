@@ -32,6 +32,7 @@ internal object CharacterRepository {
     private const val KEY_DEFAULT_CHARACTER_SEEDED = "default_character_seeded"
 
     /** 随包发布的内置角色卡目录（assets 下），文件名前缀决定角色库中的顺序。 */
+    // ETA-FORK: 内置角色卡随包发布
     private const val BUILTIN_CHARACTER_DIR = "builtin_characters"
     @Volatile private var context: Context? = null
 

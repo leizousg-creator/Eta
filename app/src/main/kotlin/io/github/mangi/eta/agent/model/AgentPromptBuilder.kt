@@ -62,6 +62,7 @@ internal object AgentPromptBuilder {
         }
         // 计划模式：工具层已硬拦截写操作，这里同步告诉模型该怎么工作，避免它反复撞墙。
         if (roleplayContext == null && AgentPlanMode.enabled) {
+            // ETA-FORK: 计划模式约束段注入系统提示
             messages.put(systemMessage(AgentPlanMode.prompt))
         }
         messages.put(

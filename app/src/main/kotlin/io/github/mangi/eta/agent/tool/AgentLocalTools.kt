@@ -217,6 +217,7 @@ internal class AgentLocalTools(
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
             if (AgentPlanMode.enabled && !AgentPlanMode.allowsTool(toolCall.name)) {
                 return@runCatching textResult(
+                    // ETA-FORK: 计划模式在工具执行入口硬拦截写操作
                     errorResult("PLAN_MODE_READ_ONLY", AgentPlanMode.blockedMessage(toolCall.name)),
                 )
             }
