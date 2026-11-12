@@ -699,7 +699,11 @@ internal object VirtualDisplayController {
         // 1. 尝试进程内通过 system_server Hook 放行的 moveRootTaskToDisplay 迁移
         val movedInProcess = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                HiddenApiBypass.addHiddenApiExemptions("Landroid/app/ActivityTaskManager", "Landroid/app/IActivityTaskManager")
+                HiddenApiBypass.addHiddenApiExemptions(
+                    "Landroid/app/ActivityTaskManager",
+                    "Landroid/app/IActivityTaskManager",
+                    "Landroid/app/TaskInfo", // ETA-FORK: Android 15 拦了 TaskInfo.displayId，读不到会把应用挪错屏
+                )
             }
             val atmClass = Class.forName("android.app.ActivityTaskManager")
             val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching false

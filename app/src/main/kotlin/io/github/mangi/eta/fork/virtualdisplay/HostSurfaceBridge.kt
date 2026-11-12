@@ -1,6 +1,7 @@
 package io.github.mangi.eta.fork.virtualdisplay
 
 import android.view.Surface
+import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplaySessionResources
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplaySurfaceRegistry
 import org.json.JSONObject
@@ -24,9 +25,17 @@ internal object HostSurfaceBridge {
 
     /** 把画面切到 UI 的 surface。 */
     fun attach(resources: VirtualDisplaySessionResources?, surface: Surface): Boolean {
-        if (resources == null || !surface.isValid) return false
-        if (!sendSurface(resources, surface)) return false
+        if (resources == null) {
+            AndroidAgentLogger.warn("host surface attach skipped: no active session")
+            return false
+        }
+        if (!surface.isValid) return false
+        if (!sendSurface(resources, surface)) {
+            AndroidAgentLogger.warn("host surface attach failed")
+            return false
+        }
         attachedSurface = surface
+        AndroidAgentLogger.info("host surface attached (直投生效)")
         return true
     }
 
@@ -36,6 +45,7 @@ internal object HostSurfaceBridge {
         val reader = resources?.reader?.surface ?: return false
         if (!sendSurface(resources, reader)) return false
         attachedSurface = null
+        AndroidAgentLogger.info("host surface detached (回到 ImageReader)")
         return true
     }
 
