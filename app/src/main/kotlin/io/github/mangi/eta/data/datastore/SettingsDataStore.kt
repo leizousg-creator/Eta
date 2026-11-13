@@ -21,6 +21,8 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.NetworkProxySettings
 import io.github.mangi.eta.data.model.OutboundRewriteSettings
 import io.github.mangi.eta.data.model.VirtualScreenSettings
+import io.github.mangi.eta.data.model.AssistantOverlaySettings
+import io.github.mangi.eta.data.model.ConversationTitleSettings
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.model.SubagentSettings
 import io.github.mangi.eta.data.model.WebToolsSettings
@@ -40,6 +42,8 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_SETTINGS = stringPreferencesKey("virtual_screen_settings_v1")
     private val NETWORK_PROXY_SETTINGS = stringPreferencesKey("network_proxy_settings_v1")
     private val AGENT_RETRY_SETTINGS = stringPreferencesKey("agent_retry_settings_v1")
+    private val CONVERSATION_TITLE_SETTINGS = stringPreferencesKey("conversation_title_settings_v1")
+    private val ASSISTANT_OVERLAY_SETTINGS = stringPreferencesKey("assistant_overlay_settings_v1")
     private val speechJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -139,6 +143,46 @@ internal object SettingsDataStore {
     suspend fun setSubagentSettings(settings: SubagentSettings) {
         ensureInitialized()
         dataStore.edit { it[SUBAGENT_SETTINGS] = speechJson.encodeToString(settings) }
+    }
+
+    fun conversationTitleSettingsFlow(): Flow<ConversationTitleSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[CONVERSATION_TITLE_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<ConversationTitleSettings>(raw) }.getOrNull()
+                } ?: ConversationTitleSettings()
+            }
+    }
+
+    suspend fun conversationTitleSettings(): ConversationTitleSettings = conversationTitleSettingsFlow().first()
+
+    suspend fun setConversationTitleSettings(settings: ConversationTitleSettings) {
+        ensureInitialized()
+        dataStore.edit { it[CONVERSATION_TITLE_SETTINGS] = speechJson.encodeToString(settings) }
+    }
+
+    fun assistantOverlaySettingsFlow(): Flow<AssistantOverlaySettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[ASSISTANT_OVERLAY_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<AssistantOverlaySettings>(raw) }.getOrNull()
+                } ?: AssistantOverlaySettings()
+            }
+    }
+
+    suspend fun assistantOverlaySettings(): AssistantOverlaySettings = assistantOverlaySettingsFlow().first()
+
+    suspend fun setAssistantOverlaySettings(settings: AssistantOverlaySettings) {
+        ensureInitialized()
+        dataStore.edit { it[ASSISTANT_OVERLAY_SETTINGS] = speechJson.encodeToString(settings) }
     }
 
     private const val STORE_NAME = "eta_settings"

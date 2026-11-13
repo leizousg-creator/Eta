@@ -97,6 +97,9 @@ data class SystemNoticeMessageUi(
     val contextTokens: Int? = null,
     /** 仅运行期存在的进行中标记，不随消息持久化；恢复的历史通知始终视为已结束。 */
     val running: Boolean = false,
+    val usage: TokenUsageUi? = null,
+    val archiveId: String = "",
+    val tokensBefore: Int? = null,
 ) : AgentChatMessageUi
 
 @Immutable
@@ -108,6 +111,8 @@ data class TokenUsageUi(
     val cachedTokens: Int? = null,
     /** 本次请求耗时（毫秒）；用于派生 tokens/秒。 */
     val requestDurationMs: Long? = null,
+    val cacheWriteTokens: Int? = null,
+    val requestKind: String? = null,
     val stepCount: Int? = null,
     val llmMs: Long? = null,
     val toolMs: Long? = null,
@@ -132,6 +137,7 @@ data class TokenUsageUi(
             outputTokens == null &&
             reasoningTokens == null &&
             cachedTokens == null &&
+            cacheWriteTokens == null &&
             stepCount == null &&
             llmMs == null &&
             toolMs == null &&
