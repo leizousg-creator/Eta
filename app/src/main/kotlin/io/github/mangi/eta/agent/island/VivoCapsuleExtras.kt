@@ -79,8 +79,12 @@ internal object VivoCapsuleExtras {
                             putString("island.superx.landingPkg", "io.github.mangi.eta")
                             putString("island.superx.landingInfo", LANDING_JSON)
                             putInt("island.superx.showTime", seconds)
-                            putInt("island.superx.islandType", 2)
                             putBoolean("island.superx.forceShow", true)
+                            // ETA-FORK: 不设 islandType，让 businessKey 落到 BUSINESS_NEW_SUPER_X（type 2 自定义超级岛），
+                            // 并强制展开卡片——设 islandType=1/2 会被归到 BUSINESS_SUGGESTION，只剩胶囊文字。
+                            putBoolean("island.superx.forceShowCard", true)
+                            putInt("island.superx.forceShowCardInt", 1)
+                            putBoolean("island.superx.showBarWhenCard", true)
                         },
                     )
                 },
