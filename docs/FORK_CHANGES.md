@@ -65,3 +65,14 @@ val isHostSurfaceAttached: Boolean get() = ...
 5. `grep -rn "ETA-FORK"` 逐点核对
 6. 本机 `:app:compileDebugKotlin` 编译，再走 CI 出包
 7. **入口清单比对**：上游重写整页 UI 时，光编译通过不够，要对照旧版把功能入口一个个点一遍
+
+## 五、原子岛降级（2026-11-14）
+
+排查结论：LSPosed 已把 Eta 模块注入 `com.android.systemui`（`/proc/<pid>/maps` 可见 mangi），
+但 `com.vivo.ai.copilot` 始终拿不到注入 —— 模块启用、作用域、denylist、zygote fork 全部正常，
+仍不注入。于是 `WidgetTaskService.onBind` 的 hook 不存在，bind 回来的是原生 `BinderProxy`，
+`VivoIslandWire` 判定 `module bridge unavailable`。
+
+对应实现：`fork/island/MediaSessionIslandFallback.kt` —— 用 MediaSession + MediaStyle 通知
+承载 Agent 阶段与工具名，靠 vivo 对媒体会话的系统级支持争取上岛。由
+`AgentRuntimeIslandBridge.unavailable()` 触发，update/finish/close 同步刷新，不影响任务执行。
