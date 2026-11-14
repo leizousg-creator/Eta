@@ -21,7 +21,6 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.hook.vivo.VivoHandoff
 import io.github.mangi.eta.hook.vivo.VivoIslandNotifications
 import io.github.mangi.eta.hook.vivo.VivoIslandWire
-import io.github.mangi.eta.fork.island.MediaSessionIslandFallback
 import io.github.mangi.eta.hook.vivo.VivoTakeoverPolicy
 import io.github.mangi.eta.ui.MainActivity
 import java.util.UUID
@@ -131,13 +130,6 @@ internal class AgentRuntimeIslandBridge(
 
     fun update(runId: String, event: AgentEvent, virtualScreen: Boolean = false) {
         val progress = VivoIslandWire.Progress.from(event, virtualScreen) ?: return
-        // ETA-FORK: 原生桥接不可用时，用媒体会话壳维持原子岛状态
-        if (unavailable) {
-            main.post {
-                MediaSessionIslandFallback.update(context, VivoIslandNotifications.State.RUNNING, progress)
-            }
-            return
-        }
         onMain {
             val active = current?.takeIf {
                 !closed && it.runId == runId && it.state == VivoIslandNotifications.State.RUNNING
@@ -149,10 +141,6 @@ internal class AgentRuntimeIslandBridge(
     }
 
     fun finish(result: AgentRuntimeWire.RunResult) = onMain {
-        if (unavailable) {
-            MediaSessionIslandFallback.finish(context)
-            return@onMain
-        }
         val active = current?.takeIf {
             !closed && it.runId == result.runId && it.state == VivoIslandNotifications.State.RUNNING
         } ?: return@onMain
@@ -173,7 +161,6 @@ internal class AgentRuntimeIslandBridge(
         if (current?.state == VivoIslandNotifications.State.RUNNING) clearCurrent()
         closed = true
         main.removeCallbacksAndMessages(null)
-        MediaSessionIslandFallback.clear(context)
         unbind()
         context.unregisterReceiver(receiver)
     }
@@ -212,11 +199,7 @@ internal class AgentRuntimeIslandBridge(
         unavailable = true
         if (!failureLogged) {
             failureLogged = true
-            logger.warn("小 V 原子岛桥接不可用，改用媒体会话壳: $reason")
-            // ETA-FORK: copilot 进程拿不到模块注入（systemui 可以），退回 MediaStyle 卡片争取上岛
-            current?.let { snapshot ->
-                MediaSessionIslandFallback.show(context, snapshot.state, snapshot.progress)
-            }
+            logger.warn("小 V 原子岛桥接不可用，保留 Eta 普通通知: $reason")
         }
         unbind()
     }
