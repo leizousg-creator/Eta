@@ -60,13 +60,9 @@ internal object VivoCapsuleExtras {
                     putBundle(
                         KEY_ISLAND,
                         Bundle().apply {
-                            // ETA-FORK: 模板号与回执链照抄夸克浏览器的实测配置（它在本机是启用状态）
-                            putInt("island.superx.template", 0)
-                            putInt("island.superx.leftTemplate", 1)
-                            putInt("island.superx.rightTemplate", 6)
-                            putInt("island.superx.priority", 4)
-                            putString("island.superx.eventInfo", "{\"mode\":\"single\",\"serviceCode\":\"eta_island\",\"source\":\"sort\"}")
-                            putString("island.superx.callbackInfos", "{\"serviceCodes\":[\"eta_island\"]}")
+                            putInt("island.superx.template", -1)
+                            putInt("island.superx.leftTemplate", 3)
+                            putInt("island.superx.rightTemplate", 7)
                             putBundle(
                                 "island.superx.leftInfo",
                                 Bundle().apply { putParcelable("island.superx.leftInfo.icon", icon) },
@@ -83,12 +79,8 @@ internal object VivoCapsuleExtras {
                             putString("island.superx.landingPkg", "io.github.mangi.eta")
                             putString("island.superx.landingInfo", LANDING_JSON)
                             putInt("island.superx.showTime", seconds)
+                            putInt("island.superx.islandType", 2)
                             putBoolean("island.superx.forceShow", true)
-                            // ETA-FORK: 不设 islandType，让 businessKey 落到 BUSINESS_NEW_SUPER_X（type 2 自定义超级岛），
-                            // 并强制展开卡片——设 islandType=1/2 会被归到 BUSINESS_SUGGESTION，只剩胶囊文字。
-                            putBoolean("island.superx.forceShowCard", false)
-                            putInt("island.superx.forceShowCardInt", 1)
-                            putBoolean("island.superx.showBarWhenCard", true)
                         },
                     )
                 },
