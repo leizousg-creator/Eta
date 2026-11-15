@@ -81,6 +81,7 @@ import io.github.mangi.eta.agent.model.AgentPlanMode
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.DiagnosticsBundle
+import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -570,6 +571,14 @@ private fun SettingsPageContent(
                                 }
                             }
                         },
+                    )
+                    CouiIconDivider()
+                    val rootPolicyState = remember { mutableStateOf(DeviceCommandPolicy.mode()) }
+                    CouiPreference(
+                        title = "root 命令档位",
+                        summary = DeviceCommandPolicy.describe(rootPolicyState.value) + "（点击切换）",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Orange) },
+                        onClick = { rootPolicyState.value = DeviceCommandPolicy.nextMode(context) },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -1062,6 +1071,12 @@ private fun SettingsPageContent(
                                     }
                                 }
                             },
+                        )
+                        val rootPolicyMiuix = remember { mutableStateOf(DeviceCommandPolicy.mode()) }
+                        ArrowPreference(
+                            title = "root 命令档位：" + DeviceCommandPolicy.describe(rootPolicyMiuix.value),
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Security, tint = SettingsIconColors.Orange) },
+                            onClick = { rootPolicyMiuix.value = DeviceCommandPolicy.nextMode(context) },
                         )
                         ArrowPreference(
                             title = "虚拟屏刷新率：" + virtualScreenSettings.frameRate + " Hz",

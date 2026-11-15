@@ -19,6 +19,7 @@ import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import io.github.mangi.eta.data.repository.AgentRetryRepository
 import io.github.mangi.eta.data.repository.NetworkProxyRepository
 import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
+import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
@@ -71,6 +72,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         applicationScope.launch {
             VirtualScreenSettingsRepository.flow().collect { settings -> VirtualScreenSettingsRepository.publish(settings) }
+            // ETA-FORK: 恢复 root 命令档位
+            DeviceCommandPolicy.restore(this@EtaApp)
         }
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled

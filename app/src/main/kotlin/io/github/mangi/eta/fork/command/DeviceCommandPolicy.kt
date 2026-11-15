@@ -1,5 +1,7 @@
 package io.github.mangi.eta.fork.command
 
+import android.content.Context
+
 /**
  * 真机 root 命令守门人（借鉴 DSHA 的 DeviceShellPolicy，按其三档语义裁剪）。
  *
@@ -112,8 +114,54 @@ internal object DeviceCommandPolicy {
         return null
     }
 
-    /** 当前档位；后续接设置页时把这里换成读偏好。 */
-    private fun mode(): Mode = Mode.RELAXED
+    private const val PREFS = "eta_root_command_policy"
+    private const val KEY_MODE = "mode"
+
+    @Volatile
+    private var current = Mode.RELAXED
+
+    /** 当前档位（设置页与守门人共用）。 */
+    fun mode(): Mode = current
+
+    fun modeId(): String = current.id
+
+    /** 循环切换：relaxed → strict → full → relaxed。 */
+    fun nextMode(context: Context): Mode {
+        val next = when (current) {
+            Mode.RELAXED -> Mode.STRICT
+            Mode.STRICT -> Mode.FULL
+            Mode.FULL -> Mode.RELAXED
+        }
+        apply(context, next)
+        return next
+    }
+
+    fun apply(context: Context, mode: Mode) {
+        current = mode
+        runCatching {
+            context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_MODE, mode.id)
+                .apply()
+        }
+    }
+
+    /** 启动时恢复；非法值回落 RELAXED。 */
+    fun restore(context: Context) {
+        val stored = runCatching {
+            context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_MODE, null)
+        }.getOrNull()
+        current = Mode.parse(stored)
+    }
+
+    fun describe(mode: Mode): String = when (mode) {
+        Mode.RELAXED -> "放宽（拦不可逆操作与受保护目录）"
+        Mode.STRICT -> "严格（只放行只读命令）"
+        Mode.FULL -> "完全放宽（不按内容拦）"
+    }
 
     private val strictAllowed = setOf(
         "id", "whoami", "pwd", "uname", "getprop", "getenforce", "ps", "pidof", "ls",
