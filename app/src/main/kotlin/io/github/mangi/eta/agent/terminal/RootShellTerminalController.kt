@@ -417,6 +417,16 @@ internal class RootShellTerminalController(
             .put("status", when { result.timedOut -> "timed_out"; session.closed -> "cancelled"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.timedOut)
+            .put("execution", if (result.timedOut) "unknown" else "completed")
+            .put(
+                "next_step",
+                if (result.timedOut) {
+                    // ETA-FORK: 超时不等于未执行。命令可能已经发出并在继续跑，直接重放会重复执行危险操作。
+                    "命令没有在预算内返回：它可能仍在执行，也可能没启动。先观察真实状态（进程、文件、服务），确认没生效再决定是否重试；不要直接重放同一条命令"
+                } else {
+                    JSONObject.NULL
+                },
+            )
             .put("stdout", stdout)
             .put("stderr", stderr)
             .put("stdout_truncated", rawStdout.length > MAX_OUTPUT_CHARS)
@@ -569,6 +579,16 @@ internal class RootShellTerminalController(
             .put("status", when { processSupervisor.isClosing -> "cancelled"; result.exitCode == -2 -> "timed_out"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.exitCode == -2)
+            .put("execution", if (result.exitCode == -2) "unknown" else "completed")
+            .put(
+                "next_step",
+                if (result.exitCode == -2) {
+                    // ETA-FORK: 超时不等于未执行。命令可能已经发出并在继续跑，直接重放会重复执行危险操作。
+                    "命令没有在预算内返回：它可能仍在执行，也可能没启动。先观察真实状态（进程、文件、服务），确认没生效再决定是否重试；不要直接重放同一条命令"
+                } else {
+                    JSONObject.NULL
+                },
+            )
             .put("stdout", stdout)
             .put("stderr", stderr)
             .put("stdout_truncated", result.outputTruncated || rawStdout.length > MAX_OUTPUT_CHARS || (mergeStderr && result.stderrTruncated))
