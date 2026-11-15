@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import org.json.JSONArray
+import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import org.json.JSONObject
 
 internal class RootShellTerminalController(
@@ -191,6 +192,10 @@ internal class RootShellTerminalController(
         val effectiveEnvironment = session?.environment ?: normalizeEnvironment(environment)
         val effectiveIdentity = session?.identity ?: normalizeIdentity(identity.ifBlank { defaultIdentity(effectiveEnvironment) })
         environmentPreflight(effectiveIdentity, effectiveEnvironment, session?.rootfsPath ?: rootfsPathFor(effectiveEnvironment))?.let { return it }
+        // ETA-FORK: 真机 root 命令的内容层拦截（不可逆操作 / 受保护目录写入）
+        DeviceCommandPolicy.blockReason(command, effectiveIdentity, effectiveEnvironment.wireName)?.let { reason ->
+            return errorJson(DeviceCommandPolicy.BLOCKED_CODE, reason)
+        }
         if (session != null) {
             return execInSession(
                 session = session,
