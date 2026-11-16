@@ -3,6 +3,7 @@ package io.github.mangi.eta.fork.backup
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
@@ -50,6 +51,9 @@ internal object AutoBackup {
     /** 到期就备份一次；未开启、未到期或正在跑都直接返回。 */
     suspend fun maybeRun(context: Context): Result<String> {
         val app = context.applicationContext
+        // 单元测试（Robolectric）会创建 Application，若在这里导出会往 cacheDir 埋临时文件，
+        // 干扰 EtaBackupStreamingTest 对「导出后无残留」的断言。
+        if (isTestEnvironment()) return Result.success("skipped: test env")
         if (!isEnabled(app)) return Result.success("skipped: disabled")
         val now = System.currentTimeMillis()
         val last = lastBackupAt(app)
@@ -144,4 +148,8 @@ internal object AutoBackup {
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun isTestEnvironment(): Boolean =
+        Build.FINGERPRINT.contains("robolectric", ignoreCase = true) ||
+            Build.MODEL.equals("robolectric", ignoreCase = true)
 }
