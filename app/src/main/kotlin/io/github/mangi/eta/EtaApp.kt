@@ -19,6 +19,7 @@ import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import io.github.mangi.eta.data.repository.AgentRetryRepository
 import io.github.mangi.eta.data.repository.NetworkProxyRepository
 import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
+import io.github.mangi.eta.fork.backup.AutoBackup
 import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
@@ -75,6 +76,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
             // ETA-FORK: 恢复 root 命令档位
             DeviceCommandPolicy.restore(this@EtaApp)
         }
+        // ETA-FORK: 到期就自动备份一次（6 小时 / 保留 3 份）
+        applicationScope.launch { AutoBackup.maybeRun(this@EtaApp) }
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled
         }

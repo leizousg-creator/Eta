@@ -81,6 +81,7 @@ import io.github.mangi.eta.agent.model.AgentPlanMode
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.DiagnosticsBundle
+import io.github.mangi.eta.fork.backup.AutoBackup
 import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.ProviderRepository
@@ -573,6 +574,22 @@ private fun SettingsPageContent(
                         },
                     )
                     CouiIconDivider()
+                    CouiIconDivider()
+                    val autoBackupState = remember { mutableStateOf(AutoBackup.isEnabled(context)) }
+                    CouiSwitchPreference(
+                        title = "自动备份",
+                        summary = if (autoBackupState.value) {
+                            "每 " + AutoBackup.intervalHours() + " 小时导出一份到 下载/EtaAutoBackup，保留最近 3 份"
+                        } else {
+                            "已关闭；打开后每 " + AutoBackup.intervalHours() + " 小时自动导出一次"
+                        },
+                        checked = autoBackupState.value,
+                        onCheckedChange = { enabled ->
+                            autoBackupState.value = enabled
+                            AutoBackup.setEnabled(context, enabled)
+                        },
+                        icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Green) },
+                    )
                     val rootPolicyState = remember { mutableStateOf(DeviceCommandPolicy.mode()) }
                     CouiPreference(
                         title = "root 命令档位",
@@ -1070,6 +1087,20 @@ private fun SettingsPageContent(
                                         current.copy(idleTimeoutMinutes = options[(i + 1) % options.size])
                                     }
                                 }
+                            },
+                        )
+                        val autoBackupMiuix = remember { mutableStateOf(AutoBackup.isEnabled(context)) }
+                        ArrowPreference(
+                            title = "自动备份：" + if (autoBackupMiuix.value) {
+                                "开（每 " + AutoBackup.intervalHours() + " 小时）"
+                            } else {
+                                "关"
+                            },
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Layers, tint = SettingsIconColors.Green) },
+                            onClick = {
+                                val next = !autoBackupMiuix.value
+                                autoBackupMiuix.value = next
+                                AutoBackup.setEnabled(context, next)
                             },
                         )
                         val rootPolicyMiuix = remember { mutableStateOf(DeviceCommandPolicy.mode()) }
