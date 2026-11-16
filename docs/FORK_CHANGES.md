@@ -65,3 +65,19 @@ val isHostSurfaceAttached: Boolean get() = ...
 5. `grep -rn "ETA-FORK"` 逐点核对
 6. 本机 `:app:compileDebugKotlin` 编译，再走 CI 出包
 7. **入口清单比对**：上游重写整页 UI 时，光编译通过不够，要对照旧版把功能入口一个个点一遍
+
+## 六、命令守门人 / 超时语义 / 自动备份 / BACK 导航
+
+| 能力 | 位置 | 说明 |
+|---|---|---|
+| root 命令守门人 | `fork/command/DeviceCommandPolicy.kt`、`RootShellTerminalController.execInTerminal` | 三档（relaxed 默认 / strict / full），只作用于 `environment=android` + `identity=root`；拦不可逆操作（含 `mkfs.*`）与 `/dcim` `/pictures` `/android/data` `/android/obb` 写入；路径先归一化 `/sdcard`、`/storage/emulated/N` 等别名再比；被拦返回 `POLICY_BLOCKED`，工具审批覆盖不了 |
+| 档位设置 | `SettingsScreen` 工具组、`EtaApp.restore` | 点击循环切换，存 `eta_root_command_policy`；非法值回落 relaxed |
+| 超时语义 | `RootShellTerminalController` 两处结果构建 | 超时补 `execution=unknown` + `next_step`（先观察状态，别直接重放），与非超时失败区分 |
+| 自动备份 | `fork/backup/AutoBackup.kt`、`EtaApp` | 每 6 小时写 `Download/EtaAutoBackup/eta-auto-<时间戳>.zip`，保留 3 份，顺带清理 `IS_PENDING` 残片；Robolectric 环境跳过（否则污染 cacheDir 让备份测试失败） |
+| BACK 导航 | `AgentAppRoot` | BackHandler：先收侧边栏，再退一层路由，退无可退才交系统——之前一按就退出到桌面/全局搜索 |
+
+**原子岛（vivo）结论：第三方拿不到卡片形态。** 两条路都试过并回滚：
+1. 原生桥接要 hook `com.vivo.ai.copilot` 的 `WidgetTaskService.onBind`，但该进程始终拿不到 LSPosed 注入（systemui 能注入）
+2. 通知 extras 需要 `callbackInfos.serviceCodes` 里的注册凭证（夸克是 `quark_openToken`），自己编的会被插件整条跳过——`dumpsys` 里我们的 `notification.superx.island` 永远是 `mParcelledData`，说明插件根本没读
+
+现在保留 `VivoCapsuleExtras` 原实现（islandType=2 / leftTemplate=3 / rightTemplate=7），效果是胶囊 + 阶段文案。**别再去动 template / forceShowCard，两次尝试都是倒退。**

@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -293,6 +294,16 @@ fun AgentAppRoot(
     fun popRoute() {
         if (!navigator.pop()) {
             (context as? Activity)?.finish()
+        }
+    }
+
+    // ETA-FORK: BACK 先收侧边栏、再退一层路由；只有退无可退才交给系统退出。
+    // 之前 BACK 直接走系统默认行为，在对话页一按就退到桌面（或全局搜索），很容易误触。
+    BackHandler(enabled = conversationPaneOpen || backStack.size > 1) {
+        if (conversationPaneOpen) {
+            conversationPaneOpen = false
+        } else {
+            popRoute()
         }
     }
 
