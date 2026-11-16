@@ -21,6 +21,7 @@ import io.github.mangi.eta.data.repository.NetworkProxyRepository
 import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.fork.backup.AutoBackup
 import io.github.mangi.eta.fork.command.DeviceCommandPolicy
+import io.github.mangi.eta.fork.overlay.TickerSettings
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
@@ -78,6 +79,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         // ETA-FORK: 到期就自动备份一次（6 小时 / 保留 3 份）
         applicationScope.launch { AutoBackup.maybeRun(this@EtaApp) }
+        // ETA-FORK: 载入字幕条配置
+        TickerSettings.load(this)
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled
         }

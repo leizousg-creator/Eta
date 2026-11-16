@@ -83,6 +83,7 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.DiagnosticsBundle
 import io.github.mangi.eta.fork.backup.AutoBackup
 import io.github.mangi.eta.fork.command.DeviceCommandPolicy
+import io.github.mangi.eta.fork.overlay.TickerSettings
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -575,6 +576,42 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiIconDivider()
+                    CouiIconDivider()
+                    val tickerState = remember { mutableStateOf(TickerSettings.current()) }
+                    CouiSwitchPreference(
+                        title = "流式字幕条",
+                        summary = if (tickerState.value.enabled) {
+                            "运行中在屏幕上方显示模型输出"
+                        } else {
+                            "已关闭"
+                        },
+                        checked = tickerState.value.enabled,
+                        onCheckedChange = { enabled ->
+                            TickerSettings.setEnabled(context, enabled)
+                            tickerState.value = TickerSettings.current()
+                        },
+                        icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Blue) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "字幕行数",
+                        summary = TickerSettings.linesLabel(tickerState.value.lines) + "（点击切换 2 / 3 / 5 行）",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Green) },
+                        onClick = {
+                            TickerSettings.cycleLines(context)
+                            tickerState.value = TickerSettings.current()
+                        },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "字幕底色",
+                        summary = TickerSettings.alphaLabel(tickerState.value.alpha) + "（点击切换 30% / 50% / 72% / 85%）",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Orange) },
+                        onClick = {
+                            TickerSettings.cycleAlpha(context)
+                            tickerState.value = TickerSettings.current()
+                        },
+                    )
                     val autoBackupState = remember { mutableStateOf(AutoBackup.isEnabled(context)) }
                     CouiSwitchPreference(
                         title = "自动备份",
@@ -1087,6 +1124,31 @@ private fun SettingsPageContent(
                                         current.copy(idleTimeoutMinutes = options[(i + 1) % options.size])
                                     }
                                 }
+                            },
+                        )
+                        val tickerMiuix = remember { mutableStateOf(TickerSettings.current()) }
+                        ArrowPreference(
+                            title = "流式字幕条：" + if (tickerMiuix.value.enabled) "开" else "关",
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Layers, tint = SettingsIconColors.Blue) },
+                            onClick = {
+                                TickerSettings.setEnabled(context, !tickerMiuix.value.enabled)
+                                tickerMiuix.value = TickerSettings.current()
+                            },
+                        )
+                        ArrowPreference(
+                            title = "字幕行数：" + TickerSettings.linesLabel(tickerMiuix.value.lines),
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Layers, tint = SettingsIconColors.Green) },
+                            onClick = {
+                                TickerSettings.cycleLines(context)
+                                tickerMiuix.value = TickerSettings.current()
+                            },
+                        )
+                        ArrowPreference(
+                            title = "字幕底色：" + TickerSettings.alphaLabel(tickerMiuix.value.alpha),
+                            startAction = { SettingsIcon(icon = Icons.Rounded.Layers, tint = SettingsIconColors.Orange) },
+                            onClick = {
+                                TickerSettings.cycleAlpha(context)
+                                tickerMiuix.value = TickerSettings.current()
                             },
                         )
                         val autoBackupMiuix = remember { mutableStateOf(AutoBackup.isEnabled(context)) }

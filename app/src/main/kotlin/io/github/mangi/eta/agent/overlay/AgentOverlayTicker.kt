@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.mangi.eta.fork.overlay.TickerSettings
 
 /**
  * 顶部流式字幕条：模型正在吐出的回答，贴在屏幕最上方，最多三行。
@@ -26,7 +27,11 @@ import androidx.compose.ui.unit.sp
  * 只在运行中且有实际文本时渲染；其余情况返回空 Composable，窗口高度自然塌成 0。
  */
 @Composable
-internal fun AgentOverlayTicker(state: AgentOverlayState) {
+internal fun AgentOverlayTicker(
+    state: AgentOverlayState,
+    config: TickerSettings.Config = TickerSettings.Config(),
+) {
+    if (!config.enabled) return
     if (state.phase != AgentOverlayPhase.RUNNING) return
     val text = state.detailText.trim()
     if (text.isEmpty()) return
@@ -35,7 +40,7 @@ internal fun AgentOverlayTicker(state: AgentOverlayState) {
     val lines = text.lines()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
-        .takeLast(3)
+        .takeLast(config.lines)
     if (lines.isEmpty()) return
 
     Box(
@@ -47,7 +52,7 @@ internal fun AgentOverlayTicker(state: AgentOverlayState) {
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color.Black.copy(alpha = 0.72f))
+                .background(Color.Black.copy(alpha = config.alpha))
                 .padding(horizontal = 14.dp, vertical = 9.dp),
         ) {
             lines.forEach { line ->

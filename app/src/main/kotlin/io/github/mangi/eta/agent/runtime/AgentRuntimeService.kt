@@ -49,6 +49,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
 import io.github.mangi.eta.agent.overlay.AgentOverlayTicker
+import io.github.mangi.eta.fork.overlay.TickerSettings
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
@@ -1046,7 +1047,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = glowLp
 
         // ETA-FORK: 顶部流式字幕条——把模型正在吐出的回答贴在最上方，最多三行
-        val ticker = createOverlayComposeView { AgentOverlayTicker(state = state.value) }
+        val ticker = createOverlayComposeView {
+            AgentOverlayTicker(
+                state = state.value,
+                config = TickerSettings.flow.collectAsState().value,
+            )
+        }
         val tickerLp = tickerLayoutParams()
         runCatching { wm.addView(ticker, tickerLp) }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_ticker_add_view_failed") {
