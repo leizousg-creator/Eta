@@ -48,6 +48,7 @@ import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
+import io.github.mangi.eta.agent.overlay.AgentOverlayTicker
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
@@ -110,9 +111,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
     private var capsuleView: ComposeView? = null
+    private var tickerView: ComposeView? = null
     private var resultCardView: ComposeView? = null
     private var glowParams: WindowManager.LayoutParams? = null
     private var capsuleParams: WindowManager.LayoutParams? = null
+    private var tickerParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
 
@@ -1042,6 +1045,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = glow
         glowParams = glowLp
 
+        // ETA-FORK: 顶部流式字幕条——把模型正在吐出的回答贴在最上方，最多三行
+        val ticker = createOverlayComposeView { AgentOverlayTicker(state = state.value) }
+        val tickerLp = tickerLayoutParams()
+        runCatching { wm.addView(ticker, tickerLp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_ticker_add_view_failed") {
+                "Agent runtime ticker addView failed: type=${throwable.safeLogType()}"
+            }
+        }
+        tickerView = ticker
+        tickerParams = tickerLp
+
         // ── 状态胶囊窗口：状态栏下方居中，收起时一句状态（含微缩镜），点击展开控制与画廊视窗 ─
         val capsule = createOverlayComposeView {
             val controlRunId = displayedRun?.runId
@@ -1368,6 +1382,29 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         AgentAccessibilityService.current() ?: this
 
     @Suppress("DEPRECATION")
+    /** 顶部字幕条：整宽、贴状态栏下沿、完全触摸穿透。 */
+    private fun tickerLayoutParams(): WindowManager.LayoutParams {
+        val statusBar = runCatching {
+            resources.getIdentifier("statusBar", "dimen", "android")
+                .takeIf { it > 0 }?.let { resources.getDimensionPixelSize(it) }
+        }.getOrNull() ?: 0
+        return WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            // 胶囊占着状态栏正下方那一行，字幕条往下让一格，避免两个浮窗叠在一起
+            y = statusBar + (54 * resources.displayMetrics.density).toInt()
+        }
+    }
+
     private fun glowLayoutParams(): WindowManager.LayoutParams {
         // 真实屏幕高度（含状态栏 + 导航栏），MATCH_PARENT 在部分设备不含系统栏
         val realHeight = runCatching {
@@ -1472,6 +1509,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         capsuleView?.keepScreenOn = false
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        tickerView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        tickerView = null
+        tickerParams = null
         capsuleView = null
         glowView = null
         capsuleParams = null
