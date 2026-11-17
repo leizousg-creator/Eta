@@ -119,6 +119,34 @@ _V_IslandGestureManager: islandBean : IslandId:0|io.github.mangi.eta|1107|...|10
 
 `isValidSuperXData` 返回 `2241`（位掩码）且 `template : 4` 就说明校验已放行。
 
+### system_server 侧 hook 的崩溃面（2026-11-18 踩坑记录）
+
+现象：新版本装上后 white strip / 圈搜 / 侧键全都不再拦截，**连原子岛的 `SuperX` 白名单也一起失效**
+（通知 tag 从 `VIVO_SUPERX_TAG` 退回 `null`，`isValidSuperXData` 不再出现）。
+
+根因链：
+
+1. `VivoWakeupSystemHooks` 里用 `ActiveServices.declaredMethods` 枚举方法；
+2. 该调用会解析类的**全部**方法签名，system_server 里碰到加载不了的 `@hide` 参数类型即抛 `NoClassDefFoundError`；
+3. `NoClassDefFoundError` 是 **`Error` 不是 `Exception`**，`HookRegistrar.install` 的功能组隔离层只 `catch (Exception)`，兜不住；
+4. 异常冒泡出 `onSystemServerStarting` → 整个 `SystemServerHooks` 安装中断 → 框架把模块判为失败 → 同进程内**已注册**的 hook 一并失效。
+
+两条硬性纪律：
+
+| 纪律 | 具体做法 |
+|---|---|
+| 不要枚举 ROM 类成员 | 用 `HookSupport.findMethod(clazz, name, vararg types)` 按确定签名逐个精确查找（它内部已 `catch LinkageError`）。确实需要按名字扫时，`getDeclaredMethods()` 必须包 `runCatching`，且失败要能降级 |
+| system_server 的每个 hook 组自己兜底 | `SystemServerHooks.install` 用 `runCatching { block() }` 逐个隔离，任何 `Throwable` 只落一条 `warn`，不许拖垮同组其它 hook |
+
+诊断锚点：`dumpsys notification --noredact | grep VIVO_SUPERX_TAG`。tag 是 `null` 说明白名单 hook 整体没跑，优先查模块安装是否被打断，而不是查原子岛字段。
+
+### 语音热词不要做唤醒重定向
+
+`com.vivo.agent.action.wakeup_by_voice` / `wakeup_start_only` 由 `com.vivo.voicewakeup` 的硬件 hotword 引擎发出
+（日志 `sound_trigger_hw_default: wakeup event by yuemeng`），环境音误判也会触发。一旦拦截并拉起 Eta，
+用户在任何应用里都会被突然弹出的全屏窗口打断。这两个 action 已从重定向列表移除，语音入口交回系统原生；
+需要语音直达时应在设置侧做开关，并配 VAD（EtaRedirect 是在 `AudioRecord.read` 上做 RMS 判断），不要无条件转发。
+
 ## 八、从 `eta增强 2.15`（`com.lcsauce.etaplugin`）收编的三个机制
 
 那个模块唯一目标就是注入 `io.github.mangi.eta`，改的是我们自己的提示词与门禁，功能内容不搬，只搬三个中立机制。
