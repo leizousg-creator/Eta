@@ -98,3 +98,20 @@ val isHostSurfaceAttached: Boolean get() = ...
 
 - `AgentExecutionService.b()` / `d(boolean)` 短名 hook：release 开 `isMinifyEnabled=true`，短名每次构建漂移，我们是源码方不该反向猜；
 - `AudioRecord.read` 全量 hook、`isOnBackInvokedCallbackEnabled`、`RuntimeService`/`OverlayService.onCreate`、心跳重发 notify：Eta 内部可直接改，隔进程 hook 自己是倒退。
+
+## 八、从 `eta增强 2.15`（`com.lcsauce.etaplugin`）收编的三个机制
+
+那个模块唯一目标就是注入 `io.github.mangi.eta`，改的是我们自己的提示词与门禁，功能内容不搬，只搬三个中立机制。
+
+| 机制 | 位置 | 说明 |
+|---|---|---|
+| 提示词热加载 | `data/promptkit/PromptKitStore.appendText()` | 读 `files/promptkit/append.md`，回退 `/sdcard/Download/eta_append.md`；缓存键 `lastModified + length`，改文件即时生效；`PromptKitManifest.appendEnabled` 默认开；`promptFor` 把版本正文与追加段用空行拼接 |
+| Hook 自检 | `core/HookSelfCheck.kt`、设置页两套样式各一个入口 | 注入进程写不了 Eta 私有目录、`RemotePreferences` 只有读方向，所以汇总走 logcat：`recordInstallation` 日志前缀补进程名，`HookSelfCheck` 用 root 读 `logcat -d -s Eta` 再按标记词过滤；点一下复制到剪贴板 |
+| 文件应急开关 | `core/HookKillSwitch.kt`、`ModuleMain.onModuleLoaded` | `files/hook_off` 存在 → 任何进程都不装 hook 并 `detach()`；`files/reasoning_off` 关闭推理。路径写死包名，因为注入进程没有 Eta 的 Context |
+
+不搬的：
+
+- `DEFAULT_PAX` / `OVERRIDE` / `APPEND_TEMPLATE` 整套越狱提示词——其中 `UNTRUSTED_*_STRIP`、`MEMORY_NOT_INSTRUCTION_STRIP`、`ROOT_HESITATION_STRIP` 三条删的是真实防护（外部数据不得当指令、未授权时降级），删掉等于给 prompt injection 开门；
+- 人格伪装（"Little Code Sauce" / "YG"）；
+- `Ota.java`：`https://222.186.56.69:8761/eta/version.json`，裸 IP + 全信任自签证书 + 自动下载装 APK；
+- 版本短名映射表（`kr`/`fr`/`w11`/`jm4` 按 3.3.5~3.4.4 各一套）：R8 每次构建都会重排，我们的包一升级它就失效。

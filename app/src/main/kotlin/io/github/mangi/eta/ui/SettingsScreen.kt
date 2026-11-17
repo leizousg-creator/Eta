@@ -491,7 +491,7 @@ private fun SettingsPageContent(
                         // ETA-FORK: hook 自检（各注入进程安装结果 + 应急开关状态）
                         title = "Hook 自检",
                         summary = "汇总各进程 hook 安装结果与应急开关状态，点一下复制",
-                        icon = { CouiSettingsIcon(Icons.Rounded.Extension, SettingsIconColors.Green) },
+                        icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Green) },
                         onClick = {
                             coroutineScope.launch {
                                 val snapshot = HookSelfCheck.collect()
@@ -1091,7 +1091,7 @@ private fun SettingsPageContent(
                         ArrowPreference(
                             title = "Hook 自检",
                             startAction = {
-                                SettingsIcon(icon = Icons.Rounded.Extension, tint = SettingsIconColors.Green)
+                                SettingsIcon(icon = Icons.Rounded.Security, tint = SettingsIconColors.Green)
                             },
                             onClick = {
                                 coroutineScope.launch {
