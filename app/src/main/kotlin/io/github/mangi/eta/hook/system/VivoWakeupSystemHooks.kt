@@ -69,37 +69,79 @@ internal object VivoWakeupSystemHooks {
                 missing("vivo.wakeup.ams", ACTIVE_SERVICES_CLASS, "未找到 ActiveServices，跳过唤醒拦截")
                 return@install
             }
-            // 不同 ROM/Android 版本上 startServiceLocked 的签名差异很大，按名字取全部重载，
-            // 只依赖「参数里有 Intent」这一个稳定事实。
-            val candidates = activeServices.declaredMethods.filter { method ->
-                method.name.contains("startServiceLocked") || method.name.contains("startServiceInnerLocked")
-            }
+            // 不要用 declaredMethods 枚举：那会解析类的全部方法签名，system_server 里
+            // 一旦碰到加载不了的 @hide 类型就抛 NoClassDefFoundError（Error，不属于
+            // Exception，HookRegistrar 不会捕获），整个 SystemServerHooks 安装被打断，
+            // 连前面已注册的 SuperX 白名单一起失效。
+            // 改为按已知签名逐个精确查找，HookSupport.findMethod 内部已 catch LinkageError。
+            val candidates = findStartServiceMethods(activeServices)
             if (candidates.isEmpty()) {
                 missing(
                     "vivo.wakeup.ams.method",
                     "$ACTIVE_SERVICES_CLASS#startServiceLocked",
-                    "未找到 startServiceLocked，跳过唤醒拦截"
+                    "未找到 startServiceLocked 签名，跳过唤醒拦截"
                 )
                 return@install
             }
 
             candidates.forEachIndexed { index, method ->
-                intercept(
-                    id = "vivo.wakeup.sys$index",
-                    executable = method,
-                    description = "ActiveServices#${method.name} 唤醒拦截"
-                ) { chain ->
-                    val intent = chain.args.firstOrNull { it is Intent } as? Intent
-                    if (!shouldIntercept(intent)) {
-                        return@intercept chain.proceed()
+                runCatching {
+                    intercept(
+                        id = "vivo.wakeup.sys$index",
+                        executable = method,
+                        description = "ActiveServices#${method.name} 唤醒拦截"
+                    ) { chain ->
+                        val intent = chain.args.firstOrNull { it is Intent } as? Intent
+                        if (!shouldIntercept(intent)) {
+                            return@intercept chain.proceed()
+                        }
+                        val launched = launch(chain.getThisObject(), intent?.action, logger)
+                        // 启动成功才吞掉这次服务启动；失败就把控制权还回系统，
+                        // 宁可让小 V 正常响应，也不要出现「按键完全没反应」。
+                        if (launched) null else chain.proceed()
                     }
-                    val launched = launch(chain.getThisObject(), intent?.action, logger)
-                    // 启动成功才吞掉这次服务启动；失败就把控制权还回系统，
-                    // 宁可让小 V 正常响应，也不要出现「按键完全没反应」。
-                    if (launched) null else chain.proceed()
+                }.onFailure {
+                    logger.warn("挂载唤醒拦截失败(${method.name}): ${it.javaClass.simpleName}")
                 }
             }
-            logger.debug { "唤醒拦截已挂载: ${candidates.size} 个 startServiceLocked 重载" }
+            logger.debug { "唤醒拦截已挂载: ${candidates.size} 个 startServiceLocked 签名" }
+        }
+    }
+
+    /**
+     * 按已知签名逐个查找 startServiceLocked / startServiceInnerLocked。
+     *
+     * Android 15 与 vivo 定制在参数个数上有差异，这里从全到简依次尝试；
+     * 每次都走 [HookSupport.findMethod]（内部 catch LinkageError），
+     * 不会因为某个 @hide 参数类型加载失败而击穿 system_server。
+     */
+    private fun findStartServiceMethods(activeServices: Class<*>): List<Method> {
+        val iat = runCatching {
+            Class.forName("android.app.IApplicationThread", false, activeServices.classLoader)
+        }.getOrNull()
+        val int = java.lang.Integer.TYPE
+        val bool = java.lang.Boolean.TYPE
+        val intent = Intent::class.java
+        val string = String::class.java
+        val signatures = buildList<List<Class<*>>> {
+            if (iat != null) {
+                add(listOf(iat, intent, string, int, int, bool, string, int, bool, int))
+                add(listOf(iat, intent, string, int, int, bool, string, int, bool))
+                add(listOf(iat, intent, string, int, int, bool, string, int))
+                add(listOf(iat, intent, string, int, int, bool, string, int, int))
+                add(listOf(iat, intent, string, int, int, string, int))
+            }
+            add(listOf(intent, string, int, int, string, int))
+        }
+        return buildList {
+            for (name in listOf("startServiceLocked", "startServiceInnerLocked")) {
+                for (signature in signatures) {
+                    val found = HookSupport.findMethod(activeServices, name, *signature.toTypedArray()) ?: continue
+                    if (none { it.name == found.name && it.parameterCount == found.parameterCount }) {
+                        add(found)
+                    }
+                }
+            }
         }
     }
 
