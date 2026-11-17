@@ -21,7 +21,8 @@ internal object SystemServerHooks {
             HotwordSelfHealHooks.install(module, logger, classLoader),
             PowerHooks.install(module, logger, classLoader),
             HyperOsPowerHooks.install(module, logger, classLoader),
-            VirtualDisplaySystemHooks.install(module, logger, classLoader)
+            VirtualDisplaySystemHooks.install(module, logger, classLoader),
+            SuperXValidatorHooks.install(module, logger, classLoader)
         )
     )
 }

@@ -20,6 +20,7 @@ import io.github.mangi.eta.hook.hyperos.HyperOsScreenSearchHooks
 import io.github.mangi.eta.hook.system.SystemServerHooks
 import io.github.mangi.eta.hook.system.SystemUiHooks
 import io.github.mangi.eta.hook.vivo.VivoHooks
+import io.github.mangi.eta.hook.vivo.VivoWakeupRedirectHooks
 import io.github.mangi.eta.hook.xiaoai.XiaoAiHooks
 
 class ModuleMain : XposedModule() {
@@ -92,7 +93,17 @@ class ModuleMain : XposedModule() {
 
             ModuleConfig.VIVO_COPILOT_PACKAGE -> {
                 if (isCurrentPackageProcess(ModuleConfig.VIVO_COPILOT_PACKAGE)) {
-                    recordInstallation(VivoHooks.install(this, logger, param.classLoader))
+                    recordInstallation(
+                        HookInstallation.combine(
+                            group = "VivoCopilot",
+                            installations = listOf(
+                                // 唤醒重定向独立注册，不依赖 CopilotApp.onCreate 是否命中，
+                                // 避免入口 hook 失败时连侧键/白条重定向一起失效。
+                                VivoWakeupRedirectHooks.install(this, logger, param.classLoader),
+                                VivoHooks.install(this, logger, param.classLoader)
+                            )
+                        )
+                    )
                 }
             }
 
