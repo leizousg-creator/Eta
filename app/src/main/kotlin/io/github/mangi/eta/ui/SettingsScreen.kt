@@ -81,6 +81,7 @@ import io.github.mangi.eta.agent.model.AgentPlanMode
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.DiagnosticsBundle
+import io.github.mangi.eta.core.HookSelfCheck
 import io.github.mangi.eta.fork.backup.AutoBackup
 import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import io.github.mangi.eta.fork.overlay.TickerSettings
@@ -484,6 +485,35 @@ private fun SettingsPageContent(
                         summary = "发送前把刺头词换成中性词（界面仍显示原样）；输出被截断时自动续写",
                         icon = { CouiSettingsIcon(Icons.Rounded.FilterAlt, SettingsIconColors.Orange) },
                         onClick = { onNavigate(AppRoute.OutboundRewrite) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        // ETA-FORK: hook 自检（各注入进程安装结果 + 应急开关状态）
+                        title = "Hook 自检",
+                        summary = "汇总各进程 hook 安装结果与应急开关状态，点一下复制",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Extension, SettingsIconColors.Green) },
+                        onClick = {
+                            coroutineScope.launch {
+                                val snapshot = HookSelfCheck.collect()
+                                val clipboard =
+                                    context.getSystemService(android.content.ClipboardManager::class.java)
+                                clipboard?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText(
+                                        "Eta hook self-check",
+                                        HookSelfCheck.format(snapshot),
+                                    )
+                                )
+                                Toast.makeText(
+                                    context,
+                                    if (snapshot.lines.isEmpty()) {
+                                        "已复制：暂无 hook 记录，重启后再试"
+                                    } else {
+                                        "已复制 hook 自检（${snapshot.lines.size} 行）"
+                                    },
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -1057,6 +1087,34 @@ private fun SettingsPageContent(
                             title = "出站改写",
                             startAction = { SettingsIcon(icon = Icons.Rounded.FilterAlt, tint = SettingsIconColors.Orange) },
                             onClick = { onNavigate(AppRoute.OutboundRewrite) },
+                        )
+                        ArrowPreference(
+                            title = "Hook 自检",
+                            startAction = {
+                                SettingsIcon(icon = Icons.Rounded.Extension, tint = SettingsIconColors.Green)
+                            },
+                            onClick = {
+                                coroutineScope.launch {
+                                    val snapshot = HookSelfCheck.collect()
+                                    val clipboard =
+                                        context.getSystemService(android.content.ClipboardManager::class.java)
+                                    clipboard?.setPrimaryClip(
+                                        android.content.ClipData.newPlainText(
+                                            "Eta hook self-check",
+                                            HookSelfCheck.format(snapshot),
+                                        )
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        if (snapshot.lines.isEmpty()) {
+                                            "已复制：暂无 hook 记录，重启后再试"
+                                        } else {
+                                            "已复制 hook 自检（${snapshot.lines.size} 行）"
+                                        },
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            },
                         )
                         ArrowPreference(
                             title = "导出诊断包",

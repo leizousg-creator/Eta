@@ -7,6 +7,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.HookInstallation
+import io.github.mangi.eta.core.HookKillSwitch
 import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.ModuleLogger
 import io.github.mangi.eta.core.safeLogType
@@ -32,6 +33,15 @@ class ModuleMain : XposedModule() {
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         currentProcessName = param.processName
+        // 应急总开关先于一切判断：文件存在时本进程一个 hook 都不装，
+        // 连 lifecycle 回调都不再需要，直接 detach。
+        if (HookKillSwitch.isHookDisabled()) {
+            logger.warn(
+                "检测到 ${HookKillSwitch.OFF_FILE}，跳过全部 hook: process=${param.processName}"
+            )
+            detach()
+            return
+        }
         if (!shouldKeepLifecycleCallbacks(param)) {
             detach()
             return
@@ -142,7 +152,11 @@ class ModuleMain : XposedModule() {
 
     private fun recordInstallation(installation: HookInstallation) {
         hookHandles += installation.handles
-        logger.scoped(installation.report.group).info(installation.report.summary())
+        // 带上进程名：设置页的 Hook 自检靠 logcat 里的这一行做多进程汇总，
+        // 注入进程写不了 Eta 的私有目录，日志是唯一跨进程可见的通道。
+        val process = currentProcessName ?: "?"
+        logger.scoped(installation.report.group)
+            .info("$process → ${installation.report.summary()}")
     }
 
     private fun isCurrentPackageProcess(packageName: String): Boolean {

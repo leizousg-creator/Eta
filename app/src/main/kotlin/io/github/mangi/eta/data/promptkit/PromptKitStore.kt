@@ -31,6 +31,11 @@ data class PromptKitManifest(
     val keywords: List<String> = emptyList(),
     /** 叠加方式：true 时替换原有系统提示词末尾的额外段落，false 时追加。 */
     val replaceExtras: Boolean = false,
+    /**
+     * 是否读取「追加文件」的正文。文件改动按修改时间戳即时生效，
+     * 用于不改 APK、不重装就调整提示词。
+     */
+    val appendEnabled: Boolean = true,
 ) {
     fun active(): PromptKitVersion? =
         versions.firstOrNull { it.id == activeVersionId } ?: versions.firstOrNull()
@@ -39,6 +44,10 @@ data class PromptKitManifest(
 class PromptKitStore(private val dir: File) {
     private val file = File(dir, "prompt-kit.json")
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** 追加文件缓存键（修改时间 + 长度）与内容，避免每次请求都读盘。 */
+    private var appendStamp = -1L
+    private var appendCache = ""
 
     fun load(): PromptKitManifest =
         runCatching { json.decodeFromString<PromptKitManifest>(file.readText()) }.getOrElse { PromptKitManifest() }
@@ -77,14 +86,40 @@ class PromptKitStore(private val dir: File) {
     fun promptFor(userInput: String?): String? {
         val m = load()
         if (!m.enabled) return null
-        val version = m.active() ?: return null
-        if (version.body.isBlank()) return null
         if (m.keywordOnly) {
             val text = userInput.orEmpty()
             val hit = m.keywords.any { it.isNotBlank() && text.contains(it, ignoreCase = true) }
             if (!hit) return null
         }
-        return version.body
+        val body = m.active()?.body?.takeIf { it.isNotBlank() }
+        val append = if (m.appendEnabled) appendText().takeIf { it.isNotBlank() } else null
+        val parts = listOfNotNull(body, append)
+        return if (parts.isEmpty()) null else parts.joinToString("\n\n")
+    }
+
+    /**
+     * 追加文件正文：版本正文之外的补充段，改文件即时生效。
+     *
+     * 先看应用私有目录（`files/promptkit/append.md`，稳定、不受分区权限影响），
+     * 再看 `/sdcard/Download/eta_append.md`（用户能直接用文件管理器改）。
+     * 缓存键用「修改时间 + 长度」，两个文件之间切换也能立刻反映。
+     */
+    fun appendText(): String {
+        val file = APPEND_CANDIDATES_PREFIX
+            .asSequence()
+            .map { path -> if (path.startsWith("/")) File(path) else File(dir, path) }
+            .firstOrNull { it.isFile && it.length() > 0 }
+            ?: return ""
+        val stamp = file.lastModified() + file.length()
+        if (stamp == appendStamp && appendCache.isNotEmpty()) return appendCache
+        val text = runCatching { file.readText() }
+            .getOrNull()
+            ?.replace("\uFEFF", "")
+            ?.trim()
+            .orEmpty()
+        appendStamp = stamp
+        appendCache = text
+        return text
     }
 
     /** 供工具与设置页展示的一行状态。 */
@@ -101,7 +136,19 @@ class PromptKitStore(private val dir: File) {
             if (m.keywords.isNotEmpty()) append("（${m.keywords.joinToString("、")}）")
             append(" · 正文 ")
             append(version?.body?.length ?: 0)
-            append(" 字")
+            append(" 字 · 追加 ")
+            when {
+                !m.appendEnabled -> append("已关闭")
+                else -> {
+                    val append = appendText()
+                    append(if (append.isEmpty()) "无文件" else "${append.length} 字")
+                }
+            }
         }
+    }
+
+    private companion object {
+        /** 相对路径按 [dir] 解析，绝对路径直接使用。 */
+        val APPEND_CANDIDATES_PREFIX = listOf("append.md", "/storage/emulated/0/Download/eta_append.md")
     }
 }
