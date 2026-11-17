@@ -54,6 +54,7 @@ internal class AgentExecutionService : Service() {
                 startForeground(NOTIFICATION_ID, notification())
             }
             foregroundActive = true
+            scheduleCapsuleHeartbeat()
         } catch (failure: RuntimeException) {
             startRejected = true
             AndroidAgentLogger.warn("Execution service foreground failed: type=${failure.safeLogType()}")
@@ -76,9 +77,31 @@ internal class AgentExecutionService : Service() {
     override fun onDestroy() {
         if (instance === this) instance = null
         // 销毁时同样收回本服务拥有的任务。回收在独立有界工作线程上完成，不阻塞 Main。
+        mainHandler.removeCallbacks(capsuleHeartbeat)
         stopQueue.close(leases.drainOwner(owner))
         super.onDestroy()
     }
+
+    /**
+     * 原子岛心跳。
+     *
+     * superx 的 `showTime` 只有几秒，且系统只在「通知数据变化」时才刷新岛；
+     * 任务跑到一半很久没有新事件，岛就会自己消失。这里按固定间隔重发同一条通知续期。
+     * SystemUI 侧对相同数据会去重（日志 `data not changed`），不会出现重复动画。
+     */
+    private fun scheduleCapsuleHeartbeat() {
+        mainHandler.removeCallbacks(capsuleHeartbeat)
+        mainHandler.postDelayed(capsuleHeartbeat, CAPSULE_HEARTBEAT_MS)
+    }
+
+    private val capsuleHeartbeat = object : Runnable {
+        override fun run() {
+            if (instance !== this@AgentExecutionService || !foregroundActive) return
+            refreshNotification()
+            if (foregroundActive) mainHandler.postDelayed(this, CAPSULE_HEARTBEAT_MS)
+        }
+    }
+
 
     private fun stopTasks(startFailed: Boolean = false) {
         val callbacks = leases.drain(startFailed)
@@ -90,6 +113,7 @@ internal class AgentExecutionService : Service() {
     private fun refreshNotification() {
         if (leases.closeOwnerIfIdle(owner)) {
             foregroundActive = false
+            mainHandler.removeCallbacks(capsuleHeartbeat)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
@@ -141,6 +165,9 @@ internal class AgentExecutionService : Service() {
     companion object {
         private const val CHANNEL = "eta_execution"
         private const val NOTIFICATION_ID = 1107
+
+        /** 原子岛续期间隔：必须小于 [io.github.mangi.eta.agent.island.VivoCapsuleExtras.CAPSULE_SHOW_SECONDS]。 */
+        private const val CAPSULE_HEARTBEAT_MS = 6000L
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private val leases = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()
