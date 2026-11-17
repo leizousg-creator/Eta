@@ -99,6 +99,26 @@ val isHostSurfaceAttached: Boolean get() = ...
 - `AgentExecutionService.b()` / `d(boolean)` 短名 hook：release 开 `isMinifyEnabled=true`，短名每次构建漂移，我们是源码方不该反向猜；
 - `AudioRecord.read` 全量 hook、`isOnBackInvokedCallbackEnabled`、`RuntimeService`/`OverlayService.onCreate`、心跳重发 notify：Eta 内部可直接改，隔进程 hook 自己是倒退。
 
+### 原子岛（SuperX）落地条件（2026-11-17 本机实测）
+
+链路要通必须同时满足四条，缺一条都是"看得见通知、看不见卡片"：
+
+1. **system_server 白名单**：hook `VivoSuperXNotificationManager.isValidSuperXNotification` 放行 Eta 包名（`SuperXValidatorHooks`）。没有它通知根本到不了插件。
+2. **顶层四个键**：`notification.superx.template=4` / `displays=0x111` / `operation=0` / `islandNotify=false`。只写 `notification.superx.island` 子 Bundle 时，插件收得到通知但不进 SuperX 分支。
+3. **island 内部组合**：`template=4` / `leftTemplate=1` / `rightTemplate=4` / `forceShow=true` / `forceShowCard=false` + `leftInfo` / `rightInfo`。早期用的 `template=-1` / `3` / `7` 这组在本 ROM 上不出卡。
+4. **续期**：`showTime` 只有几秒，系统仅在通知数据变化时刷新岛。`AgentExecutionService` 每 6 秒重发同一条通知（心跳），否则任务中途岛会消失。
+
+验证用的日志锚点：
+
+```
+_V_superXdataUtils: isValidSuperXData result : 2241, template : 4, key : 0|io.github.mangi.eta|1107|VIVO_SUPERX_TAG|10300
+_V_SuperXServicePluginImpl: onSuperXNotificationArrived : ...pkg=io.github.mangi.eta...
+_V_SuperXUtils: get small icon , basicIcon = Icon(typ=RESOURCE pkg=io.github.mangi.eta ...)
+_V_IslandGestureManager: islandBean : IslandId:0|io.github.mangi.eta|1107|...|10300
+```
+
+`isValidSuperXData` 返回 `2241`（位掩码）且 `template : 4` 就说明校验已放行。
+
 ## 八、从 `eta增强 2.15`（`com.lcsauce.etaplugin`）收编的三个机制
 
 那个模块唯一目标就是注入 `io.github.mangi.eta`，改的是我们自己的提示词与门禁，功能内容不搬，只搬三个中立机制。

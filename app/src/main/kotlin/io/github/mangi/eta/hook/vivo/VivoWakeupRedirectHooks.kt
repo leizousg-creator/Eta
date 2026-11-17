@@ -33,11 +33,8 @@ internal object VivoWakeupRedirectHooks {
         "com.vivo.ai.copilot.action.START_CIRCLE2SEARCH",
         "com.vivo.intent.action.WAKEUP_AGENT_BY_POWER",
         "com.vivo.intent.action.WAKEUP_AGENT_BY_POWER_CHARGE_START",
-        "com.vivo.agent.action.wakeup_by_voice",
-        "com.vivo.agent.action.wakeup_start_only",
         "com.vivo.intent.action_WAKE_UP_AGENT",
         "com.vivo.ai.copilot.action.ACTION_SYSTEM_BAR_CALL_PANEL",
-        "android.intent.action.VOICE_COMMAND",
         "com.vivo.intent.action.WAKEUP_COPILOT_BY_KEYBOARD"
     )
 

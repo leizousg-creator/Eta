@@ -32,15 +32,21 @@ internal object VivoWakeupSystemHooks {
     /** 上滑/Home 键唤出白条，action 后面可能带后缀，按前缀匹配。 */
     private const val WHITE_STRIP_PREFIX = "com.vivo.action.copilot.SHOW_WHITE_STRIP_BY_HOMEKEY"
 
+    /**
+     * 需要重定向的唤醒动作。
+     *
+     * 刻意**不含** `com.vivo.agent.action.wakeup_by_voice` 与 `wakeup_start_only`：
+     * 那两个由 `com.vivo.voicewakeup` 的硬件 hotword 引擎发出（日志
+     * `sound_trigger_hw_default: wakeup event by yuemeng`），环境音误判也会触发。
+     * 一旦拦下来拉起 Eta，用户在任何应用里都会被突然弹出的全屏窗口打断。
+     * 语音入口留给系统原生处理，按键类入口才重定向。
+     */
     private val EXACT_ACTIONS = setOf(
         "com.vivo.ai.copilot.action.START_CIRCLE2SEARCH",
         "com.vivo.intent.action.WAKEUP_AGENT_BY_POWER",
         "com.vivo.intent.action.WAKEUP_AGENT_BY_POWER_CHARGE_START",
-        "com.vivo.agent.action.wakeup_by_voice",
-        "com.vivo.agent.action.wakeup_start_only",
         "com.vivo.intent.action_WAKE_UP_AGENT",
         "com.vivo.ai.copilot.action.ACTION_SYSTEM_BAR_CALL_PANEL",
-        "android.intent.action.VOICE_COMMAND",
         "com.vivo.intent.action.WAKEUP_COPILOT_BY_KEYBOARD"
     )
 
@@ -139,7 +145,7 @@ internal object VivoWakeupSystemHooks {
                 userHandleClass
             )
             method.invoke(context, intent, systemUser)
-            logger.debug { "唤醒拦截: $action → EtaVoiceAssistActivity" }
+            logger.warn("唤醒拦截: $action → EtaVoiceAssistActivity")
             true
         }.getOrElse { exception ->
             logger.warn("唤醒拦截启动 Eta 失败: action=$action, type=${exception.javaClass.simpleName}")
