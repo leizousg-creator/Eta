@@ -76,8 +76,25 @@ val isHostSurfaceAttached: Boolean get() = ...
 | 自动备份 | `fork/backup/AutoBackup.kt`、`EtaApp` | 每 6 小时写 `Download/EtaAutoBackup/eta-auto-<时间戳>.zip`，保留 3 份，顺带清理 `IS_PENDING` 残片；Robolectric 环境跳过（否则污染 cacheDir 让备份测试失败） |
 | BACK 导航 | `AgentAppRoot` | BackHandler：先收侧边栏，再退一层路由，退无可退才交系统——之前一按就退出到桌面/全局搜索 |
 
-**原子岛（vivo）结论：第三方拿不到卡片形态。** 两条路都试过并回滚：
+**原子岛（vivo）结论：第三方拿不到卡片形态（2026-11-19 已推翻，见第七节）。** 两条路都试过并回滚：
 1. 原生桥接要 hook `com.vivo.ai.copilot` 的 `WidgetTaskService.onBind`，但该进程始终拿不到 LSPosed 注入（systemui 能注入）
 2. 通知 extras 需要 `callbackInfos.serviceCodes` 里的注册凭证（夸克是 `quark_openToken`），自己编的会被插件整条跳过——`dumpsys` 里我们的 `notification.superx.island` 永远是 `mParcelledData`，说明插件根本没读
 
 现在保留 `VivoCapsuleExtras` 原实现（islandType=2 / leftTemplate=3 / rightTemplate=7），效果是胶囊 + 阶段文案。**别再去动 template / forceShowCard，两次尝试都是倒退。**
+
+## 七、收编 EtaRedirect 模块（2026-11-19）
+
+来源：`Download/eta蓝心小V 重定向/EtaRedirect-v1.0.apk`（包名 `com.eta.copilotredirect`，老 XposedBridge 实现，1051 行 Hook.java）。只抄了两处，其余不搬。
+
+| 改动 | 位置 | 说明 |
+|---|---|---|
+| SuperX 白名单放行 | `hook/system/SuperXValidatorHooks.kt` | hook `com.android.server.notification.VivoSuperXNotificationManager.isValidSuperXNotification(NotificationRecord, boolean)`，仅对 `io.github.mangi.eta` 返回 0（ROM 自身通过值），其余应用走原逻辑。挂在 `SystemServerHooks` |
+| 唤醒重定向 | `hook/vivo/VivoWakeupRedirectHooks.kt` | hook `com.vivo.ai.copilot.framework.wakeup.WakeupService.onStartCommand/onBind`，拦白条前缀 `com.vivo.action.copilot.SHOW_WHITE_STRIP_BY_HOMEKEY` 与 `START_CIRCLE2SEARCH` / `WAKEUP_AGENT_BY_POWER` / 语音热词等 10 个 action，改拉 `EtaVoiceAssistActivity`；1.2s 去重；启动失败回退原逻辑 |
+| 唤醒入口回退 | `agent/voice/EtaVoiceInteractionService.kt` | `requestSession()` 失败（未设为默认助理 / `:voice` 被杀）时直拉 `ui.MainActivity`，避免"按了没反应" |
+
+**上一节"第三方拿不到卡片形态"的判断作废。** 真正卡点不是 SystemUI 插件层的 `callbackInfos.serviceCodes` 凭证，而是 system_server 里 `VivoSuperXNotificationManager` 的发送方白名单校验——一个 hook 就能过。`dumpsys` 里 `mParcelledData` 是 Bundle 未 unparcel 的正常形态，不能作为"插件没读"的证据。
+
+不搬的部分及原因：
+
+- `AgentExecutionService.b()` / `d(boolean)` 短名 hook：release 开 `isMinifyEnabled=true`，短名每次构建漂移，我们是源码方不该反向猜；
+- `AudioRecord.read` 全量 hook、`isOnBackInvokedCallbackEnabled`、`RuntimeService`/`OverlayService.onCreate`、心跳重发 notify：Eta 内部可直接改，隔进程 hook 自己是倒退。

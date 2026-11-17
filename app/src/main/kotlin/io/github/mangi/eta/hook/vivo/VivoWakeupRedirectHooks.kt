@@ -66,8 +66,8 @@ internal object VivoWakeupRedirectHooks {
                 serviceClass,
                 "onStartCommand",
                 Intent::class.java,
-                Int::class.javaPrimitiveType,
-                Int::class.javaPrimitiveType
+                java.lang.Integer.TYPE,
+                java.lang.Integer.TYPE
             )
             if (onStartCommand == null) {
                 missing(
