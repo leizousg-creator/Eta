@@ -173,7 +173,10 @@ class ModuleMain : XposedModule() {
             isPackageProcess(processName, ModuleConfig.COLOR_DIRECT_PACKAGE) ||
             isPackageProcess(processName, ModuleConfig.BREENO_PACKAGE) ||
             processName == ModuleConfig.COLOROS_MEMORY_PACKAGE ||
-            isPackageProcess(processName, ModuleConfig.XIAOAI_PACKAGE)
+            isPackageProcess(processName, ModuleConfig.XIAOAI_PACKAGE) ||
+            // 小 V：VivoHooks 的唤醒重定向与原子岛桥接都靠这里，漏掉会在
+            // onModuleLoaded 阶段就被 detach()，注入成功也等于没装。
+            isPackageProcess(processName, ModuleConfig.VIVO_COPILOT_PACKAGE)
     }
 
     private fun isCurrentXiaoAiProcess(): Boolean {

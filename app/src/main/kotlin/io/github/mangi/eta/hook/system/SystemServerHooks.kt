@@ -22,7 +22,8 @@ internal object SystemServerHooks {
             PowerHooks.install(module, logger, classLoader),
             HyperOsPowerHooks.install(module, logger, classLoader),
             VirtualDisplaySystemHooks.install(module, logger, classLoader),
-            SuperXValidatorHooks.install(module, logger, classLoader)
+            SuperXValidatorHooks.install(module, logger, classLoader),
+            VivoWakeupSystemHooks.install(module, logger, classLoader)
         )
     )
 }
