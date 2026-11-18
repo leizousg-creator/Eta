@@ -98,6 +98,13 @@ internal class AgentExecutionService : Service() {
     private val capsuleHeartbeat = object : Runnable {
         override fun run() {
             if (instance !== this@AgentExecutionService || !foregroundActive) return
+            // 只在「真的有 agent run 在跑」时续期。
+            // 服务可能因为终端会话、Linux 启动等长驻任务长时间停在前台，
+            // 那种情况下续期会让岛永久挂在「操作中」，属于明确的回归。
+            if (runStatus == null && activeRunCount == 0) {
+                AndroidAgentLogger.info("Island heartbeat stopped: no active run")
+                return
+            }
             refreshNotification()
             if (foregroundActive) mainHandler.postDelayed(this, CAPSULE_HEARTBEAT_MS)
         }
@@ -119,6 +126,13 @@ internal class AgentExecutionService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
+            // 没有活跃 run 却仍有 lease：说明有任务没释放，前台服务与通知会一直挂着。
+            // 这条日志用来定位是哪一类任务忘了 release，不要删。
+            if (runStatus == null && activeRunCount == 0) {
+                AndroidAgentLogger.warn(
+                    "Execution service kept alive with idle run: leases=${leases.count()}"
+                )
+            }
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
         }
     }
@@ -151,11 +165,20 @@ internal class AgentExecutionService : Service() {
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
         // vivo 原子岛：把当前状态写进 superx 通知扩展（厂商字段缺失时无副作用）。
-        val islandText = status?.shortText() ?: getString(R.string.execution_chip_running)
-        VivoCapsuleExtras.apply(this, builder, islandText)
-        // 同时推给岛进程：那边走 AtomIslandsDataReceiver 直接投递，能带图标与点击响应，
-        // 是 extras 模板路线之外的增强路径；两路互不影响，任一失败都不影响通知本身。
-        VivoIslandPublisher.publish(this, islandText)
+        // 只有真的在跑 agent run 才上岛；服务因终端会话等原因停在前台时不显示「操作中」。
+        val islandText = if (status != null && (activeRunCount > 0 || leases.count() > 0)) {
+            status.shortText()
+        } else {
+            null
+        }
+        if (islandText != null) {
+            VivoCapsuleExtras.apply(this, builder, islandText)
+            // 同时推给岛进程：那边走 AtomIslandsDataReceiver 直接投递，能带图标与点击响应，
+            // 是 extras 模板路线之外的增强路径；两路互不影响，任一失败都不影响通知本身。
+            VivoIslandPublisher.publish(this, islandText)
+        } else {
+            VivoIslandPublisher.hide(this)
+        }
         return builder.build()
     }
 
