@@ -42,6 +42,16 @@ internal object VivoCapsuleExtras {
         if (content.isBlank()) return
         runCatching {
             val icon = Icon.createWithResource(context, R.drawable.ic_notification)
+            // 岛条的点击判定靠 islandClick + clickResp：
+            // 缺 islandClick 时 SystemUI 的 VivoIslandController 里 mClickedIsland 恒为 false，
+            // 触摸会被 QuickStep 当普通手势吃掉，表现就是"点岛没反应"。
+            val open = android.app.PendingIntent.getActivity(
+                context,
+                2,
+                android.content.Intent(context, io.github.mangi.eta.ui.MainActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
             val seconds = showSeconds.coerceIn(3, 30)
             builder.addExtras(
                 Bundle().apply {
@@ -51,6 +61,7 @@ internal object VivoCapsuleExtras {
                     putInt("notification.superx.displays", 0x111)
                     putInt("notification.superx.operation", 0)
                     putBoolean("notification.superx.islandNotify", false)
+                    putParcelable("notification.superx.clickResp", open)
                     putBundle(
                         KEY_ISLAND,
                         Bundle().apply {
@@ -60,6 +71,10 @@ internal object VivoCapsuleExtras {
                             putInt("island.superx.showTime", seconds)
                             putBoolean("island.superx.forceShow", true)
                             putBoolean("island.superx.forceShowCard", false)
+                            // 这两项是"可点击"的开关：没有它们，SystemUI 不会把触摸
+                            // 交给岛，点击会落空（mClickedIsland=false）。
+                            putInt("island.superx.islandClick", 1)
+                            putParcelable("island.superx.clickResp", open)
                             putBundle(
                                 "island.superx.leftInfo",
                                 Bundle().apply {
