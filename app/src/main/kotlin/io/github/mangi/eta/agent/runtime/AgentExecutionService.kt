@@ -121,7 +121,6 @@ internal class AgentExecutionService : Service() {
         if (leases.closeOwnerIfIdle(owner)) {
             foregroundActive = false
             mainHandler.removeCallbacks(capsuleHeartbeat)
-            VivoIslandPublisher.hide(this)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
