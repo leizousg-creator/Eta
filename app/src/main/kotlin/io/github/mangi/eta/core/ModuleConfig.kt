@@ -8,6 +8,9 @@ internal object ModuleConfig {
     const val ETA_PACKAGE = "io.github.mangi.eta"
     const val BREENO_PACKAGE = "com.heytap.speechassist"
     const val VIVO_COPILOT_PACKAGE = "com.vivo.ai.copilot"
+
+    /** vivo 原子岛本体（`com.vivo.systemuiplugin:island` 进程），岛的内部 API 在这里。 */
+    const val VIVO_ISLAND_PACKAGE = "com.vivo.systemuiplugin"
     const val COLOROS_MEMORY_PACKAGE = "com.oplus.aimemory"
     const val XIAOAI_PACKAGE = "com.miui.voiceassist"
     const val XIAOMI_LAUNCHER_PACKAGE = "com.miui.home"

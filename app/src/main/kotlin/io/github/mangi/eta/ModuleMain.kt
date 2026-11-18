@@ -22,6 +22,7 @@ import io.github.mangi.eta.hook.system.SystemServerHooks
 import io.github.mangi.eta.hook.system.SystemUiHooks
 import io.github.mangi.eta.hook.vivo.VivoHooks
 import io.github.mangi.eta.hook.vivo.VivoWakeupRedirectHooks
+import io.github.mangi.eta.hook.vivo.island.VivoIslandBridge
 import io.github.mangi.eta.hook.xiaoai.XiaoAiHooks
 
 class ModuleMain : XposedModule() {
@@ -76,6 +77,14 @@ class ModuleMain : XposedModule() {
             ModuleConfig.SYSTEM_UI_PACKAGE -> {
                 if (currentProcessName == ModuleConfig.SYSTEM_UI_PACKAGE) {
                     recordInstallation(SystemUiHooks.install(this, logger, param.classLoader))
+                }
+            }
+
+            // vivo 原子岛本体所在进程。Eta 在这里接入岛的内部 API，
+            // 用来自定义卡片视图（比通知 extras 那条路能表达更多东西）。
+            ModuleConfig.VIVO_ISLAND_PACKAGE -> {
+                if (isCurrentPackageProcess(ModuleConfig.VIVO_ISLAND_PACKAGE)) {
+                    recordInstallation(VivoIslandBridge.install(this, logger, param.classLoader))
                 }
             }
 
@@ -174,6 +183,9 @@ class ModuleMain : XposedModule() {
             isPackageProcess(processName, ModuleConfig.BREENO_PACKAGE) ||
             processName == ModuleConfig.COLOROS_MEMORY_PACKAGE ||
             isPackageProcess(processName, ModuleConfig.XIAOAI_PACKAGE) ||
+            // 原子岛本体：VivoIslandBridge 要在 :island 子进程里装 hook，
+            // 漏掉这里同样会在 onModuleLoaded 阶段被 detach()。
+            isPackageProcess(processName, ModuleConfig.VIVO_ISLAND_PACKAGE) ||
             // 小 V：VivoHooks 的唤醒重定向与原子岛桥接都靠这里，漏掉会在
             // onModuleLoaded 阶段就被 detach()，注入成功也等于没装。
             isPackageProcess(processName, ModuleConfig.VIVO_COPILOT_PACKAGE)
