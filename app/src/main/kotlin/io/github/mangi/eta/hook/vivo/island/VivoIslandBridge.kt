@@ -49,6 +49,12 @@ internal object VivoIslandBridge {
     private const val EXTRA_CLASS = "className"
     private const val EXTRA_SHOW_SECONDS = "showSeconds"
 
+    private const val MAIN_ACTIVITY = "io.github.mangi.eta.ui.MainActivity"
+
+    /** 岛进程的 Context，由 IslandService.onCreate 填入；点击回调需要它启动 Eta。 */
+    @Volatile
+    private var islandContext: android.content.Context? = null
+
     /** 探测阶段用；确认可用后测试期也可以人工触发一次。 */
     private val PROBE_CLASSES = listOf(
         "IslandService",
@@ -72,6 +78,50 @@ internal object VivoIslandBridge {
 
         return hooks.install {
             probe(classLoader, logger)
+
+            // 点击接管：通知型岛（extras 模板）的点击不会走到这里，
+            // 但岛自己点开详情/单击时都会经过 clickNotificationWithDelayUpdate(key)。
+            // 只认 Eta 自己的通知 key，其余原样放行。
+            val dataController = HookSupport.findClassOrNull(
+                classLoader,
+                "${PREFIX}data.AtomIslandsDataController"
+            )
+            val clickMethod = dataController?.let {
+                HookSupport.findMethod(it, "clickNotificationWithDelayUpdate", String::class.java)
+            }
+            if (clickMethod == null) {
+                missing("vivo.island.click", "$PREFIX data.AtomIslandsDataController#clickNotificationWithDelayUpdate", "未找到岛点击入口，岛条点击仍走原逻辑")
+            } else {
+                intercept(
+                    id = "vivo.island.click",
+                    executable = clickMethod,
+                    description = "AtomIslandsDataController.clickNotificationWithDelayUpdate"
+                ) { chain ->
+                    val key = chain.getArg(0) as? String
+                    if (key == null || !key.contains(ETA_PACKAGE)) {
+                        return@intercept chain.proceed()
+                    }
+                    val context = islandContext
+                    if (context == null) {
+                        return@intercept chain.proceed()
+                    }
+                    val started = runCatching {
+                        context.startActivity(
+                            Intent()
+                                .setClassName(ETA_PACKAGE, MAIN_ACTIVITY)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        )
+                        true
+                    }.getOrDefault(false)
+                    if (started) {
+                        logger.warn("island 点击 → Eta (key=$key)")
+                        null
+                    } else {
+                        chain.proceed()
+                    }
+                }
+            }
+
             val serviceClass = HookSupport.findClassOrNull(classLoader, ISLAND_SERVICE)
             if (serviceClass == null) {
                 missing("vivo.island.service", ISLAND_SERVICE, "未找到岛服务，跳过桥接")
@@ -94,6 +144,7 @@ internal object VivoIslandBridge {
                     if (context == null) {
                         logger.warn("island 桥接：拿不到 Service Context，跳过投递")
                     } else {
+                        islandContext = context
                         registerReceiver(context, logger)
                     }
                 }.onFailure { logger.warn("island 桥接挂载失败: ${it.javaClass.simpleName}") }

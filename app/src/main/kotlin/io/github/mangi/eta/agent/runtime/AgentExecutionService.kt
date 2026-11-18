@@ -1,6 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
-import io.github.mangi.eta.agent.island.VivoIslandPublisher
+import io.github.mangi.eta.agent.island.VivoCapsuleExtras
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -163,20 +163,17 @@ internal class AgentExecutionService : Service() {
             // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
-        // vivo 原子岛：只走岛进程内投递（VivoIslandBridge），能带图标、可点击打开 Eta。
-        // 不再写 superx 通知扩展：那条路（extras 模板）产出的岛条**点击不响应**
-        // （SystemUI 的 VivoIslandController 里 mClickedIsland 恒为 false，
-        //  接管它需要再 hook 插件层的 clickNotificationWithDelayUpdate），
-        // 两条路并存时用户点到的是没反应的那一条。VivoCapsuleExtras 代码保留以便回滚。
+        // vivo 原子岛：走通知 extras（显示稳定，且能让 SystemUI 按需拉起岛进程）。
+        // 岛进程内投递（AtomIslandsDataReceiver）不能当主路径：该进程是按需启动的，
+        // 没有 extras 数据它就不会被 fork，广播也就没有接收者，形成死锁。
+        // 点击响应改由 VivoIslandBridge hook clickNotificationWithDelayUpdate 处理。
         val islandText = if (status != null && (activeRunCount > 0 || leases.count() > 0)) {
             status.shortText()
         } else {
             null
         }
         if (islandText != null) {
-            VivoIslandPublisher.publish(this, islandText)
-        } else {
-            VivoIslandPublisher.hide(this)
+            VivoCapsuleExtras.apply(this, builder, islandText)
         }
         return builder.build()
     }
