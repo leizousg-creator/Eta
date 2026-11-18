@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.runtime
 
 import io.github.mangi.eta.agent.island.VivoCapsuleExtras
+import io.github.mangi.eta.agent.island.VivoIslandPublisher
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -114,6 +115,7 @@ internal class AgentExecutionService : Service() {
         if (leases.closeOwnerIfIdle(owner)) {
             foregroundActive = false
             mainHandler.removeCallbacks(capsuleHeartbeat)
+            VivoIslandPublisher.hide(this)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
@@ -149,7 +151,11 @@ internal class AgentExecutionService : Service() {
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
         // vivo 原子岛：把当前状态写进 superx 通知扩展（厂商字段缺失时无副作用）。
-        VivoCapsuleExtras.apply(this, builder, status?.shortText() ?: getString(R.string.execution_chip_running))
+        val islandText = status?.shortText() ?: getString(R.string.execution_chip_running)
+        VivoCapsuleExtras.apply(this, builder, islandText)
+        // 同时推给岛进程：那边走 AtomIslandsDataReceiver 直接投递，能带图标与点击响应，
+        // 是 extras 模板路线之外的增强路径；两路互不影响，任一失败都不影响通知本身。
+        VivoIslandPublisher.publish(this, islandText)
         return builder.build()
     }
 
