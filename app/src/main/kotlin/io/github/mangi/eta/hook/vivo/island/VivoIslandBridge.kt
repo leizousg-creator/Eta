@@ -166,6 +166,9 @@ internal object VivoIslandBridge {
         field("buildShowTime", Integer.TYPE, seconds.coerceIn(3, 30))
         field("buildForceShow", java.lang.Boolean.TYPE, true)
         field("buildSupportNewNode", java.lang.Boolean.TYPE, true)
+        // 1 = 允许点击。不设这一项时岛条不响应点击（实测：点了没有任何反应），
+        // 即使 buildClickIslandResp 已经给了 PendingIntent 也不会被触发。
+        field("buildIslandClick", Integer.TYPE, 1)
 
         runCatching {
             val iconRes = context.packageManager.getApplicationInfo(ETA_PACKAGE, 0).icon
