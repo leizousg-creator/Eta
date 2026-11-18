@@ -1,5 +1,6 @@
 system
 com.android.systemui
+com.vivo.systemuiplugin
 com.vivo.ai.copilot
 com.google.android.googlequicksearchbox
 com.coloros.colordirectservice
