@@ -93,11 +93,14 @@
             android:noHistory="true"
             android:process=":voice"
             android:showWhenLocked="true"
-            android:theme="@style/Theme.EtaVoiceAssistBridge">
-            <intent-filter>
-                <action android:name="android.intent.action.ASSIST" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
+            android:theme="@style/Theme.EtaVoiceAssistBridge" />
+        <!--
+            这里刻意不声明 android.intent.action.ASSIST 的 intent-filter。
+            vivo 的双指长按识屏（com.vivo.accessibilityenhance）用这个 action
+            解析"识屏后交给谁"，一旦命中就会把系统自带的智慧识屏顶掉、改成跳 Eta。
+            助理入口走的是 VoiceInteractionService，不依赖这个 filter；
+            我们的唤醒重定向也是 setClassName 显式启动，同样不需要它。
+        -->
             <!-- 声明 ASSISTANT 动作后，RoleManager 才会把 Eta 视为数字助理候选。 -->
             <intent-filter>
                 <action android:name="android.intent.action.ASSISTANT" />
