@@ -93,20 +93,16 @@
             android:noHistory="true"
             android:process=":voice"
             android:showWhenLocked="true"
-            android:theme="@style/Theme.EtaVoiceAssistBridge">
-            <!--
-                只保留 ASSISTANT（RoleManager 据此把 Eta 视为数字助理候选），
-                刻意不声明 android.intent.action.ASSIST：
-                vivo 的双指长按识屏（com.vivo.accessibilityenhance）用 ASSIST 解析
-                "识屏后交给谁"，一旦命中就会把系统自带的智慧识屏顶掉、改成跳 Eta。
-                助理入口走 VoiceInteractionService，唤醒重定向走 setClassName 显式启动，
-                都不依赖 ASSIST。
-            -->
-            <intent-filter>
-                <action android:name="android.intent.action.ASSISTANT" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.EtaVoiceAssistBridge" />
+        <!--
+            这里刻意不声明任何 intent-filter（ASSIST / ASSISTANT 都不写）。
+            vivo 的双指长按识屏（com.vivo.accessibilityenhance）会先查
+            VoiceInteractionService，再退回 resolveActivity 解析助理类 action：
+              - ASSIST    → 命中后系统智慧识屏被顶掉
+              - ASSISTANT → 命中后直接拉起 MainActivity（本 activity 的 fallback）
+            两条都试过，删掉一个另一个就接上，所以两个一起删。
+            exported=true 保留：助理键与唤醒重定向都是 setClassName 显式启动，不需要 filter。
+        -->
         <service
             android:name=".agent.voice.EtaVoiceInteractionService"
             android:exported="true"
