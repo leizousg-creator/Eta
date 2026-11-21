@@ -154,14 +154,16 @@ internal class AgentExecutionService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
-        // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            builder
-                .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
-                .setShortCriticalText(status.shortText())
-            // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
-            builder.extras.putBoolean("android.requestPromotedOngoing", true)
-        }
+        // 不再请求 Android 16 的 promoted ongoing（实时活动卡片）：
+        // 它与 vivo 原子岛的胶囊是同一份通知的两种呈现，同时开启会让用户看到
+        // 「顶部黑色胶囊 + 下方白色卡片」两个东西。岛已经能满足「进行中 + 可点击」，
+        // 这段保留原代码位置以便回滚，但不再设置 ProgressStyle 与 requestPromotedOngoing。
+        // if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+        //     builder
+        //         .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
+        //         .setShortCriticalText(status.shortText())
+        //     builder.extras.putBoolean("android.requestPromotedOngoing", true)
+        // }
         // vivo 原子岛：走通知 extras（显示稳定，且能让 SystemUI 按需拉起岛进程）。
         // 岛进程内投递（AtomIslandsDataReceiver）不能当主路径：该进程是按需启动的，
         // 没有 extras 数据它就不会被 fork，广播也就没有接收者，形成死锁。
