@@ -34,11 +34,10 @@ class AgentExecutionServiceTest {
         val controller = Robolectric.buildService(AgentExecutionService::class.java).create()
         try {
             val notification = requireNotNull(shadowOf(controller.get()).lastForegroundNotification)
-            assertEquals(Build.VERSION.SDK_INT >= 36, notification.extras.getBoolean("android.requestPromotedOngoing"))
-            if (Build.VERSION.SDK_INT >= 36) {
-                assertEquals(Notification.ProgressStyle::class.java.name, notification.extras.getString(Notification.EXTRA_TEMPLATE))
-                assertEquals(context.getString(R.string.overlay_reasoning), notification.extras.getString("android.shortCriticalText"))
-            }
+            // 不再请求 Android 16 的 promoted ongoing（实时活动卡片）：
+            // 它与 vivo 原子岛的胶囊是同一份通知的两种呈现，同时开启会让顶部出现两个元素。
+            assertFalse(notification.extras.getBoolean("android.requestPromotedOngoing"))
+            assertFalse(notification.extras.containsKey("android.shortCriticalText"))
 
             AgentExecutionService.updateRunStatus(context, null, activeRunCount = 0)
             shadowOf(Looper.getMainLooper()).idle()
