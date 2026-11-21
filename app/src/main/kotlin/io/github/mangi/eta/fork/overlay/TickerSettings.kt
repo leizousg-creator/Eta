@@ -20,7 +20,14 @@ internal object TickerSettings {
     val alphaOptions = listOf(0.30f, 0.50f, 0.72f, 0.85f)
 
     data class Config(
-        val enabled: Boolean = true,
+        /**
+         * 默认关闭。
+         *
+         * 它是纯附加浮窗：状态栏已有原子岛胶囊、通知栏有前台通知，
+         * 再叠一条黑底字幕条会让顶部同时出现三个 Eta 元素，用户第一反应是"怎么这么多岛"。
+         * 需要边跑边看流式输出的，在设置里手动打开。
+         */
+        val enabled: Boolean = false,
         val lines: Int = 3,
         val alpha: Float = 0.72f,
     )
@@ -33,7 +40,7 @@ internal object TickerSettings {
     fun load(context: Context) {
         val prefs = prefs(context)
         state.value = Config(
-            enabled = prefs.getBoolean(KEY_ENABLED, true),
+            enabled = prefs.getBoolean(KEY_ENABLED, false),
             lines = prefs.getInt(KEY_LINES, 3).takeIf { it in lineOptions } ?: 3,
             alpha = prefs.getFloat(KEY_ALPHA, 0.72f)
                 .takeIf { value -> alphaOptions.any { kotlin.math.abs(it - value) < 0.01f } } ?: 0.72f,
