@@ -105,7 +105,58 @@ internal object VivoWakeupSystemHooks {
                 }
             }
             logger.debug { "唤醒拦截已挂载: ${candidates.size} 个 startServiceLocked 签名" }
+
+            // 长按电源键：vivo 在 VivoInputPolicy 里硬编码 startJoviVoiceByPowerKey，
+            // 直接点名 Jovi，既不看「谁是助理」也不经过 WakeupService，
+            // 所以上面那套拦截管不到它。这里直接接管该入口。
+            hookJoviPowerKey(classLoader, logger)
         }
+    }
+
+    /**
+     * 接管长按电源键。
+     *
+     * vivo 在 `VivoInputPolicy` 里硬编码 `startJoviVoiceByPowerKey`（日志：
+     * `_V_VivoInputPolicy: startJoviVoiceByPowerKey mPowerKeyHandledByJovi=true`），
+     * 直接点名 Jovi，既不查"谁是助理"也不经过 WakeupService，
+     * 所以 ActiveServices 那套拦截完全管不到它。这里按方法名精确接管。
+     *
+     * 类名在不同 ROM 版本有差异，逐个尝试；找不到就记 missing，让长按继续归小 V。
+     */
+    private fun HookRegistrar.hookJoviPowerKey(classLoader: ClassLoader, logger: ModuleLogger) {
+        val classNames = listOf(
+            "com.android.server.policy.VivoInputPolicy",
+            "com.android.server.policy.VivoInputPolicyImpl",
+            "com.android.server.policy.VivoInputPolicyManager",
+        )
+        for (className in classNames) {
+            val clazz = HookSupport.findClassOrNull(classLoader, className) ?: continue
+            val method = HookSupport.findMethod(clazz, "startJoviVoiceByPowerKey") ?: continue
+            runCatching {
+                intercept(
+                    id = "vivo.powerkey.jovi",
+                    executable = method,
+                    description = "$className#startJoviVoiceByPowerKey"
+                ) { chain ->
+                    val launched = launch(chain.getThisObject(), "power-key-longpress", logger)
+                    if (launched) {
+                        logger.warn("电源键长按 → Eta")
+                        null
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                logger.warn("电源键拦截已挂载: $className")
+            }.onFailure {
+                logger.warn("电源键拦截挂载失败($className): ${it.javaClass.simpleName}")
+            }
+            return
+        }
+        missing(
+            "vivo.powerkey.jovi",
+            "VivoInputPolicy.startJoviVoiceByPowerKey",
+            "未找到电源键 Jovi 入口，长按仍归小 V"
+        )
     }
 
     /**
