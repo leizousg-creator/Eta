@@ -25,9 +25,7 @@ class SpeechSettingsTest {
         val legacy = json.decodeFromString<SpeechSettings>(
             """{"asr":"SYSTEM","tts":"DOUBAO","autoSpeak":true,"refineTranscript":true}""",
         )
-        // SYSTEM 已重新作为可选识别方式（走系统 SpeechRecognizer，免 API Key），
-        // 因此这里不再把它迁移成云端 provider；其余字段照常保留。
-        assertEquals(AsrProvider.SYSTEM, legacy.asr)
+        assertEquals(AsrProvider.QWEN_REALTIME, legacy.asr)
         assertEquals(TtsProvider.DOUBAO, legacy.tts)
         assertTrue(legacy.autoSpeak)
         assertTrue(legacy.refineTranscript)

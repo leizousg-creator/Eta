@@ -1,15 +1,6 @@
 package io.github.mangi.eta.agent.voice
 
 import android.content.Context
-import android.content.Intent
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import java.util.Locale
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.suspendCancellableCoroutine
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AsrProvider
 import io.github.mangi.eta.data.model.SpeechCredentials
@@ -97,14 +88,7 @@ internal class SpeechInputController(
                         if (generation == session) mutableState.value = transform(mutableState.value)
                     }
                 }
-                val text = if (config.asr == AsrProvider.SYSTEM) {
-                    // 系统识别器（SpeechRecognizer）自己开麦，不能再走下面的 SpeechRecorder 链路，
-                    // 否则两者抢麦克风。识别器回调返回文本后直接进入后续的 refine / onResult。
-                    update {
-                        it.copy(phase = EtaSpeechPhase.LISTENING, progress = "系统识别中，说完自动结束")
-                    }
-                    recognizeWithSystem(::update)
-                } else coroutineScope {
+                val text = coroutineScope {
                     var recording: Job? = null
                     val begin = {
                         if (recording == null) {
@@ -213,93 +197,5 @@ internal class SpeechInputController(
     private fun releaseCapture() {
         if (capturing) afterCapture()
         capturing = false
-    }
-
-    /**
-     * 系统语音识别。
-     *
-     * 走系统默认 `RecognitionService`（本机是 `com.vivo.ai.copilot` 的
-     * `CopilotRecognitionService`，另有 Claude 可切），不需要任何 API Key。
-     *
-     * 关键约束：识别器自己管理录音，所以这条路径**不能**再跑 [SpeechRecorder]——
-     * 两者同时开麦会互相抢设备、识别直接失败。调用方在 SYSTEM 分支里已经跳过录音链路。
-     */
-    private suspend fun recognizeWithSystem(
-        update: ((SpeechInputState) -> SpeechInputState) -> Unit,
-    ): String = suspendCancellableCoroutine { continuation ->
-        val recognizer = SystemSpeechRecognizer.create(context)
-        if (recognizer == null) {
-            continuation.resumeWithException(
-                SpeechFailure(SpeechErrorCode.CONFIGURATION, "系统没有可用的语音识别服务")
-            )
-            return@suspendCancellableCoroutine
-        }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-        }
-        recognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onPartialResults(partialResults: Bundle?) {
-                val text = partialResults.systemTranscript()
-                if (text.isNotEmpty()) update { it.copy(preview = text) }
-            }
-
-            override fun onResults(results: Bundle?) {
-                val text = results.systemTranscript()
-                runCatching { recognizer.destroy() }
-                if (continuation.isActive) continuation.resume(text)
-            }
-
-            override fun onError(error: Int) {
-                runCatching { recognizer.destroy() }
-                if (continuation.isActive) {
-                    continuation.resumeWithException(
-                        SpeechFailure(SpeechErrorCode.AUDIO, systemRecognizerErrorText(error))
-                    )
-                }
-            }
-
-            override fun onReadyForSpeech(params: Bundle?) = Unit
-            override fun onBeginningOfSpeech() = Unit
-            override fun onEndOfSpeech() = Unit
-            override fun onBufferReceived(buffer: ByteArray?) = Unit
-            override fun onEvent(eventType: Int, params: Bundle?) = Unit
-
-            override fun onRmsChanged(rmsdB: Float) {
-                // RecognitionListener 的 rmsdB 通常落在 -2..10，粗略映射成 0..1 供波形显示。
-                update { it.copy(level = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)) }
-            }
-        })
-        continuation.invokeOnCancellation {
-            runCatching { recognizer.cancel() }
-            runCatching { recognizer.destroy() }
-        }
-        runCatching { recognizer.startListening(intent) }.onFailure { error ->
-            runCatching { recognizer.destroy() }
-            if (continuation.isActive) {
-                continuation.resumeWithException(
-                    SpeechFailure(SpeechErrorCode.AUDIO, "启动系统识别失败：${error.javaClass.simpleName}")
-                )
-            }
-        }
-    }
-
-    private fun Bundle?.systemTranscript(): String =
-        this?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            ?.firstOrNull { it.isNotBlank() }
-            ?.trim()
-            .orEmpty()
-
-    private fun systemRecognizerErrorText(error: Int): String = when (error) {
-        SpeechRecognizer.ERROR_NO_MATCH -> "没有识别到语音，请重试"
-        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有检测到说话"
-        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少录音权限"
-        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "系统识别服务网络异常"
-        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "系统识别服务忙，请稍后重试"
-        SpeechRecognizer.ERROR_SERVER -> "系统识别服务返回错误"
-        SpeechRecognizer.ERROR_AUDIO -> "麦克风采集失败"
-        else -> "系统识别失败（code=$error）"
     }
 }

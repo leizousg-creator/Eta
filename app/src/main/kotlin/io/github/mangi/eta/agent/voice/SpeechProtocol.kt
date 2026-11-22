@@ -79,8 +79,6 @@ internal fun validateSpeechSettings(
             }
         }
     } else when (settings.asr) {
-        // 系统识别器（SpeechRecognizer）不需要任何 API Key 与服务地址。
-        AsrProvider.SYSTEM -> Unit
         AsrProvider.MIMO -> {
             required(secrets.mimoAsr, "MiMo 识别 API Key")
             speechBaseUrl(settings.mimoAsr.baseUrl)

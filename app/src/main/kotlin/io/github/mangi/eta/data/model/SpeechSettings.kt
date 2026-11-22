@@ -6,7 +6,7 @@ private const val MIMO_SPEECH_BASE_URL = "https://api.xiaomimimo.com/v1"
 private const val DEEPSEEK_SPEECH_BASE_URL = "https://api.deepseek.com"
 
 @Serializable
-enum class AsrProvider { SYSTEM, QWEN_REALTIME, QWEN_FLASH, QWEN_FILE, DOUBAO, MIMO, DEEPSEEK }
+enum class AsrProvider { QWEN_REALTIME, QWEN_FLASH, QWEN_FILE, DOUBAO, MIMO, DEEPSEEK }
 
 @Serializable
 enum class TtsProvider { NONE, QWEN, DOUBAO, GEMINI, MINIMAX, MIMO, DEEPSEEK }

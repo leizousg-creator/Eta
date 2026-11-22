@@ -40,8 +40,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun SpeechConnectionSection(store: SpeechSettingsStore, synthesis: Boolean) {
     if (!synthesis) {
         when (store.settings.asr) {
-            // 系统识别不需要任何连接配置。
-            AsrProvider.SYSTEM -> Unit
             AsrProvider.MIMO -> MimoAsrConnectionSection(store)
             AsrProvider.DEEPSEEK -> DeepSeekAsrConnectionSection(store)
             AsrProvider.QWEN_REALTIME, AsrProvider.QWEN_FLASH, AsrProvider.QWEN_FILE, AsrProvider.DOUBAO ->
