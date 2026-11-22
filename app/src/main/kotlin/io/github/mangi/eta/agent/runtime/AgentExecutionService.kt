@@ -118,6 +118,15 @@ internal class AgentExecutionService : Service() {
     }
 
     private fun refreshNotification() {
+        // 孤儿 run 租约回收：没有任何活跃 run 时，残留的 run:* 不可能再有释放者
+        // （唯一释放点是 AgentRuntimeService.beforeTerminalPublish）。
+        // 不清掉的话前台服务会一直挂着，通知常驻不走。
+        if (runStatus == null && activeRunCount == 0) {
+            val orphans = leases.releaseRunLeases()
+            if (orphans.isNotEmpty()) {
+                AndroidAgentLogger.warn("Released orphan run leases: ${orphans.joinToString(",")}")
+            }
+        }
         if (leases.closeOwnerIfIdle(owner)) {
             foregroundActive = false
             mainHandler.removeCallbacks(capsuleHeartbeat)
@@ -128,7 +137,7 @@ internal class AgentExecutionService : Service() {
             // 这条日志用来定位是哪一类任务忘了 release，不要删。
             if (runStatus == null && activeRunCount == 0) {
                 AndroidAgentLogger.warn(
-                    "Execution service kept alive with idle run: leases=${leases.count()}"
+                    "Execution service kept alive with idle run: leases=${leases.describe()}"
                 )
             }
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())

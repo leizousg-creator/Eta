@@ -163,3 +163,38 @@ _V_IslandGestureManager: islandBean : IslandId:0|io.github.mangi.eta|1107|...|10
 - 人格伪装（"Little Code Sauce" / "YG"）；
 - `Ota.java`：`https://222.186.56.69:8761/eta/version.json`，裸 IP + 全信任自签证书 + 自动下载装 APK；
 - 版本短名映射表（`kr`/`fr`/`w11`/`jm4` 按 3.3.5~3.4.4 各一套）：R8 每次构建都会重排，我们的包一升级它就失效。
+
+## 九、vivo 入口归属与岛展示（2026-11 定版）
+
+### 入口归属：四条路彼此独立
+
+| 入口 | 系统侧路径 | 我们的做法 |
+|---|---|---|
+| 双指长按识屏 | `com.vivo.accessibilityenhance` → `CircleSearchExecutor` → 需要"一个助理" | **不接管**：删掉 Eta 的 `ASSIST` / `ASSISTANT` 声明 + `voice_interaction_service` 指向 Jovi |
+| 长按电源键 | `VivoInputPolicy.startJoviVoiceByPowerKey`（硬编码点名 Jovi） | hook 该方法，命中拉起 Eta |
+| 白条上滑 / 圈搜 | `startService` → `com.vivo.ai.copilot/.framework.wakeup.WakeupService` | hook `ActiveServices.startServiceLocked` 拦截 |
+| 语音热词 | `com.vivo.voicewakeup` 的硬件 hotword | **有意放行**：误触发会全屏弹窗，未做 VAD 前不接管 |
+
+三个容易误判的点：
+
+1. **改 VIS 不影响电源键**：电源键走 `startJoviVoiceByPowerKey`，方法名里就写着 Jovi，跟"谁是助理"无关，也不经过 WakeupService。
+2. **`ASSIST` 与 `ASSISTANT` 是替代关系**：删一个另一个立刻接上。删 `ASSIST` 后现象从"跳 Eta 聆听"变成"直接跳 MainActivity"（`requestSession()` 失败 fallback），两个必须一起删。
+3. **删这两个 filter 的代价**：Eta 不再是 `RoleManager` 的数字助理候选，系统设置里无法再设为默认助理。
+
+### 岛展示：只保留 extras 一条路
+
+最终形态 = 通知 extras（`VivoCapsuleExtras`）+ `SuperX` 白名单 hook + 心跳续期，**不再用岛进程内投递**。
+
+- **可点击的最小集合**：`island.superx.islandClick=1` 与 `clickResp`（PendingIntent），island 内和顶层各写一份。缺 `islandClick` 时 SystemUI 的 `VivoIslandController` 里 `mClickedIsland` 恒为 false，触摸被 QuickStep 当普通手势吃掉，表现就是"点岛没反应"。
+- **岛进程内投递不能当主路径**：`com.vivo.systemuiplugin:island` 是按需启动的（有岛数据才 fork）。如果只靠广播投递，没有 extras 就没有数据 → 进程不启动 → 广播没有接收者，形成死锁（实测表现：完全没有任何岛）。
+- **不要两条路并行**：extras 的岛 id 是通知 key，投递的 id 是自定义字符串，系统当两个独立条目 → 用户看到"两个岛"。
+- **不要开 promoted ongoing**：`setStyle(Notification.ProgressStyle())` + `extras[android.requestPromotedOngoing]=true` 会把同一条通知再渲染成 Android 16 实时活动卡片，与岛胶囊并存 → 看起来像"又多个岛"。已移除（`AgentExecutionService` 内保留注释代码）。
+- **心跳只在真有 run 时续期**：否则服务因长驻任务停在前台时会一直给岛续 `showTime`，任务结束后岛永久挂"操作中"。
+
+### 前台服务不退的孤儿租约
+
+日志锚点：`Execution service kept alive with idle run: leases=run:<id>`。
+
+`run:<id>` 只在 `AgentRuntimeService.beforeTerminalPublish` 释放；run 被取消、抛异常或协议提前关闭而没走到终态发布时，这条 lease 再没人释放，前台服务与通知会一直挂着。
+
+处理：`AgentExecutionService.refreshNotification` 在**确认没有活跃 run**（`runStatus == null && activeRunCount == 0`）时调用 `ExecutionLeaseRegistry.releaseRunLeases()` 回收 `run:*` 孤儿，并记 `Released orphan run leases: ...`。只在确认无 run 时执行，不会误伤活跃任务。

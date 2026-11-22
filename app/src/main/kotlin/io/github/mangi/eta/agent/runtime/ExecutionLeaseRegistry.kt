@@ -16,6 +16,30 @@ internal class ExecutionLeaseRegistry {
     @Synchronized fun release(id: String) { leases.remove(id) }
     @Synchronized fun count(): Int = leases.size
 
+    /**
+     * 回收孤儿 run 租约。
+     *
+     * `run:<id>` 只在 `AgentRuntimeService.beforeTerminalPublish` 里释放；
+     * 一旦 run 被取消、抛异常、或进程内协议提前关闭而没有走到终态发布，
+     * 这条 lease 就再也没人释放，前台服务与通知会一直挂着
+     * （日志表现为 `Execution service kept alive with idle run: leases=N`）。
+     *
+     * 只有在调用方确认「没有任何活跃 agent run」时才可以调用本方法——
+     * 那时残留的 `run:*` 必然是孤儿。
+     */
+    @Synchronized fun releaseRunLeases(): List<String> {
+        val orphans = leases.keys.filter { it.startsWith(RUN_LEASE_PREFIX) }
+        orphans.forEach(leases::remove)
+        return orphans
+    }
+
+    @Synchronized fun describe(): String =
+        leases.keys.joinToString(",").ifEmpty { "（空）" }
+
+    private companion object {
+        const val RUN_LEASE_PREFIX = "run:"
+    }
+
     @Synchronized fun attachOwner(owner: Long) {
         activeOwner = owner
         leases.replaceAll { _, lease -> if (lease.owner == null) lease.copy(owner = owner) else lease }
