@@ -23,7 +23,7 @@ internal object VivoWakeupRedirectHooks {
 
     private const val WAKEUP_SERVICE = "com.vivo.ai.copilot.framework.wakeup.WakeupService"
     private const val ETA_PACKAGE = "io.github.mangi.eta"
-    private const val ETA_VOICE_ACTIVITY = "$ETA_PACKAGE.agent.voice.EtaVoiceAssistActivity"
+    private const val ETA_VOICE_ACTIVITY = "$ETA_PACKAGE.ui.MainActivity"
 
     /** 上滑/Home 键唤出白条，action 后面可能带额外后缀，按前缀匹配。 */
     private const val WHITE_STRIP_PREFIX = "com.vivo.action.copilot.SHOW_WHITE_STRIP_BY_HOMEKEY"
@@ -141,7 +141,7 @@ internal object VivoWakeupRedirectHooks {
             .onFailure { logger.warn("唤醒重定向启动 Eta 失败: action=$action, type=${it.javaClass.simpleName}") }
             .isSuccess
         if (started) {
-            logger.debug { "唤醒重定向: $action -> EtaVoiceAssistActivity" }
+            logger.debug { "唤醒重定向: $action -> MainActivity" }
         }
         return started
     }

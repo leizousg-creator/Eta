@@ -27,7 +27,7 @@ internal object VivoWakeupSystemHooks {
     private const val ACTIVE_SERVICES_CLASS = "com.android.server.am.ActiveServices"
     private const val COPILOT_PACKAGE = "com.vivo.ai.copilot"
     private const val ETA_PACKAGE = "io.github.mangi.eta"
-    private const val ETA_VOICE_ACTIVITY = "$ETA_PACKAGE.agent.voice.EtaVoiceAssistActivity"
+    private const val ETA_VOICE_ACTIVITY = "$ETA_PACKAGE.ui.MainActivity"
 
     /** 上滑/Home 键唤出白条，action 后面可能带后缀，按前缀匹配。 */
     private const val WHITE_STRIP_PREFIX = "com.vivo.action.copilot.SHOW_WHITE_STRIP_BY_HOMEKEY"
@@ -238,7 +238,7 @@ internal object VivoWakeupSystemHooks {
                 userHandleClass
             )
             method.invoke(context, intent, systemUser)
-            logger.warn("唤醒拦截: $action → EtaVoiceAssistActivity")
+            logger.warn("唤醒拦截: $action → MainActivity")
             true
         }.getOrElse { exception ->
             logger.warn("唤醒拦截启动 Eta 失败: action=$action, type=${exception.javaClass.simpleName}")
