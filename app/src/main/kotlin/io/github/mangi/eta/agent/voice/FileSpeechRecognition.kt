@@ -23,6 +23,9 @@ internal suspend fun recognizeSpeechFile(
 ): String = withContext(Dispatchers.IO) {
     withTimeout(300_000) {
         when (settings.asr) {
+            // 系统识别器由 SpeechInputController 直接驱动，不经过文件识别链路。
+            AsrProvider.SYSTEM ->
+                throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "系统识别不走文件上传链路")
             AsrProvider.MIMO -> {
                 onProgress("正在识别")
                 recognizeMimoSpeech(settings.mimoAsr, credentials.mimoAsr, wav)

@@ -1383,6 +1383,8 @@
   <string name="permission_bluetooth_title">蓝牙连接</string>
   <string name="speech_tts_gemini">Gemini</string>
   <string name="speech_asr_mimo">MIMO · 语音识别</string>
+  <string name="speech_asr_system">系统识别 · 免密钥</string>
+  <string name="speech_asr_note_system">使用系统语音识别服务（RecognitionService），无需 API Key；识别引擎与离线能力取决于系统设置里选定的识别服务</string>
   <string name="speech_tts_mimo">MIMO</string>
   <string name="speech_asr_deepseek">DeepSeek · 语音识别</string>
   <string name="speech_tts_deepseek">DeepSeek</string>
