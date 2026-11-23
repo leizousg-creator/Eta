@@ -38,7 +38,7 @@ class ModuleMain : XposedModule() {
         // 连 lifecycle 回调都不再需要，直接 detach。
         if (HookKillSwitch.isHookDisabled()) {
             logger.warn(
-                "检测到 ${HookKillSwitch.OFF_FILE}，跳过全部 hook: process=${param.processName}"
+                "检测到 ${HookKillSwitch.activeOffFile()}，跳过全部 hook: process=${param.processName}"
             )
             detach()
             return

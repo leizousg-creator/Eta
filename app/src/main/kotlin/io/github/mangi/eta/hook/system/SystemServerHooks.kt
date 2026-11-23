@@ -29,8 +29,11 @@ internal object SystemServerHooks {
             "Power" to { PowerHooks.install(module, logger, classLoader) },
             "HyperOsPower" to { HyperOsPowerHooks.install(module, logger, classLoader) },
             "VirtualDisplay" to { VirtualDisplaySystemHooks.install(module, logger, classLoader) },
-            "SuperX" to { SuperXValidatorHooks.install(module, logger, classLoader) },
-            "VivoWakeupSys" to { VivoWakeupSystemHooks.install(module, logger, classLoader) }
+            "SuperX" to { SuperXValidatorHooks.install(module, logger, classLoader) }
+            // 停用 VivoWakeupSys：它拦的 START_CIRCLE2SEARCH 等 action 与 vivo
+            // 双指识屏共用同一条通道，会把系统识屏截走变成跳 Eta。
+            // 恢复时把下面这行改回 listOf 的正式条目即可。
+            // "VivoWakeupSys" to { VivoWakeupSystemHooks.install(module, logger, classLoader) }
         )
         val installations = groups.mapNotNull { (name, block) ->
             runCatching { block() }.getOrElse { error ->
