@@ -106,10 +106,11 @@ internal object VivoWakeupSystemHooks {
             }
             logger.debug { "唤醒拦截已挂载: ${candidates.size} 个 startServiceLocked 签名" }
 
-            // 长按电源键：vivo 在 VivoInputPolicy 里硬编码 startJoviVoiceByPowerKey，
-            // 直接点名 Jovi，既不看「谁是助理」也不经过 WakeupService，
-            // 所以上面那套拦截管不到它。这里直接接管该入口。
-            hookJoviPowerKey(classLoader, logger)
+            // 临时停用（实验）：确认「双指识屏跳 Eta」是否由它造成。
+            // 系统在 canCircleSearchAction=false 时会回落到 Jovi 语音，
+            // 而那条回落路径同样经过 startJoviVoiceByPowerKey，被这里截走。
+            // 先关掉验证因果，确认后再决定是窄化条件还是放弃侧键接管。
+            // hookJoviPowerKey(classLoader, logger)
         }
     }
 
