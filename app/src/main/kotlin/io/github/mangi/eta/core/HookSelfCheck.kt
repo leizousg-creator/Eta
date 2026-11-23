@@ -54,7 +54,7 @@ internal object HookSelfCheck {
     /** 应急开关状态：文件在不在，比任何 hook 都可靠。 */
     fun killSwitchState(): String =
         if (HookKillSwitch.isHookDisabled()) {
-            "已停用（${HookKillSwitch.OFF_FILE} 存在）"
+            "已停用（${HookKillSwitch.activeOffFile() ?: "hook_off"} 存在）"
         } else {
             "正常"
         }
