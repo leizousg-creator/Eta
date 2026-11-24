@@ -23,8 +23,16 @@ internal object SystemServerHooks {
     ): HookInstallation {
         val groups: List<Pair<String, () -> HookInstallation>> = listOf(
             "AccessibilityProtection" to { AccessibilityProtectionHooks.install(module, logger, classLoader) },
-            "ContextualSearch" to { ContextualSearchHooks.install(module, logger, classLoader) },
-            "AssistantManager" to { AssistantManager.install(module, logger, classLoader) },
+            // 停用 ContextualSearch：它改写 getContextualSearchPackageName() 指向
+            // com.google.android.googlequicksearchbox，而本机并无该应用、也没有任何
+            // ContextualSearchService，导致 QuickStep 判定 canCircleSearchAction=false，
+            // 双指长按在系统层直接无响应。
+            // "ContextualSearch" to { ContextualSearchHooks.install(module, logger, classLoader) },
+            // 停用 AssistantManager。它会重建 IVoiceInteractionManagerService 的 Binder stub，
+            // 而 vivo 的双指长按（唤醒小V + 圈选识别）正是走语音交互服务——
+            // 被它改坏后手势直接无响应。实测：kill switch 全停后识屏恢复。
+            // 该组的用途是"把 Eta 设为默认数字助理"，与现在的解耦方向相反，故永久移除。
+            // "AssistantManager" to { AssistantManager.install(module, logger, classLoader) },
             "HotwordSelfHeal" to { HotwordSelfHealHooks.install(module, logger, classLoader) },
             "Power" to { PowerHooks.install(module, logger, classLoader) },
             "HyperOsPower" to { HyperOsPowerHooks.install(module, logger, classLoader) },
