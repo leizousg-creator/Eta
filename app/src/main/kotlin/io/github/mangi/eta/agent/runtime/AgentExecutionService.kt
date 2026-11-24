@@ -118,15 +118,10 @@ internal class AgentExecutionService : Service() {
     }
 
     private fun refreshNotification() {
-        // 孤儿 run 租约回收：没有任何活跃 run 时，残留的 run:* 不可能再有释放者
-        // （唯一释放点是 AgentRuntimeService.beforeTerminalPublish）。
-        // 不清掉的话前台服务会一直挂着，通知常驻不走。
-        if (runStatus == null && activeRunCount == 0) {
-            val orphans = leases.releaseRunLeases()
-            if (orphans.isNotEmpty()) {
-                AndroidAgentLogger.warn("Released orphan run leases: ${orphans.joinToString(",")}")
-            }
-        }
+        // 已回退：此处曾按「runStatus==null && activeRunCount==0」回收 run:* 孤儿租约。
+        // 实测发现它会与 AgentRuntimeService 的正常释放竞争——run 尚未结束时若本服务
+        // 先收到一次刷新，租约被清 → closeOwnerIfIdle 判空 → stopSelf → 前台通知消失，
+        // 依赖该通知的原子岛也随之消失。租约语义交回 AgentRuntimeService 自己管理。
         if (leases.closeOwnerIfIdle(owner)) {
             foregroundActive = false
             mainHandler.removeCallbacks(capsuleHeartbeat)
