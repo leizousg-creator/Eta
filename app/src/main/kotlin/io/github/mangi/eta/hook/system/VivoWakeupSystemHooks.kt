@@ -64,53 +64,12 @@ internal object VivoWakeupSystemHooks {
         val logger = hooks.logger
 
         return hooks.install {
-            val activeServices = HookSupport.findClassOrNull(classLoader, ACTIVE_SERVICES_CLASS)
-            if (activeServices == null) {
-                missing("vivo.wakeup.ams", ACTIVE_SERVICES_CLASS, "未找到 ActiveServices，跳过唤醒拦截")
-                return@install
-            }
-            // 不要用 declaredMethods 枚举：那会解析类的全部方法签名，system_server 里
-            // 一旦碰到加载不了的 @hide 类型就抛 NoClassDefFoundError（Error，不属于
-            // Exception，HookRegistrar 不会捕获），整个 SystemServerHooks 安装被打断，
-            // 连前面已注册的 SuperX 白名单一起失效。
-            // 改为按已知签名逐个精确查找，HookSupport.findMethod 内部已 catch LinkageError。
-            val candidates = findStartServiceMethods(activeServices)
-            if (candidates.isEmpty()) {
-                missing(
-                    "vivo.wakeup.ams.method",
-                    "$ACTIVE_SERVICES_CLASS#startServiceLocked",
-                    "未找到 startServiceLocked 签名，跳过唤醒拦截"
-                )
-                return@install
-            }
-
-            candidates.forEachIndexed { index, method ->
-                runCatching {
-                    intercept(
-                        id = "vivo.wakeup.sys$index",
-                        executable = method,
-                        description = "ActiveServices#${method.name} 唤醒拦截"
-                    ) { chain ->
-                        val intent = chain.args.firstOrNull { it is Intent } as? Intent
-                        if (!shouldIntercept(intent)) {
-                            return@intercept chain.proceed()
-                        }
-                        val launched = launch(chain.getThisObject(), intent?.action, logger)
-                        // 启动成功才吞掉这次服务启动；失败就把控制权还回系统，
-                        // 宁可让小 V 正常响应，也不要出现「按键完全没反应」。
-                        if (launched) null else chain.proceed()
-                    }
-                }.onFailure {
-                    logger.warn("挂载唤醒拦截失败(${method.name}): ${it.javaClass.simpleName}")
-                }
-            }
-            logger.debug { "唤醒拦截已挂载: ${candidates.size} 个 startServiceLocked 签名" }
-
-            // 临时停用（实验）：确认「双指识屏跳 Eta」是否由它造成。
-            // 系统在 canCircleSearchAction=false 时会回落到 Jovi 语音，
-            // 而那条回落路径同样经过 startJoviVoiceByPowerKey，被这里截走。
-            // 先关掉验证因果，确认后再决定是窄化条件还是放弃侧键接管。
-            // hookJoviPowerKey(classLoader, logger)
+            // 只接管长按电源键。
+            //
+            // 组内原有的 startServiceLocked 拦截（白条上滑 / 圈搜 / 各类唤醒 action）
+            // 保持关闭：那条通道与 vivo 的「双指长按唤小V + 圈选识别」共用，
+            // 一旦启用会把系统手势截走，表现为识屏无响应。要恢复请连同实测一起评估。
+            hookJoviPowerKey(classLoader, logger)
         }
     }
 
