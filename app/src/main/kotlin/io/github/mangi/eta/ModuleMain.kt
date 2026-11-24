@@ -34,6 +34,12 @@ class ModuleMain : XposedModule() {
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         currentProcessName = param.processName
+        // 开机自检：用 WARN 级别（R8 不会裁 INFO/WARN）打印模块落地情况，
+        // 用于区分"模块没加载"与"加载了但 hook 没装上"。
+        logger.warn(
+            "模块加载: process=${param.processName} systemServer=${param.isSystemServer} " +
+                "framework=$frameworkName($frameworkVersionCode) api=$apiVersion"
+        )
         // 应急总开关先于一切判断：文件存在时本进程一个 hook 都不装，
         // 连 lifecycle 回调都不再需要，直接 detach。
         if (HookKillSwitch.isHookDisabled()) {
@@ -63,6 +69,7 @@ class ModuleMain : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        logger.warn("system_server hook 开始安装")
         recordInstallation(SystemServerHooks.install(this, logger, param.classLoader))
     }
 
