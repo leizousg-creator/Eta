@@ -23,11 +23,9 @@ internal object SystemServerHooks {
     ): HookInstallation {
         val groups: List<Pair<String, () -> HookInstallation>> = listOf(
             "AccessibilityProtection" to { AccessibilityProtectionHooks.install(module, logger, classLoader) },
-            // 停用 ContextualSearch：它改写 getContextualSearchPackageName() 指向
-            // com.google.android.googlequicksearchbox，而本机并无该应用、也没有任何
-            // ContextualSearchService，导致 QuickStep 判定 canCircleSearchAction=false，
-            // 双指长按在系统层直接无响应。
-            // "ContextualSearch" to { ContextualSearchHooks.install(module, logger, classLoader) },
+            // 恢复上游行为：曾因误判「识屏失效」而停用，真凶是 VivoWakeupRedirectHooks
+            // （小V 进程内拦 START_CIRCLE2SEARCH），与本组无关。
+            "ContextualSearch" to { ContextualSearchHooks.install(module, logger, classLoader) },
             // 停用 AssistantManager。它会重建 IVoiceInteractionManagerService 的 Binder stub，
             // 而 vivo 的双指长按（唤醒小V + 圈选识别）正是走语音交互服务——
             // 被它改坏后手势直接无响应。实测：kill switch 全停后识屏恢复。
