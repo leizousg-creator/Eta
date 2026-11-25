@@ -122,10 +122,14 @@ class ModuleMain : XposedModule() {
                     recordInstallation(
                         HookInstallation.combine(
                             group = "VivoCopilot",
-                            installations = listOf(
-                                // 唤醒重定向独立注册，不依赖 CopilotApp.onCreate 是否命中，
-                                // 避免入口 hook 失败时连侧键/白条重定向一起失效。
-                                VivoWakeupRedirectHooks.install(this, logger, param.classLoader),
+                            installations = listOfNotNull(
+                                // 停用 VivoWakeupRedirectHooks：它拦 WakeupService 的
+                                // START_CIRCLE2SEARCH 等 action 并拉起 Eta，而 vivo 的
+                                // 「双指长按圈选识别」用的正是同一个 action ——
+                                // 表现就是微信/图片页双指长按跳 Eta。
+                                // 早期 copilot 进程注入失败（maps=0）所以一直没生效，
+                                // 现在能注入后才暴露。
+                                // VivoWakeupRedirectHooks.install(this, logger, param.classLoader),
                                 VivoHooks.install(this, logger, param.classLoader)
                             )
                         )
