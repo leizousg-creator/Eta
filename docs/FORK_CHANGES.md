@@ -147,6 +147,47 @@ _V_IslandGestureManager: islandBean : IslandId:0|io.github.mangi.eta|1107|...|10
 用户在任何应用里都会被突然弹出的全屏窗口打断。这两个 action 已从重定向列表移除，语音入口交回系统原生；
 需要语音直达时应在设置侧做开关，并配 VAD（EtaRedirect 是在 `AudioRecord.read` 上做 RMS 判断），不要无条件转发。
 
+### 双指长按跳 Eta：真凶是 `VivoWakeupRedirectHooks`（2026-11-25）
+
+**现象**：在微信/图片页双指长按 → 跳 Eta；桌面上双指长按无反应。
+
+**证据（logcat）**：
+
+```
+START u0 {flg=0x14200000 cmp=io.github.mangi.eta/.ui.MainActivity}
+  from com.vivo.ai.copilot, uid 10260, pid 12256 (BAL_ALLOW_SAW_PERMISSION)
+```
+
+`0x14200000 = NEW_TASK | RESET_TASK_IF_NEEDED | CLEAR_TOP`，与 `hook/vivo/VivoWakeupRedirectHooks.launch()` 的 flag 组合逐字节一致；`from` 是小V 而不是桌面或 system_server。
+
+**因果链**：vivo 的「双指长按圈选识别」走 `WakeupService` 的 `START_CIRCLE2SEARCH` → 被 `VivoWakeupRedirectHooks`（挂在 copilot 进程）拦下 → 拉起 Eta。桌面没有这个 action，所以只在应用内复现。
+
+**为什么长期没发现**：该 hook 早期一直没执行过——copilot 进程注入失败（`/proc/<pid>/maps` 里模块条目为 0），我们据此认定"这条路不可用"。后来注入成功（`maps=2`），它才开始工作并暴露问题。**结论：`maps=0` 不能当成永久结论，注入状态会变。**
+
+**排查中走过的错误方向（供以后避坑）**：
+
+| 错误判断 | 实际 |
+|---|---|
+| 认为是 `ASSIST`/`ASSISTANT` filter 被识屏选中 | 删掉 filter 后现象不变；真凶在 copilot 进程 |
+| 认为是 `AssistantManager` 重建 VIS stub | 停用后现象不变 |
+| 认为是桌面图标误触 | 用户明确在空白处按的；那条 `START` 是另有其因 |
+| 认为是 `mCircleSearchEnabled` 缓存旧值 | 两个设置（`system_navigation_wake_up_switch`/`copilot_float_service_setting`）本来就正常 |
+| 认为是 `mixin`、launcher 注入问题 | launcher 侧代码只读设置，不启动 Eta |
+
+**方法论**：判断"谁启动了某界面"时，唯一可靠的是 `START u0` 里 `from <pkg>` 和 `realCallingUid`，不要从配置反推。
+
+### 长按电源键接管：不安全，永久停用
+
+`VivoInputPolicy.startJoviVoiceByPowerKey` 不只是唤起小V，它还**消费这次电源键长按**（内部置 `mPowerKeyHandledByJovi=true`）。hook 里返回 `null` 跳过整个方法后，事件未被消费，系统继续执行电源键长按的默认行为——实测**直接重启手机**。
+
+规则：hook 系统按键分支前，必须先分清目标是"入口"还是"入口 + 事件消费"，后者不能整段跳过。
+
+### 应急开关（kill switch）路径修正
+
+早期放在 `/data/data/io.github.mangi.eta/files/hook_off`（`drwx------`，仅 Eta 自身 uid 可进），而注入进程是 uid 1000/10072，`File.exists()` 恒 false，**该开关从未生效**，导致一轮排查误判。
+
+现在检查三处：`/data/system/eta_hook_off`、`/data/local/tmp/eta_hook_off`、`/sdcard/Download/eta_hook_off`，任一存在即停用全部 hook；日志会打印 `检测到 <路径>，跳过全部 hook`。
+
 ## 八、从 `eta增强 2.15`（`com.lcsauce.etaplugin`）收编的三个机制
 
 那个模块唯一目标就是注入 `io.github.mangi.eta`，改的是我们自己的提示词与门禁，功能内容不搬，只搬三个中立机制。
