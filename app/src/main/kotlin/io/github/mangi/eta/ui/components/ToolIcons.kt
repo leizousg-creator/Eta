@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.AdsClick
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChatBubble
@@ -78,6 +79,7 @@ internal fun iconForTool(toolId: String): ImageVector = when (toolId) {
     "open_app", "launch_app" -> Icons.Rounded.Apps
     "open_uri" -> Icons.AutoMirrored.Rounded.OpenInNew
     "browser_use", "网页浏览" -> Icons.Rounded.Language
+    "browser_devtools", "页面调试" -> Icons.Rounded.BugReport
     "web_search", "web_search_call", "网页搜索" -> Icons.Rounded.TravelExplore
     "browser_read" -> Icons.AutoMirrored.Rounded.MenuBook
     "fetch_url" -> Icons.AutoMirrored.Rounded.Article

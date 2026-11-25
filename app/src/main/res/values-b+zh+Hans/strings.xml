@@ -271,6 +271,7 @@
   <string name="tool_open_uri">用应用打开</string>
   <string name="tool_browser_use">浏览网页</string>
   <string name="tool_browser_devtools">页面调试</string>
+  <string name="tool_browser_devtools_description">读当前页面的 console 日志、网络请求与 DOM 结构，可按需执行 JavaScript 取回结果；凭据类内容一律不返回。</string>
   <string name="tool_terminal">终端</string>
   <string name="tool_terminal_job">异步命令</string>
   <string name="tool_terminal_job_description">启动、查看和停止后台命令；回复结束后继续运行，完成时通知</string>

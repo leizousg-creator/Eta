@@ -40,6 +40,7 @@ internal fun buildToolsState(context: Context): AgentToolsUiState =
                     ToolItemUi("web_search", context.getString(R.string.tool_web_search), context.getString(R.string.tool_web_search_description)),
                     ToolItemUi("fetch_url", context.getString(R.string.tool_fetch_url), context.getString(R.string.tool_fetch_url_description)),
                     ToolItemUi("browser_use", context.getString(R.string.tool_ui_agent_browser_a66bd5), context.getString(R.string.tool_ui_open_web_pages_off_screen_and_keep_a_takeover_br_72972e)),
+                    ToolItemUi("browser_devtools", context.getString(R.string.tool_browser_devtools), context.getString(R.string.tool_browser_devtools_description)),
                 ),
             ),
             ToolGroupUi(

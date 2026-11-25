@@ -290,6 +290,7 @@
   <string name="tool_open_uri">Open with app</string>
   <string name="tool_browser_use">Browse web</string>
   <string name="tool_browser_devtools">Page devtools</string>
+  <string name="tool_browser_devtools_description">Read the current page\'s console logs, network requests and DOM structure, and run JavaScript on demand. Credential values are never returned.</string>
   <string name="tool_terminal">Terminal</string>
   <string name="tool_terminal_job">异步命令</string>
   <string name="tool_terminal_job_description">启动、查看和停止后台命令；回复结束后继续运行，完成时通知</string>
