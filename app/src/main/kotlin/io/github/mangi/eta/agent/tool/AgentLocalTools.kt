@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
 import io.github.mangi.eta.EtaApp
@@ -127,6 +129,17 @@ internal class AgentLocalTools(
     @Volatile
     private var activeDisplayId: Int = Display.DEFAULT_DISPLAY
     private val browserSessionRef = lazy { browserSession ?: AgentBrowserSession() }
+
+    /**
+     * 命名标签页。
+     *
+     * 复用 [AgentBrowserSession] 的一页一实例模型，不去重构 WebView 管理：
+     * 每个标签名对应一个独立会话，工具通过 `tab` 参数寻址。空名字始终落到主会话，
+     * 因此不带参数的调用行为与引入标签前完全一致。
+     */
+    private val browserTabs = java.util.concurrent.ConcurrentHashMap<String, AgentBrowserSession>()
+
+    private val tabNamePattern = Regex("[A-Za-z0-9_-]{1,32}")
     private val deviceController = RootShellDeviceController(logger, screenshotExcludedPackages, rootAvailable)
     private val rootCommandExecutor = BoundedRootCommandExecutor(logger, rootAvailable = rootAvailable)
     private val structuredDeviceTools = AgentStructuredDeviceTools(
@@ -177,6 +190,11 @@ internal class AgentLocalTools(
         if (!closed.compareAndSet(false, true)) return
         publishedObservation.set(PublishedObservation())
         if (browserSessionRef.isInitialized()) browserSessionRef.value.interruptAgentAction(browserRunId)
+        // 标签页会话由本类自行持有，不归 BrowserSessionRegistry 管，退役时要一并打断并清空。
+        browserTabs.values.forEach { session ->
+            runCatching { session.interruptAgentAction(browserRunId) }
+        }
+        browserTabs.clear()
         webTools.close()
         terminalController.interruptAll()
         deviceController.close()
@@ -263,6 +281,7 @@ internal class AgentLocalTools(
                     textResult(openUri(args))
                 }
                 "browser_use" -> browserUse(args, toolCall.id)
+                "browser_devtools" -> browserDevtools(args, toolCall.id)
                 "web_search", "fetch_url" -> {
                     if (!browserToolsEnabled()) textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页搜索、读取与浏览器工具"))
                     else textResult(webTools.execute(toolCall.name, args))
@@ -466,11 +485,72 @@ internal class AgentLocalTools(
         errorResult(failure.code, failure.message ?: "记忆写入失败")
     }
 
+    private fun browserDevtools(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
+        if (!browserToolsEnabled()) {
+            return textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页浏览工具"))
+        }
+        // 会话侧统一走 "devtools" 这一个 action，复用它的锁、取消与 epoch 语义；
+        // 子动作名放在 devtoolsAction 里，避免为浏览器再造一条执行管线。
+        val mapped = JSONObject(args.toString()).apply {
+            put("devtoolsAction", args.optString("action"))
+            put("action", "devtools")
+        }
+        val result = sessionFor(args).execute(
+            context = context,
+            args = mapped,
+            runId = browserRunId,
+            toolCallId = toolCallId,
+            checkCancellation = { if (closed.get()) throw AgentRunCancelledException() },
+        )
+        return AgentModelClient.ToolResult(content = result.content)
+    }
+
+    /** 按 `tab` 参数选标签页；缺省落到主会话，行为与引入标签前一致。 */
+    private fun sessionFor(args: JSONObject): AgentBrowserSession {
+        val raw = args.optString("tab").trim()
+        if (raw.isBlank()) return browserSessionRef.value
+        if (!tabNamePattern.matches(raw)) {
+            throw InvalidToolArgumentException("tab 名只能用字母、数字、-、_，长度 1-32")
+        }
+        val key = raw.lowercase(Locale.ROOT)
+        return browserTabs.getOrPut(key) { AgentBrowserSession().also { it.initialize(context) } }
+    }
+
+    private fun listBrowserTabs(): AgentModelClient.ToolResult =
+        textResult(
+            JSONObject()
+                .put("ok", true)
+                .put("tool", "browser_use")
+                .put("action", "list_tabs")
+                .put(
+                    "tabs",
+                    JSONArray().also { array -> browserTabs.keys.sorted().forEach { array.put(it) } },
+                )
+                .put("main_tab", "默认标签（不带 tab 参数）始终存在")
+                .toString(),
+        )
+
+    private fun closeBrowserTab(args: JSONObject): AgentModelClient.ToolResult {
+        val key = args.optString("tab").trim().lowercase(Locale.ROOT)
+        if (key.isBlank()) {
+            return textResult(errorResult("INVALID_ARGUMENT", "close_tab 需要 tab 名；主标签不能关闭"))
+        }
+        val session = browserTabs.remove(key)
+            ?: return textResult(errorResult("TAB_NOT_FOUND", "没有名为 $key 的标签"))
+        Handler(Looper.getMainLooper()).post {
+            runCatching { session.releaseIdlePage(dispose = true) }
+        }
+        return textResult(JSONObject().put("ok", true).put("closed", key).toString())
+    }
+
     private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
         if (!browserToolsEnabled()) {
             return textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页浏览工具"))
         }
-        val result = browserSessionRef.value.execute(
+        val action = args.optString("action").trim().lowercase(Locale.ROOT)
+        if (action == "list_tabs") return listBrowserTabs()
+        if (action == "close_tab") return closeBrowserTab(args)
+        val result = sessionFor(args).execute(
             context = context,
             args = args,
             runId = browserRunId,

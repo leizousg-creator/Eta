@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.runtime
 
 import android.content.Context
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityKeeper
+import io.github.mangi.eta.agent.approval.ApprovalToolExecutor
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentConversationToolCatalog
@@ -243,7 +244,13 @@ internal class AgentRuntimeRunExecutor(
                 local = executor,
                 mcp = McpToolExecutor(mcpSnapshot),
             )
-            toolExecutor = routingExecutor
+            // 审批闸门：完全允许档位下退化为直通，不产生额外开销。
+            val approvalExecutor = ApprovalToolExecutor(
+                delegate = routingExecutor,
+                runId = request.runId,
+                isCancelled = { runController.isCancelled },
+            )
+            toolExecutor = approvalExecutor
             toolsBinding = runController.register(routingExecutor::close)
             timing.preparationFinished(skillContext.installedSkills.size)
             val historyTool = if (request.operation == AgentRuntimeWire.OP_CHAT) {
@@ -336,7 +343,7 @@ internal class AgentRuntimeRunExecutor(
                     } else {
                         characterMemoryTools.execute(call)
                     }
-                } else routingExecutor.execute(call).also { result ->
+                } else approvalExecutor.execute(call).also { result ->
                     if (call.name == "memory_write") {
                         runCatching { JSONObject(result.content) }.getOrNull()
                             ?.takeIf { it.optBoolean("ok") }

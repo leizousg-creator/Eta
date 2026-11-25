@@ -52,8 +52,9 @@ internal class VirtualScreenRoutingPolicy(initiallyRouted: Boolean = false) {
             "set_alarm",
             "set_timer",
             "browser_use",
+            "browser_devtools",
         )
-        val unavailableTools = setOf("open_system_panel", "set_alarm", "set_timer", "browser_use")
+        val unavailableTools = setOf("open_system_panel", "set_alarm", "set_timer", "browser_use", "browser_devtools")
         val coordinateTools = setOf(
             "observe_screen",
             "tap",

@@ -86,6 +86,8 @@ import io.github.mangi.eta.fork.backup.AutoBackup
 import io.github.mangi.eta.fork.command.DeviceCommandPolicy
 import io.github.mangi.eta.fork.overlay.TickerSettings
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.data.model.AgentApprovalMode
+import io.github.mangi.eta.data.repository.AgentApprovalRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
@@ -458,6 +460,21 @@ private fun SettingsPageContent(
                         summary = "填代理地址或粘贴单节点链接（http/socks5）；并调节模型请求的重试次数与退避",
                         icon = { CouiSettingsIcon(Icons.Rounded.Language, SettingsIconColors.Blue) },
                         onClick = { onNavigate(AppRoute.NetworkProxy) },
+                    )
+                    CouiIconDivider()
+                    // ETA-FORK: 操作审批档位（每次询问 / 自动审批 / 完全允许）
+                    val approvalModeState = remember {
+                        mutableStateOf(AgentApprovalRepository.stateFlow.value.mode)
+                    }
+                    CouiPreference(
+                        title = "操作审批",
+                        summary = approvalModeState.value.approvalSummary(),
+                        icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Blue) },
+                        onClick = {
+                            val next = approvalModeState.value.approvalNext()
+                            approvalModeState.value = next
+                            coroutineScope.launch { AgentApprovalRepository.setMode(next) }
+                        },
                     )
                     CouiIconDivider()
                     val planModeState = remember { mutableStateOf(AgentPlanMode.enabled) }
@@ -1837,3 +1854,16 @@ private fun SystemizerInstallResult.toToastMessage(context: Context): String =
             ?.let { "$message：$it" }
             ?: message
     }
+
+/** ETA-FORK: 审批档位的循环切换。默认「完全允许」，点一次收紧一档。 */
+private fun AgentApprovalMode.approvalNext(): AgentApprovalMode = when (this) {
+    AgentApprovalMode.FULL_ACCESS -> AgentApprovalMode.AUTO_APPROVE
+    AgentApprovalMode.AUTO_APPROVE -> AgentApprovalMode.ASK_EVERY
+    AgentApprovalMode.ASK_EVERY -> AgentApprovalMode.FULL_ACCESS
+}
+
+private fun AgentApprovalMode.approvalSummary(): String = when (this) {
+    AgentApprovalMode.FULL_ACCESS -> "当前：完全允许，不询问直接执行。点一下切到自动审批"
+    AgentApprovalMode.AUTO_APPROVE -> "当前：自动审批，只在命令、改设置、读个人信息时问你。点一下切到每次询问"
+    AgentApprovalMode.ASK_EVERY -> "当前：每次询问，每个工具调用都要你确认。点一下切回完全允许"
+}

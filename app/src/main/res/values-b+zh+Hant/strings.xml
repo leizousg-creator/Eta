@@ -258,6 +258,7 @@
   <string name="tool_launch_app">開啟應用程式</string>
   <string name="tool_open_uri">使用應用程式開啟</string>
   <string name="tool_browser_use">瀏覽網頁</string>
+  <string name="tool_browser_devtools">頁面偵錯</string>
   <string name="tool_terminal">終端機</string>
   <string name="tool_terminal_job">异步命令</string>
   <string name="tool_terminal_job_description">启动、查看和停止后台命令；回复结束后继续运行，完成时通知</string>
@@ -1401,4 +1402,8 @@
   <string name="assistant_overlay_settings_follow_primary_hint">預設繼承主對話目前使用的模型</string>
   <string name="assistant_overlay_settings_reasoning_follow_default">跟隨預設</string>
   <string name="assistant_overlay_settings_note">單獨設定電源鍵或系統助手喚起的全域對話浮窗所使用的模型與思考等級；日常輕量指令可選用回應更快的輕量模型並降低或關閉思考，主對話仍保留主力模型。</string>
+  <string name="approval_channel">操作確認</string>
+  <string name="approval_title">Eta 需要你確認</string>
+  <string name="approval_allow">允許</string>
+  <string name="approval_deny">拒絕</string>
 </resources>

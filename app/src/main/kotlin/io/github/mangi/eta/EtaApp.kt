@@ -17,6 +17,7 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import io.github.mangi.eta.data.repository.AgentRetryRepository
+import io.github.mangi.eta.data.repository.AgentApprovalRepository
 import io.github.mangi.eta.data.repository.NetworkProxyRepository
 import io.github.mangi.eta.data.repository.VirtualScreenSettingsRepository
 import io.github.mangi.eta.fork.backup.AutoBackup
@@ -63,6 +64,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         RootAccess.initialize(this)
         applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)
+        // ETA-FORK: 审批通知需要 Application 上下文
+        io.github.mangi.eta.agent.approval.AgentApprovalBroker.initialize(this)
         applicationScope.launch {
             AgentOutboundRepository.flow().collect { settings -> AgentOutboundRepository.publish(settings) }
         }
@@ -71,6 +74,10 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         applicationScope.launch {
             AgentRetryRepository.flow().collect { settings -> AgentRetryRepository.publish(settings) }
+        }
+        // ETA-FORK: 审批档位快照，供工具执行线程同步读取
+        applicationScope.launch {
+            AgentApprovalRepository.flow().collect { settings -> AgentApprovalRepository.publish(settings) }
         }
         applicationScope.launch {
             VirtualScreenSettingsRepository.flow().collect { settings -> VirtualScreenSettingsRepository.publish(settings) }

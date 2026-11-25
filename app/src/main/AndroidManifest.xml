@@ -154,6 +154,11 @@
                 android:value="User-initiated interactive terminals, local Linux services and device automation tasks" />
         </service>
 
+        <!-- ETA-FORK: 审批通知的「允许 / 拒绝」。非导出，只接受本应用 PendingIntent 投递。 -->
+        <receiver
+            android:name=".agent.approval.AgentApprovalReplyReceiver"
+            android:exported="false" />
+
         <service
             android:name=".agent.accessibility.AgentAccessibilityService"
             android:exported="true"

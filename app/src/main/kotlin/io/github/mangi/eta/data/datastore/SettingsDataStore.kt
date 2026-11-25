@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.mangi.eta.data.model.AgentApprovalSettings
 import io.github.mangi.eta.data.model.AgentRetrySettings
 import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
@@ -42,6 +43,7 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_SETTINGS = stringPreferencesKey("virtual_screen_settings_v1")
     private val NETWORK_PROXY_SETTINGS = stringPreferencesKey("network_proxy_settings_v1")
     private val AGENT_RETRY_SETTINGS = stringPreferencesKey("agent_retry_settings_v1")
+    private val AGENT_APPROVAL_SETTINGS = stringPreferencesKey("agent_approval_settings_v1")
     private val CONVERSATION_TITLE_SETTINGS = stringPreferencesKey("conversation_title_settings_v1")
     private val ASSISTANT_OVERLAY_SETTINGS = stringPreferencesKey("assistant_overlay_settings_v1")
     private val speechJson = Json {
@@ -123,6 +125,26 @@ internal object SettingsDataStore {
     suspend fun setAgentRetry(settings: AgentRetrySettings) {
         ensureInitialized()
         dataStore.edit { it[AGENT_RETRY_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
+    }
+
+    fun agentApprovalFlow(): Flow<AgentApprovalSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[AGENT_APPROVAL_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<AgentApprovalSettings>(raw) }.getOrNull()
+                }?.normalized() ?: AgentApprovalSettings()
+            }
+    }
+
+    suspend fun agentApproval(): AgentApprovalSettings = agentApprovalFlow().first()
+
+    suspend fun setAgentApproval(settings: AgentApprovalSettings) {
+        ensureInitialized()
+        dataStore.edit { it[AGENT_APPROVAL_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
     }
 
     fun subagentSettingsFlow(): Flow<SubagentSettings> {

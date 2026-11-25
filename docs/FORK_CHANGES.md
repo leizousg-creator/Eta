@@ -18,6 +18,9 @@ git log --oneline upstream-base..HEAD        # 我们的提交
 | 重试策略 | `agent/model/AgentRetryPolicy.kt`、`data/model/AgentRetrySettings.kt`、`data/repository/AgentRetryRepository.kt` | 错误分类 + 指数退避 |
 | PromptKit 提示词包 | `data/promptkit/*`、`ui/app/AgentPromptKitStore.kt`、`ui/model/PromptKitUiState.kt`、`ui/screens/promptkit/*` | 多版本附加提示词、技能包同步、触发关键词 |
 | 内置角色卡 | `app/src/main/assets/builtin_characters/*.json` | 6 张卡随包发布 |
+| 操作审批 | `agent/approval/*`、`data/model/AgentApprovalSettings.kt`、`data/repository/AgentApprovalRepository.kt` | 三档审批：完全允许 / 自动审批 / 每次询问；通知栏可直接允许或拒绝；开关在设置页「操作审批」，点击循环切换 |
+| 页面调试控制台 | `agent/browser/BrowserDevtoolsScripts.kt`、`AgentBrowserSession.kt`（`devtools` action）、`AgentBrowserToolCatalog`（`browser_devtools`） | console / network / dom / query / eval 五个维度；注入 `__etaDevtools`，回读前统一脱敏；eval 在自动审批档也要确认 |
+| 浏览器多标签 | `agent/tool/AgentLocalTools.kt`（`browserTabs`、`sessionFor`）、`AgentBrowserToolCatalog`（`tab` 参数、`list_tabs` / `close_tab`） | 命名标签复用 `AgentBrowserSession` 一页一实例模型，不动 WebView 管理；缺省标签保持原行为 |
 | 直投桥接 | `fork/virtualdisplay/HostSurfaceBridge.kt` | host surface 直投，Controller 只留转发 |
 | 技能索引缓存 | `data/repository/AgentSkillsStore.kt`（复用缓存部分） | 进技能页不重扫 116 个目录 |
 

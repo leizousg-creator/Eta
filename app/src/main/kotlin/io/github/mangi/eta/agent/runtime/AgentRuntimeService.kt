@@ -41,6 +41,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.itos.coui.effect.LocalCouiContourGlowEnabled
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
+import io.github.mangi.eta.agent.approval.AgentApprovalBroker
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
@@ -847,6 +848,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun cancelRun(runId: String) {
         if (runId.isBlank()) return
+        // ETA-FORK: 停止运行时作废它名下的审批请求，避免工具线程空等满超时
+        AgentApprovalBroker.cancelRun(runId)
         val run = runs.get(runId) ?: return
         if (run.preparing) {
             run.session.controller.cancel()

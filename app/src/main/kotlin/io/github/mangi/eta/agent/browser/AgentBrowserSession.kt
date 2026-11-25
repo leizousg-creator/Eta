@@ -158,6 +158,10 @@ internal class AgentBrowserSession(
     @Volatile
     private var closed = false
 
+    /** 页面侧调试运行时是否已注入。首次调用 browser_devtools 时置真，之后每次导航补注入。 */
+    @Volatile
+    private var devtoolsInstalled = false
+
     fun initialize(context: Context) {
         if (appContext == null) {
             synchronized(this) {
@@ -387,6 +391,7 @@ internal class AgentBrowserSession(
                         "go_forward" -> historyNavigation(action, backwards = false)
                         "reload" -> reload()
                         "wait_for_selector" -> waitForSelector(args)
+                        "devtools" -> devtools(args)
                         else -> throw BrowserFailure("INVALID_ACTION", "浏览器 action 无效")
                     }
                 }.getOrElse { throwable -> failureResult(action, throwable) }
@@ -608,6 +613,132 @@ internal class AgentBrowserSession(
             mergeValue(baseEnvelope("wait_for_selector", false, "not_found"), state)
                 .put("code", "ELEMENT_NOT_FOUND")
                 .put("message", "等待的网页元素未出现")
+        )
+    }
+
+    /**
+     * 页面调试控制台。
+     *
+     * 首次调用注入 [BrowserDevtoolsScripts.install]，之后每次导航由 onPageFinished 补注入，
+     * 保证 console 与网络缓冲跨页面连续。注入失败（非 http(s) 页面、页面禁止执行脚本）时
+     * 明确报错，不静默返回空结果——空结果会让模型误判「页面没有日志」。
+     *
+     * 表单值、cookie、localStorage 一律不回读，这是与 `request`/凭据相关的硬边界。
+     */
+    private fun devtools(args: JSONObject): BrowserToolResult {
+        val view = requirePage()
+        val devtoolsAction = args.optString("devtoolsAction").trim().lowercase(Locale.ROOT)
+        if (devtoolsAction.isBlank()) {
+            return errorResult("devtools", "INVALID_ARGUMENT", "缺少 devtoolsAction")
+        }
+        if (!ensureDevtoolsReady(view)) {
+            return errorResult(
+                "devtools",
+                "DEVTOOLS_UNAVAILABLE",
+                "当前页面无法注入调试脚本，可能是非 http(s) 页面或页面禁止执行脚本；先 navigate 到目标网页再试",
+            )
+        }
+        return when (devtoolsAction) {
+            "console" -> {
+                val limit = args.optInt("limit", 50).coerceIn(1, 200)
+                val sinceId = args.optInt("since_id", 0).coerceAtLeast(0)
+                toolResult(
+                    mergeValue(
+                        baseEnvelope("devtools", true, "ok").put("devtools_action", "console"),
+                        evaluateObject(view, BrowserDevtoolsScripts.consoleRead(limit, sinceId)),
+                    )
+                )
+            }
+
+            "network" -> {
+                val limit = args.optInt("limit", 50).coerceIn(1, 200)
+                val sinceId = args.optInt("since_id", 0).coerceAtLeast(0)
+                toolResult(
+                    mergeValue(
+                        baseEnvelope("devtools", true, "ok").put("devtools_action", "network"),
+                        evaluateObject(view, BrowserDevtoolsScripts.networkRead(limit, sinceId)),
+                    )
+                )
+            }
+
+            "dom" -> {
+                val maxNodes = args.optInt("max_nodes", 200).coerceIn(1, 600)
+                toolResult(
+                    mergeValue(
+                        baseEnvelope("devtools", true, "ok").put("devtools_action", "dom"),
+                        evaluateObject(view, BrowserDevtoolsScripts.domSnapshot(validatedSelector(args, required = false), maxNodes)),
+                    )
+                )
+            }
+
+            "query" -> {
+                val limit = args.optInt("limit", 60).coerceIn(1, 300)
+                toolResult(
+                    mergeValue(
+                        baseEnvelope("devtools", true, "ok").put("devtools_action", "query"),
+                        evaluateObject(view, BrowserDevtoolsScripts.queryAll(validatedSelector(args, required = false), limit)),
+                    )
+                )
+            }
+
+            "eval" -> devtoolsEval(view, args)
+
+            "probe" -> toolResult(
+                mergeValue(
+                    baseEnvelope("devtools", true, "ok").put("devtools_action", "probe"),
+                    evaluateObject(view, BrowserDevtoolsScripts.probe()),
+                )
+            )
+
+            else -> errorResult("devtools", "INVALID_ARGUMENT", "不支持的 devtools action：$devtoolsAction")
+        }
+    }
+
+    private fun ensureDevtoolsReady(view: WebView): Boolean {
+        if (devtoolsInstalled) return true
+        val marker = runCatching { evaluateObject(view, BrowserDevtoolsScripts.install()).optString("value") }
+            .getOrDefault("")
+        devtoolsInstalled = marker == "installed" || marker == "already"
+        return devtoolsInstalled
+    }
+
+    /**
+     * 执行脚本并等结果。
+     *
+     * WebView 的 `evaluateJavascript` 不会等待 Promise，所以先启动一次异步执行把结果写进
+     * 页面侧的 box，再轮询取回；这样 `await fetch(...)` 这类脚本也能拿到终值。
+     */
+    private fun devtoolsEval(view: WebView, args: JSONObject): BrowserToolResult {
+        val code = args.optString("code")
+        if (code.isBlank()) {
+            return errorResult("devtools", "INVALID_ARGUMENT", "eval 需要 code")
+        }
+        if (code.length > MAX_EVAL_CHARS) {
+            return errorResult("devtools", "EVAL_TOO_LONG", "脚本超过 $MAX_EVAL_CHARS 字符，请拆小后再执行")
+        }
+        evaluateObject(view, BrowserDevtoolsScripts.evalStart(code, EVAL_GUARD_MS))
+        val deadline = System.currentTimeMillis() + EVAL_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            throwIfInterrupted()
+            val box = evaluateObject(view, BrowserDevtoolsScripts.evalPoll())
+            if (!box.optBoolean("started")) {
+                return errorResult("devtools", "EVAL_NOT_STARTED", "脚本执行上下文已丢失，请重新 navigate")
+            }
+            if (box.optBoolean("done")) {
+                val ok = box.optBoolean("ok")
+                return toolResult(
+                    mergeValue(
+                        baseEnvelope("devtools", ok, if (ok) "ok" else "error").put("devtools_action", "eval"),
+                        box,
+                    )
+                )
+            }
+            Thread.sleep(EVAL_POLL_INTERVAL_MS)
+        }
+        return errorResult(
+            "devtools",
+            "EVAL_TIMEOUT",
+            "脚本在 ${EVAL_TIMEOUT_MS}ms 内没有结束；如果它返回的是不会 resolve 的 Promise，请改成同步写法",
         )
     }
 
@@ -1043,6 +1174,10 @@ internal class AgentBrowserSession(
             currentProgress = 100
             publishSnapshotOnMain()
             currentLoadWaiter?.complete(LoadOutcome(true, "OK", ""))
+            // 已启用调试控制台时，新页面必须补挂运行时；否则一次导航就把 console/network 缓冲断掉。
+            if (this@AgentBrowserSession.devtoolsInstalled) {
+                runCatching { view.evaluateJavascript(BrowserDevtoolsScripts.install(), null) }
+            }
         }
 
         override fun onPageCommitVisible(view: WebView, url: String?) {
@@ -1150,6 +1285,11 @@ internal class AgentBrowserSession(
 
     private companion object {
         private const val TOOL_NAME = "browser_use"
+        private const val DEVTOOLS_TOOL_NAME = "browser_devtools"
+        private const val EVAL_GUARD_MS = 6_000
+        private const val EVAL_TIMEOUT_MS = 15_000L
+        private const val EVAL_POLL_INTERVAL_MS = 150L
+        private const val MAX_EVAL_CHARS = 20_000
         private const val DEFAULT_TEXT_CHARS = 8_000
         private const val MAX_TEXT_CHARS = 12_000
         private const val NAVIGATION_TIMEOUT_MS = 25_000L
@@ -1174,6 +1314,7 @@ internal class AgentBrowserSession(
             "go_forward",
             "reload",
             "wait_for_selector",
+            "devtools",
         )
     }
 
