@@ -1553,4 +1553,5 @@
   <string name="approval_title">Eta needs your confirmation</string>
   <string name="approval_allow">Allow</string>
   <string name="approval_deny">Deny</string>
+  <string name="tool_browser_devtools">Page devtools</string>
 </resources>

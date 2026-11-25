@@ -1534,4 +1534,5 @@
   <string name="approval_title">Eta 需要你确认</string>
   <string name="approval_allow">允许</string>
   <string name="approval_deny">拒绝</string>
+  <string name="tool_browser_devtools">页面调试</string>
 </resources>

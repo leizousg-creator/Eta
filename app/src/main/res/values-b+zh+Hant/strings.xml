@@ -1431,4 +1431,5 @@
   <string name="approval_title">Eta 需要你確認</string>
   <string name="approval_allow">允許</string>
   <string name="approval_deny">拒絕</string>
+  <string name="tool_browser_devtools">頁面偵錯</string>
 </resources>

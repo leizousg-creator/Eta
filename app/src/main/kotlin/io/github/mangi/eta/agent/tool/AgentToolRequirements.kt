@@ -18,6 +18,8 @@ internal data class LocalToolRequirement(
     val accessibility: Boolean = false,
     val systemAccess: ToolSystemAccess = ToolSystemAccess.NONE,
     val colorOs: Boolean = false,
+    /** vivo 设备上由蓝心小V 的个人数据接口提供同一能力。 */
+    val vivoAlternative: Boolean = false,
     val gui: Boolean = false,
     val freshObservation: Boolean = false,
 )
@@ -32,7 +34,7 @@ internal object AgentToolRequirements {
         }
         register(
             RootRequirement.NONE,
-            "get_current_context", "search_apps", "launch_app", "present_to_user", "open_uri", "browser_use", "web_search", "fetch_url",
+            "get_current_context", "search_apps", "launch_app", "present_to_user", "open_uri", "browser_use", "browser_devtools", "web_search", "fetch_url",
             "observe_screen", "release_gui", "tap", "tap_area", "tap_element", "long_press",
             "long_press_element", "swipe", "scroll", "scroll_element", "type_text", "input_text",
             "replace_text", "clear_text", "set_clipboard", "get_clipboard", "paste_text",
@@ -97,6 +99,9 @@ internal object AgentToolRequirements {
             "search_notes", "search_coloros_recordings", "search_recording_summaries",
             "search_system_memories", "search_saved_places",
         ).forEach { name -> put(name, getValue(name).copy(colorOs = true)) }
+        io.github.mangi.eta.agent.context.VivoPersonalContextQuery.tools.forEach { name ->
+            put(name, getValue(name).copy(vivoAlternative = true))
+        }
         // 系统记忆优先使用 Hook 桥接，框架失联时仍有独立的 Root 快照来源。
         listOf("search_system_memories", "search_saved_places", "search_personal_orders").forEach { name ->
             put(name, getValue(name).copy(lsposedRequirement = LsposedRequirement.OPTIONAL))
