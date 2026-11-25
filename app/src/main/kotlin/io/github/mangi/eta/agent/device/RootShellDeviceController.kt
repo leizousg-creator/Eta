@@ -186,7 +186,7 @@ internal class RootShellDeviceController(
         if (isVirtual) {
             val topPkg = accessibilityObservation?.window?.packageName
             if (!topPkg.isNullOrBlank()) {
-                io.github.mangi.eta.ui.screens.characters.resolve()?.let { ctx ->
+                io.github.mangi.eta.agent.runtime.AgentAppContext.resolve()?.let { ctx ->
                     VirtualDisplayController.onTopPackageObserved(ctx, topPkg, rootAvailable)
                 }
             }

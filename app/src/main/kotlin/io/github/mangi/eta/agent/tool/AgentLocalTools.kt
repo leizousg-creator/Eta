@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.tool
 
+import org.json.JSONArray
 import io.github.mangi.eta.agent.model.AgentPlanMode
 import android.os.Looper
 import android.os.Handler
@@ -576,18 +577,6 @@ internal class AgentLocalTools(
         return textResult(JSONObject().put("ok", true).put("closed", key).toString())
     }
 
-    private fun closeBrowserTab(args: JSONObject): AgentModelClient.ToolResult {
-        val key = args.optString("tab").trim().lowercase(Locale.ROOT)
-        if (key.isBlank()) {
-            return textResult(errorResult("INVALID_ARGUMENT", "close_tab 需要 tab 名；主标签不能关闭"))
-        }
-        val session = browserTabs.remove(key)
-            ?: return textResult(errorResult("TAB_NOT_FOUND", "没有名为 $key 的标签"))
-        Handler(Looper.getMainLooper()).post {
-            runCatching { session.releaseIdlePage(dispose = true) }
-        }
-        return textResult(JSONObject().put("ok", true).put("closed", key).toString())
-    }
 
     private fun checkRoot(): String {
         val probe = RootAccess.request(requireContext())
