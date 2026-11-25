@@ -26,6 +26,7 @@ import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
 import io.github.mangi.eta.agent.subagent.SubagentExecutor
 import io.github.mangi.eta.agent.mcp.McpRunSnapshot
 import io.github.mangi.eta.agent.mcp.McpToolExecutor
+import io.github.mangi.eta.agent.approval.ApprovalToolExecutor
 import io.github.mangi.eta.agent.mcp.RoutingToolExecutor
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
@@ -279,7 +280,13 @@ internal class AgentRuntimeRunExecutor(
                 local = executor,
                 mcp = McpToolExecutor(mcpSnapshot),
             )
-            toolExecutor = routingExecutor
+            // ETA-FORK: 审批闸门。完全允许档位下退化为直通，不产生额外开销。
+            val approvalExecutor = ApprovalToolExecutor(
+                delegate = routingExecutor,
+                runId = request.runId,
+                isCancelled = { runController.isCancelled },
+            )
+            toolExecutor = approvalExecutor
             toolsBinding = runController.register(routingExecutor::close)
             timing.preparationFinished(skillContext.installedSkills.size)
             // 手动压缩复用主会话工具目录以保持 Provider 前缀缓存，必须暴露与 OP_CHAT 一致的 conversation_history。
@@ -432,7 +439,7 @@ internal class AgentRuntimeRunExecutor(
                     } else {
                         characterMemoryTools.execute(call)
                     }
-                } else routingExecutor.execute(call).also { result ->
+                } else approvalExecutor.execute(call).also { result ->
                     if (call.name == "memory_write") {
                         runCatching { JSONObject(result.content) }.getOrNull()
                             ?.takeIf { it.optBoolean("ok") }

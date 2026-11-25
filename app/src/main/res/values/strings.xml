@@ -1549,4 +1549,8 @@
   <string name="scheduled_notification_gui_ready_title">Ready to run: %1$s</string>
   <string name="scheduled_action_run_now">Run now</string>
   <string name="scheduled_action_stop">Stop</string>
+  <string name="approval_channel">Operation approval</string>
+  <string name="approval_title">Eta needs your confirmation</string>
+  <string name="approval_allow">Allow</string>
+  <string name="approval_deny">Deny</string>
 </resources>

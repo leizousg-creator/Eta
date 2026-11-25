@@ -1530,4 +1530,8 @@
   <string name="scheduled_notification_gui_ready_title">定时任务就绪：%1$s</string>
   <string name="scheduled_action_run_now">立即试跑</string>
   <string name="scheduled_action_stop">停止运行</string>
+  <string name="approval_channel">操作确认</string>
+  <string name="approval_title">Eta 需要你确认</string>
+  <string name="approval_allow">允许</string>
+  <string name="approval_deny">拒绝</string>
 </resources>

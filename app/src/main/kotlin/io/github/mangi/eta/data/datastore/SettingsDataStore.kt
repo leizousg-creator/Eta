@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.mangi.eta.data.model.AgentApprovalSettings
 import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
@@ -375,4 +376,27 @@ internal object SettingsDataStore {
         this[APPEARANCE_SWIPE_DISMISS_ENABLED] = settings.swipeDismissEnabled
         this[APPEARANCE_PREDICTIVE_BACK_ENABLED] = settings.predictiveBackEnabled
     }
+    private val AGENT_APPROVAL_SETTINGS = stringPreferencesKey("agent_approval_settings_v1")
+
+    // ETA-FORK: 操作审批档位（完全允许 / 自动审批 / 每次询问）
+    fun agentApprovalFlow(): Flow<AgentApprovalSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[AGENT_APPROVAL_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<AgentApprovalSettings>(raw) }.getOrNull()
+                }?.normalized() ?: AgentApprovalSettings()
+            }
+    }
+
+    suspend fun agentApproval(): AgentApprovalSettings = agentApprovalFlow().first()
+
+    suspend fun setAgentApproval(settings: AgentApprovalSettings) {
+        ensureInitialized()
+        dataStore.edit { it[AGENT_APPROVAL_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
+    }
+
 }

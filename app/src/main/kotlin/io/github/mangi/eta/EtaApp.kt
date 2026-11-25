@@ -6,7 +6,14 @@ import android.os.Handler
 import android.os.Looper
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
+import io.github.mangi.eta.agent.approval.AgentApprovalBroker
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
+import io.github.mangi.eta.data.repository.AgentApprovalRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AppStrings
 import java.util.concurrent.CopyOnWriteArraySet
@@ -23,6 +30,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
     internal var container: AppContainer? = null
         private set
 
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     interface ServiceStateListener {
         fun onServiceStateChanged(service: XposedService?)
     }
@@ -35,6 +44,11 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
             return
         }
         container = AppContainer(this).also(AppContainer::initialize)
+        // ETA-FORK: 审批需要 Application 上下文，档位快照供工具执行线程同步读取
+        AgentApprovalBroker.initialize(this)
+        applicationScope.launch {
+            AgentApprovalRepository.flow().collect { settings -> AgentApprovalRepository.publish(settings) }
+        }
         XposedServiceHelper.registerListener(this)
     }
 

@@ -195,7 +195,12 @@
             android:grantUriPermissions="false"
             android:permission="android.permission.MANAGE_ACCESSIBILITY" />
 
+                <!-- ETA-FORK: 审批通知的允许/拒绝，非导出，只接受本应用 PendingIntent -->
         <receiver
+            android:name=".agent.approval.AgentApprovalReplyReceiver"
+            android:exported="false" />
+
+<receiver
             android:name=".agent.scheduler.ScheduledTaskAlarmReceiver"
             android:exported="false" />
 

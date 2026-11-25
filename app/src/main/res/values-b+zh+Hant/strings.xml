@@ -1427,4 +1427,8 @@
   <string name="scheduled_notification_gui_ready_title">排程任務就緒：%1$s</string>
   <string name="scheduled_action_run_now">立即試跑</string>
   <string name="scheduled_action_stop">停止執行</string>
+  <string name="approval_channel">操作確認</string>
+  <string name="approval_title">Eta 需要你確認</string>
+  <string name="approval_allow">允許</string>
+  <string name="approval_deny">拒絕</string>
 </resources>

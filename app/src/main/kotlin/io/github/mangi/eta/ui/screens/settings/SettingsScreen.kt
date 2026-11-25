@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.screens.settings
 
+import io.github.mangi.eta.data.model.AgentApprovalMode
+import io.github.mangi.eta.data.repository.AgentApprovalRepository
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -510,6 +512,32 @@ private fun SettingsPageContent(
                     )
                 }
             }
+        }
+
+        item(key = "section_approval") {
+            // ETA-FORK: 操作审批档位，点一下循环切换
+            val approvalScope = rememberCoroutineScope()
+            val approvalMode = remember { mutableStateOf(AgentApprovalRepository.stateFlow.value.mode) }
+            BasicComponent(
+                title = "操作审批",
+                summary = when (approvalMode.value) {
+                    AgentApprovalMode.FULL_ACCESS -> "完全允许：不询问，直接执行。点一下切到自动审批"
+                    AgentApprovalMode.AUTO_APPROVE -> "自动审批：只在命令、改设置、读个人信息时问你。点一下切到每次询问"
+                    AgentApprovalMode.ASK_EVERY -> "每次询问：每个工具调用都要你确认。点一下切回完全允许"
+                },
+                startAction = {
+                    SettingsIcon(icon = Icons.Rounded.Security)
+                },
+                onClick = {
+                    val next = when (approvalMode.value) {
+                        AgentApprovalMode.FULL_ACCESS -> AgentApprovalMode.AUTO_APPROVE
+                        AgentApprovalMode.AUTO_APPROVE -> AgentApprovalMode.ASK_EVERY
+                        AgentApprovalMode.ASK_EVERY -> AgentApprovalMode.FULL_ACCESS
+                    }
+                    approvalMode.value = next
+                    approvalScope.launch { AgentApprovalRepository.setMode(next) }
+                },
+            )
         }
 
         item(key = "section_conversation_memory_title") {
