@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.model.catalog.AgentPhoneToolCatalog
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**

@@ -1,14 +1,9 @@
 package io.github.mangi.eta.agent.tool
 
-import android.content.Context
-import android.graphics.Rect
-import android.content.Intent
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Handler
+import io.github.mangi.eta.agent.model.AgentPlanMode
 import android.os.Looper
-import android.os.SystemClock
+import android.os.Handler
+import android.content.Context
 import android.view.Display
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
@@ -19,13 +14,6 @@ import io.github.mangi.eta.agent.device.LocalNetworkPermission
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.media.ModelImageBudget
-import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
-import io.github.mangi.eta.agent.model.provider.AgentModelClient
-import io.github.mangi.eta.agent.model.AgentPlanMode
-import io.github.mangi.eta.agent.model.provider.AgentHttpClient
-import io.github.mangi.eta.agent.device.LocalNetworkPermission
-import io.github.mangi.eta.agent.web.AgentWebTools
-import io.github.mangi.eta.agent.web.WebHttpTransport
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
 import io.github.mangi.eta.agent.model.catalog.AgentFileToolCatalog
@@ -110,8 +98,6 @@ internal class AgentLocalTools(
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
-    /** 技能自写服务：供 skills_manage 使用；为空时该工具回报不可用。 */
-    private val skillAuthoringService: io.github.mangi.eta.agent.skill.SkillAuthoringService? = null,
     private val virtualDisplayEnabled: () -> Boolean = {
         Prefs.isEnabled(Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED)
     },
@@ -131,16 +117,10 @@ internal class AgentLocalTools(
 
     private val browserSessionRef = lazy { browserSession ?: AgentBrowserSession() }
 
-    /**
-     * 命名标签页。
-     *
-     * 复用 [AgentBrowserSession] 的一页一实例模型，不去重构 WebView 管理：
-     * 每个标签名对应一个独立会话，工具通过 `tab` 参数寻址。空名字始终落到主会话，
-     * 因此不带参数的调用行为与引入标签前完全一致。
-     */
-    private val browserTabs = java.util.concurrent.ConcurrentHashMap<String, AgentBrowserSession>()
-
     private val tabNamePattern = Regex("[A-Za-z0-9_-]{1,32}")
+
+    /** ETA-FORK: 命名标签页，缺省名走主会话，行为与引入标签前一致。 */
+    private val browserTabs = java.util.concurrent.ConcurrentHashMap<String, AgentBrowserSession>()
     private val deviceController = RootShellDeviceController(logger, screenshotExcludedPackages, rootAvailable)
     private val rootCommandExecutor = BoundedRootCommandExecutor(logger, rootAvailable = rootAvailable)
     private val structuredDeviceTools = AgentStructuredDeviceTools(
@@ -213,10 +193,8 @@ internal class AgentLocalTools(
         if (!closed.compareAndSet(false, true)) return
         guiTools.clearObservation()
         if (browserSessionRef.isInitialized()) browserSessionRef.value.interruptAgentAction(browserRunId)
-        // 标签页会话由本类自行持有，不归 BrowserSessionRegistry 管，退役时要一并打断并清空。
-        browserTabs.values.forEach { session ->
-            runCatching { session.interruptAgentAction(browserRunId) }
-        }
+        // ETA-FORK: 标签页会话由本类持有，退役时一并打断并清空
+        browserTabs.values.forEach { session -> runCatching { session.interruptAgentAction(browserRunId) } }
         browserTabs.clear()
         webTools.close()
         terminalController.interruptAll()
@@ -255,9 +233,9 @@ internal class AgentLocalTools(
                 )
             }
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
+            // ETA-FORK: 计划模式在工具执行入口硬拦截写操作
             if (AgentPlanMode.enabled && !AgentPlanMode.allowsTool(toolCall.name)) {
                 return@runCatching textResult(
-                    // ETA-FORK: 计划模式在工具执行入口硬拦截写操作
                     errorResult("PLAN_MODE_READ_ONLY", AgentPlanMode.blockedMessage(toolCall.name)),
                 )
             }
@@ -510,6 +488,37 @@ internal class AgentLocalTools(
         errorResult(failure.code, failure.message ?: "记忆写入失败")
     }
 
+    private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
+        if (!browserToolsEnabled()) {
+            return textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页浏览工具"))
+        }
+        val action = args.optString("action").trim().lowercase(java.util.Locale.ROOT)
+        if (action == "list_tabs") return listBrowserTabs()
+        if (action == "close_tab") return closeBrowserTab(args)
+        val result = sessionFor(args).execute(
+            context = context,
+            args = args,
+            runId = browserRunId,
+            toolCallId = toolCallId,
+            checkCancellation = { if (closed.get()) throw AgentRunCancelledException() },
+        )
+        return AgentModelClient.ToolResult(
+            content = result.content,
+            images = result.images.map { image ->
+                AgentModelClient.ModelImage(
+                    reference = image.dataUrl,
+                    mimeType = image.mimeType,
+                    bytes = image.bytes,
+                    width = image.width,
+                    height = image.height,
+                    source = "agent_browser",
+                    preserveOriginal = true,
+                )
+            },
+        )
+    }
+
+
     private fun browserDevtools(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
         if (!browserToolsEnabled()) {
             return textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页浏览工具"))
@@ -530,7 +539,6 @@ internal class AgentLocalTools(
         return AgentModelClient.ToolResult(content = result.content)
     }
 
-    /** 按 `tab` 参数选标签页；缺省落到主会话，行为与引入标签前一致。 */
     private fun sessionFor(args: JSONObject): AgentBrowserSession {
         val raw = args.optString("tab").trim()
         if (raw.isBlank()) return browserSessionRef.value
@@ -568,679 +576,17 @@ internal class AgentLocalTools(
         return textResult(JSONObject().put("ok", true).put("closed", key).toString())
     }
 
-    private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
-        if (!browserToolsEnabled()) {
-            return textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页浏览工具"))
+    private fun closeBrowserTab(args: JSONObject): AgentModelClient.ToolResult {
+        val key = args.optString("tab").trim().lowercase(Locale.ROOT)
+        if (key.isBlank()) {
+            return textResult(errorResult("INVALID_ARGUMENT", "close_tab 需要 tab 名；主标签不能关闭"))
         }
-        val action = args.optString("action").trim().lowercase(Locale.ROOT)
-        if (action == "list_tabs") return listBrowserTabs()
-        if (action == "close_tab") return closeBrowserTab(args)
-        val result = sessionFor(args).execute(
-            context = context,
-            args = args,
-            runId = browserRunId,
-            toolCallId = toolCallId,
-            checkCancellation = { if (closed.get()) throw AgentRunCancelledException() },
-        )
-        return AgentModelClient.ToolResult(
-            content = result.content,
-            images = result.images.map { image ->
-                AgentModelClient.ModelImage(
-                    reference = image.dataUrl,
-                    mimeType = image.mimeType,
-                    bytes = image.bytes,
-                    width = image.width,
-                    height = image.height,
-                    source = "agent_browser",
-                    preserveOriginal = true,
-                )
-            },
-        )
-    }
-
-    private fun currentActiveDisplayId(): Int {
-        val id = activeDisplayId
-        if (!CanvasRoutingPolicy.isVirtualDisplay(id)) return Display.DEFAULT_DISPLAY
-        val vd = VirtualDisplayController.snapshots.value
-        return if (vd.active && vd.displayId == id) {
-            id
-        } else {
-            publishedObservation.set(PublishedObservation())
-            throw ActiveDisplayUnavailableException()
+        val session = browserTabs.remove(key)
+            ?: return textResult(errorResult("TAB_NOT_FOUND", "没有名为 $key 的标签"))
+        Handler(Looper.getMainLooper()).post {
+            runCatching { session.releaseIdlePage(dispose = true) }
         }
-    }
-
-    private fun checkCancellation() {
-        if (closed.get() || Thread.currentThread().isInterrupted) throw AgentRunCancelledException()
-    }
-
-    private fun publishObservation(observation: PublishedObservation) {
-        checkCancellation()
-        publishedObservation.set(observation)
-        if (closed.get() || Thread.currentThread().isInterrupted) {
-            publishedObservation.compareAndSet(observation, PublishedObservation())
-            throw AgentRunCancelledException()
-        }
-    }
-
-    private fun observeScreen(args: JSONObject, generation: Long?): AgentModelClient.ToolResult {
-        publishedObservation.set(PublishedObservation())
-        val startedAt = SystemClock.elapsedRealtime()
-        val options = AgentScreenObservationContract.resolve(args)
-        val displayId = currentActiveDisplayId()
-        val observation = screenObservationProvider?.invoke(options)
-            ?: deviceController.observe(
-                includeScreenshot = options.includeScreenshot,
-                includeUiTree = options.includeUiTree,
-                maxNodes = options.maxNodes,
-                displayId = displayId,
-            )
-        publishObservation(
-            PublishedObservation(
-                elements = observation.elementObservation,
-                coordinateSpace = observation.coordinateSpace,
-                generation = generation.takeIf { JSONObject(observation.content).optBoolean("ok") },
-            ),
-        )
-        logger.debug {
-            "Agent local tool action=observe_screen outcome=completed " +
-                "display=$displayId observation=${observation.elementObservation?.id} " +
-                "nodes=${observation.elementObservation?.nodes?.size ?: 0} " +
-                "image=${observation.image?.bytes ?: 0} elapsed_ms=${SystemClock.elapsedRealtime() - startedAt} " +
-                "coordinate=${observation.coordinateSpace?.summary()}"
-        }
-        return AgentModelClient.ToolResult(
-            content = observation.content,
-            images = listOfNotNull(observation.image)
-        )
-    }
-
-    /**
-     * 成功的 GUI 动作附带一次轻量观察：只读 UI 树、不截图，节点数减半。
-     * 模型据此确认动作生效并直接用新的 observation_id 继续操作，不必再单独 observe_screen；
-     * 失败或结果未知的动作不附带，保持"先重新观察"的既有约束。
-     */
-    private fun afterAction(raw: String): AgentModelClient.ToolResult {
-        checkCancellation()
-        val result = runCatching { JSONObject(raw) }.getOrNull()
-        if (result == null || !result.optBoolean("ok")) return textResult(raw)
-        val before = publishedObservation.get().elements
-        val after = runCatching {
-            val displayId = currentActiveDisplayId()
-            screenObservationProvider?.invoke(AFTER_ACTION_OPTIONS)
-                ?: deviceController.observe(
-                    includeScreenshot = false,
-                    includeUiTree = true,
-                    maxNodes = AFTER_ACTION_OPTIONS.maxNodes,
-                    displayId = displayId,
-                )
-        }.getOrElse { throwable ->
-            publishedObservation.set(PublishedObservation())
-            checkCancellation()
-            if (throwable is AgentRunCancelledException) throw throwable
-            logger.debug { "Agent local tool after-action observation failed: type=${throwable.javaClass.simpleName}" }
-            RootShellDeviceController.Observation(
-                content = JSONObject()
-                    .put("ok", false)
-                    .put("ui_tree_status", "query_failed")
-                    .put("code", if (throwable is ActiveDisplayUnavailableException) "DISPLAY_UNAVAILABLE" else "OBSERVATION_FAILED")
-                    .put("ui_tree_note", "动作已执行，但后续观察失败；旧节点与坐标已失效，请先重新观察，不要重复动作")
-                    .toString(),
-                image = null,
-                coordinateSpace = null,
-                elementObservation = null,
-            )
-        }
-        // 新快照取代动作前的快照：旧 index 在界面变化后本就不可靠，继续保留只会让模型误用。
-        publishObservation(
-            if (after.elementObservation == null) PublishedObservation()
-            else publishedObservation.get().copy(elements = after.elementObservation, coordinateSpace = after.coordinateSpace),
-        )
-        result.put("after", AgentAfterActionSummary.build(before, after))
-        return textResult(result.toString())
-    }
-
-    private fun tap(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val point = convertPoint(
-            x = args.getInt("x"),
-            y = args.getInt("y"),
-            coordinateSpace = args.optString("coordinate_space"),
-            displayId = displayId,
-        )
-        return clearOverlay(displayId, point) {
-            if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
-                AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
-            }
-            showTap(point.x, point.y, displayId)
-            deviceController.tap(point.x, point.y, displayId)
-        }
-    }
-
-    private fun tapArea(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val x1 = args.getInt("x1")
-        val y1 = args.getInt("y1")
-        val x2 = args.getInt("x2")
-        val y2 = args.getInt("y2")
-        val coordinateSpace = args.optString("coordinate_space")
-        val first = convertPoint(x1, y1, coordinateSpace, displayId)
-        val second = convertPoint(x2, y2, coordinateSpace, displayId)
-        val point = ScreenPoint(
-            x = ((first.x.toLong() + second.x.toLong()) / 2L).toInt(),
-            y = ((first.y.toLong() + second.y.toLong()) / 2L).toInt(),
-        )
-        return clearOverlay(displayId, point) {
-            if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
-                AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
-            }
-            showTap(point.x, point.y, displayId)
-            deviceController.tap(point.x, point.y, displayId)
-        }
-    }
-
-    private fun tapElement(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val index = args.optInt("index", -1)
-        val observation = requireElementObservation(args) ?: return observationError(args)
-        val node = observation.nodes.firstOrNull { it.index == index }
-        if (node == null) {
-            return errorResult("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index")
-        }
-        val result = clearOverlay(displayId, ScreenPoint(node.centerX, node.centerY)) {
-            deviceController.tapElement(observation, index)
-        }
-        if (result.isOkJson()) {
-            if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
-                AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
-            }
-            showTap(node.centerX, node.centerY, displayId)
-        }
-        return result
-    }
-
-    private fun longPressElement(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val index = args.optInt("index", -1)
-        val observation = requireElementObservation(args) ?: return observationError(args)
-        val node = observation.nodes.firstOrNull { it.index == index }
-        val durationMs = args.optInt("duration_ms", 800)
-        if (node == null) {
-            return errorResult("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index")
-        }
-        val result = clearOverlay(displayId, ScreenPoint(node.centerX, node.centerY)) {
-            deviceController.longPressElement(observation, index, durationMs)
-        }
-        if (result.isOkJson()) {
-            if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
-                AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.LONG_PRESS)
-            }
-            showLongPress(node.centerX, node.centerY, durationMs, displayId)
-        }
-        return result
-    }
-
-    private fun longPress(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val point = convertPoint(
-            x = args.getInt("x"),
-            y = args.getInt("y"),
-            coordinateSpace = args.optString("coordinate_space"),
-            displayId = displayId,
-        )
-        val durationMs = args.optInt("duration_ms", 800)
-        return clearOverlay(displayId, point) {
-            if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
-                AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.LONG_PRESS)
-            }
-            showLongPress(point.x, point.y, durationMs, displayId)
-            deviceController.longPress(point.x, point.y, durationMs, displayId)
-        }
-    }
-
-    private fun swipe(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val start = convertPoint(
-            x = args.getInt("x1"),
-            y = args.getInt("y1"),
-            coordinateSpace = args.optString("coordinate_space"),
-            displayId = displayId,
-        )
-        val end = convertPoint(
-            x = args.getInt("x2"),
-            y = args.getInt("y2"),
-            coordinateSpace = args.optString("coordinate_space"),
-            displayId = displayId,
-        )
-        val durationMs = args.optInt("duration_ms", 500)
-        return clearOverlay(displayId, start, end) {
-            if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) {
-                AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.SWIPE)
-            }
-            showSwipe(start.x, start.y, end.x, end.y, durationMs, displayId)
-            deviceController.swipe(
-                start.x,
-                start.y,
-                end.x,
-                end.y,
-                durationMs,
-                displayId,
-            )
-        }
-    }
-
-    private fun scrollElement(args: JSONObject): String {
-        val observation = requireElementObservation(args) ?: return observationError(args)
-        return deviceController.scrollElement(
-            observation = observation,
-            index = args.optInt("index", -1),
-            direction = args.optString("direction"),
-            amount = args.optString("amount"),
-        )
-    }
-
-    /**
-     * 统一的文本输入：replace（默认）整体替换为 text，text 为空即清空；append 在光标处插入。
-     * 指定 index 时先确认节点来自最近一次观察；不指定时作用于当前输入焦点。
-     * submit=true 在写入成功后按输入法回车，用于搜索、发送等提交动作。
-     */
-    private fun typeText(args: JSONObject): String {
-        val displayId = currentActiveDisplayId()
-        val text = args.requiredText("text")
-        val mode = args.optString("mode", "replace").trim().lowercase(Locale.ROOT).ifBlank { "replace" }
-        val written = when (mode) {
-            "replace" -> replaceText(args)
-            "append" -> {
-                if (text.isEmpty()) return errorResult("INVALID_ARGUMENT", "append 模式的 text 不能为空")
-                if (args.optNullableInt("index") != null) {
-                    return errorResult("INVALID_ARGUMENT", "append 只作用于当前输入焦点；要写入指定输入框请用 mode=replace")
-                }
-                // 长文本走选区插入加粘贴回退，比逐字键入更稳定。
-                if (text.length > TYPE_TEXT_INCREMENTAL_CHARS) pasteText(args) else deviceController.inputText(text, displayId)
-            }
-            else -> return errorResult("INVALID_ARGUMENT", "mode 只能是 replace 或 append")
-        }
-        val json = runCatching { JSONObject(written) }.getOrNull() ?: return written
-        json.put("tool", "type_text").put("mode", mode)
-        if (!json.optBoolean("ok") || !args.optBoolean("submit")) return json.toString()
-        val submitted = runCatching { JSONObject(deviceController.pressKey("ENTER", displayId)) }.getOrNull()
-        json.put("submitted", submitted?.optBoolean("ok") == true)
-        if (submitted?.optBoolean("ok") != true) {
-            // 文本已写入但提交失败：整体仍算成功，避免模型重复输入；由 submitted=false 提示单独补按回车或点按钮。
-            json.put("submit_error", submitted?.optString("code").orEmpty().ifBlank { "SUBMIT_FAILED" })
-        }
-        return json.toString()
-    }
-
-    private fun inputText(args: JSONObject): String {
-        val text = args.requiredText("text")
-        if (text.length > 1_000) {
-            return errorResult("TEXT_TOO_LONG", "input_text 最多支持 1000 个字符")
-        }
-        return when (args.optString("mode", "append").lowercase(Locale.ROOT)) {
-            "replace" -> replaceText(args)
-            "paste" -> pasteText(args)
-            else -> deviceController.inputText(text, currentActiveDisplayId())
-        }
-    }
-
-    private fun replaceText(args: JSONObject): String {
-        val index = args.optNullableInt("index")
-        val observation = if (index != null) {
-            requireElementObservation(args) ?: return observationError(args)
-        } else {
-            null
-        }
-        return deviceController.replaceText(
-            text = args.requiredText("text"),
-            index = index,
-            observation = observation,
-            displayId = currentActiveDisplayId(),
-        )
-    }
-
-    private fun clearText(args: JSONObject): String {
-        val index = args.optNullableInt("index")
-        val observation = if (index != null) {
-            requireElementObservation(args) ?: return observationError(args)
-        } else {
-            null
-        }
-        return deviceController.clearText(index = index, observation = observation, displayId = currentActiveDisplayId())
-    }
-
-    private fun setClipboard(args: JSONObject): String =
-        deviceController.clipboardSet(requireContext(), args.requiredText("text"))
-
-    private fun getClipboard(): String =
-        deviceController.clipboardGet(requireContext())
-
-    private fun pasteText(args: JSONObject): String =
-        deviceController.pasteText(args.requiredText("text"), currentActiveDisplayId())
-
-    private fun waitForText(args: JSONObject): String =
-        deviceController.waitForText(
-            text = args.requiredText("text"),
-            timeoutMs = args.optInt("timeout_ms", 10_000),
-            includeDesc = args.optBoolean("include_desc", true),
-            matchMode = args.optString("match", "contains"),
-            displayId = currentActiveDisplayId(),
-        )
-
-    private fun waitForPackage(args: JSONObject): String =
-        deviceController.waitForPackage(
-            packageName = args.optString("package_name"),
-            timeoutMs = args.optInt("timeout_ms", 10_000),
-            displayId = currentActiveDisplayId(),
-        )
-
-    /**
-     * 坐标系必须显式声明。旧版按"上一次观察是否带截图"隐式切换默认值，模型无从得知，
-     * 经常把截图像素当成屏幕像素；缺省时直接报参数错误，让模型在下一步改正。
-     */
-    private fun convertPoint(
-        x: Int,
-        y: Int,
-        coordinateSpace: String,
-        displayId: Int = Display.DEFAULT_DISPLAY,
-    ): ScreenPoint {
-        val space = publishedObservation.get().coordinateSpace
-        val requestedSpace = coordinateSpace.trim().lowercase(Locale.ROOT)
-        if (requestedSpace.isBlank()) {
-            throw InvalidToolArgumentException(
-                "缺少 coordinate_space：看截图定位用 normalized（0–999），坐标来自 ui_nodes 用 screen",
-            )
-        }
-        if (requestedSpace == "normalized") {
-            if (x !in 0..NORMALIZED_MAX || y !in 0..NORMALIZED_MAX) {
-                throw InvalidToolArgumentException("normalized 坐标必须在 0–$NORMALIZED_MAX 之间：($x,$y)")
-            }
-            val (width, height) = space?.let { it.screenWidth to it.screenHeight }
-                ?: deviceController.screenDimensions(displayId)
-            return ScreenPoint(
-                x = (x.toLong() * (width - 1) / NORMALIZED_MAX).toInt(),
-                y = (y.toLong() * (height - 1) / NORMALIZED_MAX).toInt(),
-            )
-        }
-        if (requestedSpace == "screen") {
-            val (width, height) = space?.let { it.screenWidth to it.screenHeight }
-                ?: deviceController.screenDimensions(displayId)
-            if (x !in 0 until width || y !in 0 until height) {
-                throw InvalidToolArgumentException(
-                    "屏幕坐标超出范围：($x,$y) not in ${width}x$height",
-                )
-            }
-            return ScreenPoint(x, y)
-        }
-        if (requestedSpace != "screenshot") {
-            throw InvalidToolArgumentException("coordinate_space 只能是 normalized、screen 或 screenshot")
-        }
-        if (space == null) {
-            throw InvalidToolArgumentException(
-                "最近一次观察没有附图，没有 screenshot 坐标系；看截图定位请用 normalized，或先带截图重新观察",
-            )
-        }
-        val point = runCatching { space.fromScreenshot(x, y) }
-            .getOrElse { throwable ->
-                throw InvalidToolArgumentException(
-                    throwable.message ?: "截图坐标超出范围",
-                )
-            }
-        return ScreenPoint(point.x, point.y)
-    }
-
-    private fun searchApps(args: JSONObject): String {
-        val query = args.optString("query").trim()
-        if (query.isBlank()) {
-            return errorResult("INVALID_ARGUMENT", "query 不能为空")
-        }
-        val includeSystem = args.optBoolean("include_system", false)
-        val limit = args.optInt("limit", 10).coerceIn(1, 20)
-        val apps = findAppsByName(query, includeSystem).take(limit)
-        return JSONObject()
-            .put("ok", true)
-            .put("tool", "search_apps")
-            .put("query", query)
-            .put("apps", apps.toJsonArray())
-            .toString()
-    }
-
-    private fun launchApp(args: JSONObject): String {
-        val packageName = args.optString("package_name").trim().ifBlank { null }
-        val appName = args.optString("app_name").trim().ifBlank { null }
-        val requestedDisplay = CanvasRoutingPolicy.RequestedDisplay.parse(
-            args.optString("display", "auto"),
-        ) ?: return errorResult("INVALID_ARGUMENT", "display 仅支持 auto、virtual 或 main")
-
-        val app = if (packageName != null) {
-            findAppByPackage(packageName) ?: AppInfo(packageName = packageName, appName = appName ?: packageName)
-        } else {
-            if (appName == null) {
-                return errorResult("INVALID_ARGUMENT", "package_name 和 app_name 至少提供一个")
-            }
-            val matches = findAppsByName(appName, includeSystem = false)
-            val exactMatches = matches.filter { it.appName.equals(appName, ignoreCase = true) }
-            when {
-                exactMatches.size == 1 -> exactMatches.single()
-                matches.size == 1 -> matches.single()
-                matches.isEmpty() -> return errorResult(
-                    code = "APP_NOT_FOUND",
-                    message = "未找到应用：$appName"
-                )
-                else -> return JSONObject()
-                    .put("ok", false)
-                    .put("code", "AMBIGUOUS_APP")
-                    .put("message", "匹配到多个应用，请指定 package_name")
-                    .put("candidates", matches.take(10).toJsonArray())
-                    .toString()
-            }
-        }
-
-        val context = requireContext()
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(app.packageName)
-        if (launchIntent == null) {
-            return errorResult(
-                code = "APP_NOT_LAUNCHABLE",
-                message = "应用不可启动或未安装：${app.packageName}"
-            )
-        }
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-
-        if (virtualDisplayEnabled() && requestedDisplay != CanvasRoutingPolicy.RequestedDisplay.MAIN && !rootAvailable()) {
-            io.github.mangi.eta.agent.device.RootAccess.awaitOrRetryIfPreviouslyGranted(context)
-        }
-        val mainForegroundPkg = AgentAccessibilityService.current()?.currentPackageName(Display.DEFAULT_DISPLAY)
-        val launchPlan = CanvasRoutingPolicy.decideLaunchPlan(
-            virtualDisplayEnabled = virtualDisplayEnabled(),
-            backendAvailable = VirtualDisplayController.isBackendAvailable(rootAvailable(), lsposedAvailable()),
-            requested = requestedDisplay,
-            targetPackage = app.packageName,
-            foregroundPackageOnMainDisplay = mainForegroundPkg,
-            ownPackage = context.packageName,
-        )
-
-        val launchedVirtualId = if (launchPlan.target == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
-            VirtualDisplayController.launchAppOnVirtualDisplay(
-                context = context,
-                packageName = app.packageName,
-                appName = app.appName,
-                launchIntent = launchIntent,
-                rootAvailable = rootAvailable,
-                checkCancellation = ::checkCancellation,
-            )
-        } else {
-            null
-        }
-
-        var canvasFallback: String? = null
-        val finalDisplayId = if (launchedVirtualId != null && CanvasRoutingPolicy.isVirtualDisplay(launchedVirtualId)) {
-            activeDisplayId = launchedVirtualId
-            launchedVirtualId
-        } else {
-            checkCancellation()
-            activeDisplayId = Display.DEFAULT_DISPLAY
-            context.startActivity(launchIntent)
-            if (launchPlan.target == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
-                // 要求虚拟屏却落到主屏时别装作成功：模型和用户都需要知道画布变了。
-                canvasFallback = "VIRTUAL_SCREEN_FAILED"
-                logger.warn("Agent local tool launch_app fell back to main: virtual display unavailable")
-            }
-            Display.DEFAULT_DISPLAY
-        }
-        val finalCanvas = if (CanvasRoutingPolicy.isVirtualDisplay(finalDisplayId)) {
-            CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY.wireName
-        } else {
-            CanvasRoutingPolicy.CanvasTarget.MAIN_DISPLAY.wireName
-        }
-        val canvasReason = if (finalCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY.wireName) {
-            launchPlan.reason
-        } else if (launchPlan.target == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
-            "virtual_create_failed"
-        } else {
-            launchPlan.reason
-        }
-
-        val verification = AppLaunchVerification.awaitWindow(
-            packageName = app.packageName,
-            displayId = finalDisplayId,
-            query = { remainingMillis ->
-                AgentAccessibilityService.current()?.observeNodeSnapshot(
-                    maxNodes = 1,
-                    displayId = finalDisplayId,
-                    includeNodes = false,
-                    timeoutMillis = remainingMillis,
-                ) ?: AgentAccessibilityService.NodeSnapshotObservation(
-                    status = AgentAccessibilityService.NodeSnapshotStatus.SERVICE_UNAVAILABLE,
-                    snapshot = null,
-                    window = null,
-                )
-            },
-            checkCancellation = ::checkCancellation,
-        )
-        logger.info(
-            "Agent local tool action=launch_app outcome=${verification.launchStatus} " +
-                "canvas=$finalCanvas reason=$canvasReason display=$finalDisplayId " +
-                "root=${io.github.mangi.eta.agent.device.RootAccess.state.value.status.name.lowercase()} " +
-                "lsposed=${lsposedAvailable()}",
-        )
-        return JSONObject()
-            .put("ok", true)
-            .put("tool", "launch_app")
-            .put("app_name", app.appName)
-            .put("package_name", app.packageName)
-            .put("canvas", finalCanvas)
-            .put("canvas_reason", canvasReason)
-            .put("display_id", finalDisplayId)
-            .put("launch_status", verification.launchStatus)
-            .put("window_observation", verification.toJson())
-            .apply {
-                canvasFallback?.let { put("canvas_fallback", it) }
-                if (!verification.confirmed) {
-                    put("note", "启动请求已提交，但尚未确认目标窗口；请先观察当前画布，不要直接重放启动或点击")
-                }
-            }
-            .toString()
-    }
-
-    private fun presentToUser(args: JSONObject): String {
-        val context = requireContext()
-        val reason = args.optString("reason").trim()
-        val vdSnapshot = VirtualDisplayController.snapshots.value
-        val wasVirtual = vdSnapshot.active || CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)
-        val presented = if (wasVirtual) {
-            VirtualDisplayController.handoffToMainDisplay(context, rootAvailable)
-        } else {
-            true
-        }
-        activeDisplayId = Display.DEFAULT_DISPLAY
-        return JSONObject()
-            .put("ok", true)
-            .put("tool", "present_to_user")
-            .put("canvas", CanvasRoutingPolicy.CanvasTarget.MAIN_DISPLAY.wireName)
-            .put("display_id", Display.DEFAULT_DISPLAY)
-            .put("presented", presented)
-            .apply {
-                if (vdSnapshot.appName.isNotBlank()) put("app_name", vdSnapshot.appName)
-                if (vdSnapshot.packageName.isNotBlank()) put("package_name", vdSnapshot.packageName)
-                if (reason.isNotBlank()) put("reason", reason)
-            }
-            .toString()
-    }
-
-    private fun openUri(args: JSONObject): String {
-        val uriText = args.optString("uri").trim()
-        if (uriText.isBlank()) {
-            return errorResult("INVALID_ARGUMENT", "uri 不能为空")
-        }
-        val uri = Uri.parse(uriText)
-        if (uri.scheme.isNullOrBlank()) {
-            return errorResult("INVALID_ARGUMENT", "uri 缺少 scheme")
-        }
-        val context = requireContext()
-        val intent = Intent(Intent.ACTION_VIEW, uri)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (!HookSupport.resolvesActivity(context, intent)) {
-            return errorResult("NO_ACTIVITY", "没有应用可以处理该 URI")
-        }
-        if (virtualDisplayEnabled() && !rootAvailable()) {
-            io.github.mangi.eta.agent.device.RootAccess.awaitOrRetryIfPreviouslyGranted(context)
-        }
-        val resolvedPkg = context.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
-        val mainForegroundPkg = AgentAccessibilityService.current()?.currentPackageName(Display.DEFAULT_DISPLAY)
-        val launchPlan = CanvasRoutingPolicy.decideLaunchPlan(
-            virtualDisplayEnabled = virtualDisplayEnabled(),
-            backendAvailable = VirtualDisplayController.isBackendAvailable(rootAvailable(), lsposedAvailable()),
-            requested = CanvasRoutingPolicy.RequestedDisplay.AUTO,
-            targetPackage = resolvedPkg,
-            foregroundPackageOnMainDisplay = mainForegroundPkg,
-            ownPackage = context.packageName,
-        )
-        val virtualId = if (launchPlan.target == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
-            VirtualDisplayController.openUriOnVirtualDisplay(
-                context = context,
-                intent = intent,
-                targetLabel = uri.host ?: uri.scheme.orEmpty(),
-                rootAvailable = rootAvailable,
-                checkCancellation = ::checkCancellation,
-            )
-        } else {
-            null
-        }
-        val finalDisplayId = if (virtualId != null && CanvasRoutingPolicy.isVirtualDisplay(virtualId)) {
-            activeDisplayId = virtualId
-            virtualId
-        } else {
-            checkCancellation()
-            activeDisplayId = Display.DEFAULT_DISPLAY
-            context.startActivity(intent)
-            Display.DEFAULT_DISPLAY
-        }
-        val finalCanvas = if (CanvasRoutingPolicy.isVirtualDisplay(finalDisplayId)) {
-            CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY.wireName
-        } else {
-            CanvasRoutingPolicy.CanvasTarget.MAIN_DISPLAY.wireName
-        }
-        val canvasReason = if (finalCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY.wireName) {
-            launchPlan.reason
-        } else if (launchPlan.target == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
-            "virtual_create_failed"
-        } else {
-            launchPlan.reason
-        }
-        logger.info("Agent local tool action=open_uri outcome=started canvas=$finalCanvas reason=$canvasReason")
-        return JSONObject()
-            .put("ok", true)
-            .put("tool", "open_uri")
-            .put("scheme", uri.scheme?.lowercase(Locale.ROOT))
-            .put("canvas", finalCanvas)
-            .put("canvas_reason", canvasReason)
-            .put("display_id", finalDisplayId)
-            .also { result ->
-                if (uri.scheme.equals("https", true)) {
-                    result.put("display_uri", uriText)
-                }
-            }
-            .toString()
+        return textResult(JSONObject().put("ok", true).put("closed", key).toString())
     }
 
     private fun checkRoot(): String {
