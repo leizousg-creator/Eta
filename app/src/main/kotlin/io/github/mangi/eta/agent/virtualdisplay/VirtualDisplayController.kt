@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Display
+import android.view.Surface
 import android.view.WindowManager
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.scale
@@ -26,6 +27,7 @@ import io.github.mangi.eta.agent.device.DeviceToolContract
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.fork.virtualdisplay.HostSurfaceBridge
 import io.github.mangi.eta.core.safeLogType
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -383,7 +385,22 @@ internal object VirtualDisplayController {
             }
         }
     }
+    // ETA-FORK: 直投（fork 专有，见 fork/virtualdisplay/HostSurfaceBridge.kt）
+    internal fun sessionResourcesForFork(): VirtualDisplaySessionResources? =
+        synchronized(lock) { displayResources }
+
+    fun attachHostSurface(surface: Surface): Boolean =
+        HostSurfaceBridge.attach(sessionResourcesForFork(), surface)
+
+    fun detachHostSurface(): Boolean =
+        HostSurfaceBridge.detach(sessionResourcesForFork())
+
+    val isHostSurfaceAttached: Boolean
+        get() = HostSurfaceBridge.isAttached
+
     fun captureScreenshotBitmap(waitUpToMs: Long = 450L): Bitmap? {
+        // ETA-FORK: 直投时 ImageReader 收不到帧，先切回来
+        HostSurfaceBridge.ensureReaderSurface(sessionResourcesForFork())
         val deadline = SystemClock.elapsedRealtime() + waitUpToMs.coerceAtLeast(0L)
         while (true) {
             synchronized(lock) {
@@ -676,7 +693,13 @@ internal object VirtualDisplayController {
     ): Boolean {
         // 1. 尝试进程内通过 system_server Hook 放行的 moveRootTaskToDisplay 迁移
         val movedInProcess = runCatching {
-            HiddenApiBypass.addHiddenApiExemptions("Landroid/app/ActivityTaskManager", "Landroid/app/IActivityTaskManager")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                HiddenApiBypass.addHiddenApiExemptions(
+                    "Landroid/app/ActivityTaskManager",
+                    "Landroid/app/IActivityTaskManager",
+                    "Landroid/app/TaskInfo", // ETA-FORK: Android 15 拦了 TaskInfo.displayId，读不到会把应用挪错屏
+                )
+            }
             val atmClass = Class.forName("android.app.ActivityTaskManager")
             val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching false
             val getTasks = service.javaClass.methods.firstOrNull { it.name == "getTasks" && it.parameterCount >= 1 }

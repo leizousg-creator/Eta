@@ -70,7 +70,7 @@ object PromptKitSkillSync {
             return Result(false, "未授予 Root 授权，无法写入 Linux 环境目录")
         }
         val skills = runCatching {
-            SkillRuntime.createIndexService(appContext).listInstalledSkills(forceRefresh = refreshIndex)
+            SkillRuntime.createIndexService(appContext).listInstalledSkills()
         }.getOrElse { throwable -> return Result(false, "读取技能列表失败：${throwable.javaClass.simpleName}") }
         if (skills.isEmpty()) return Result(true, "没有已启用的技能，未同步")
 
