@@ -31,6 +31,7 @@ import io.github.mangi.eta.agent.model.provider.ProviderResponse
 import io.github.mangi.eta.agent.model.provider.ProviderUrls
 import io.github.mangi.eta.agent.model.provider.RequestBodyMerge
 import io.github.mangi.eta.agent.model.provider.readProviderSse
+import io.github.mangi.eta.agent.model.provider.SseReadOutcome
 
 internal object OpenAiChatCompletionsProvider : AgentProviderClient {
     private const val MAX_ERROR_CHARS = 600
@@ -217,7 +218,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
             onEvent(ProviderEvent.BlockDelta(kind, block.contentIndex, delta))
         }
 
-        readProviderSse(stream, runController) { _, data ->
+        val sseOutcome = readProviderSse(stream, runController) { _, data ->
             sawStreamData = true
             val payload = data.trim()
             if (payload == "[DONE]") {
@@ -297,9 +298,18 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
         if (!sawStreamData) throw AgentModelFailure.incompleteStream(
             AppStrings.get(R.string.provider_err_no_sse_chunk, "模型接口未返回 SSE data chunk"),
         )
-        if (!sawDone && finishReason == null) throw AgentModelFailure.incompleteStream(
-            AppStrings.get(R.string.provider_err_sse_not_ended, "模型接口 SSE 流未正常结束"),
-        )
+        if (!sawDone && finishReason == null) {
+            // ETA-FORK: 空闲看门狗掐断且没有任何工具调用：上游确实不再推进了，
+            // 正文也已经完整收到，按正常结束收尾（要不要续写由 AgentLoop 决定），
+            // 不要让整轮白跑。有工具调用时仍报错——半截参数拿去执行会改坏东西。
+            if (sseOutcome == SseReadOutcome.TIMED_OUT && toolCalls.isEmpty()) {
+                finishReason = "stop"
+            } else {
+                throw AgentModelFailure.incompleteStream(
+                    AppStrings.get(R.string.provider_err_sse_not_ended, "模型接口 SSE 流未正常结束"),
+                )
+            }
+        }
 
         finishActiveVisibleBlock()
         resolveToolCallIds(toolCalls.values, existingToolCallIds)

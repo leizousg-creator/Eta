@@ -59,6 +59,43 @@ class ProviderSseReaderTest {
         assertTrue(stream.closed)
     }
 
+    @Test(timeout = 5_000)
+    fun idleWatchdogInterruptsHalfDeadStreamAndReportsTimedOut() {
+        // 上游只发一行后既不结束也不再推进：看门狗应在超时后关流打断 readLine
+        val stream = HangingStream("data: hello\n\n")
+        val received = mutableListOf<String>()
+        val outcome = readProviderSse(stream, AgentRunController(), idleTimeoutMs = 300L) { _, data ->
+            received += data
+            true
+        }
+        assertEquals(SseReadOutcome.TIMED_OUT, outcome)
+        assertEquals(listOf("hello"), received)
+        assertTrue(stream.closed)
+    }
+
+    /** 读完预置内容后一直阻塞，直到 close() 才返回 EOF。 */
+    private class HangingStream(content: String) : java.io.InputStream() {
+        private val bytes = content.toByteArray(Charsets.UTF_8)
+        private var index = 0
+        @Volatile var closed = false
+            private set
+        private val lock = Object()
+
+        override fun read(): Int {
+            if (index < bytes.size) return bytes[index++].toInt() and 0xff
+            synchronized(lock) {
+                while (!closed) lock.wait(50L)
+            }
+            return -1
+        }
+
+        override fun close() {
+            closed = true
+            synchronized(lock) { lock.notifyAll() }
+            super.close()
+        }
+    }
+
     private class TrackedStream(
         content: String,
         private val rejectEofRead: Boolean = false,
