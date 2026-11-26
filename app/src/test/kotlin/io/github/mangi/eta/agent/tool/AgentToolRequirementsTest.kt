@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.tool
 import io.github.mangi.eta.agent.imagegen.ImageGenToolCatalog
 import io.github.mangi.eta.agent.model.catalog.AgentToolCatalog
 import io.github.mangi.eta.agent.roleplay.CharacterMemoryTools
+import io.github.mangi.eta.core.ModuleFlags
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -14,9 +15,12 @@ import org.junit.Test
 class AgentToolRequirementsTest {
     @Test
     fun everyRegisteredToolHasExactlyOneRequirement() {
+        // ETA-FORK: prompt_kit 只在真实应用进程注入；这里打开开关以覆盖它的登记
+        ModuleFlags.toolsEnabled = true
         val tools = catalog(root = true)
             .also { CharacterMemoryTools.appendSchemas(it) }
             .also { ImageGenToolCatalog.appendTo(it) }
+        ModuleFlags.toolsEnabled = false
         val executionOnly = setOf("input_text", "replace_text", "clear_text", "paste_text")
         assertEquals(AgentToolRequirements.toolNames - executionOnly, tools.names())
         executionOnly.forEach { name -> assertFalse("$name 仅保留执行兼容，不再向模型暴露", name in tools.names()) }

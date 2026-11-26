@@ -123,8 +123,7 @@ internal object AgentToolRequirements {
 
     fun rootDenied(name: String, arguments: JSONObject, rootAvailable: Boolean): Boolean {
         if (rootAvailable) return false
-        // ETA-FORK: 未登记的工具按「不需要 root」放行，避免单个工具漏登记打挂整个 Runtime
-        if (find(name)?.rootRequirement == RootRequirement.REQUIRED) return true
+        if (rootRequirement(name) == RootRequirement.REQUIRED) return true
         return when (name) {
             "press_key" -> arguments.optString("button").equals("PASTE", ignoreCase = true)
             else -> false
@@ -136,8 +135,7 @@ internal object AgentToolRequirements {
         for (index in 0 until tools.length()) {
             val original = tools.getJSONObject(index)
             val name = original.getJSONObject("function").getString("name")
-            // ETA-FORK: 未登记工具按 NONE 处理，不能因为漏登记就抛异常
-            val requirement = find(name)?.rootRequirement ?: RootRequirement.NONE
+            val requirement = rootRequirement(name)
             if (!rootAvailable && requirement == RootRequirement.REQUIRED) continue
             val tool = JSONObject(original.toString())
             if (!rootAvailable) projectUnprivileged(tool.getJSONObject("function"))
