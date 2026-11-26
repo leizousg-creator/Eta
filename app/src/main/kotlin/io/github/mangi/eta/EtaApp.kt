@@ -51,6 +51,12 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         applicationScope.launch {
             AgentApprovalRepository.flow().collect { settings -> AgentApprovalRepository.publish(settings) }
         }
+        // ETA-FORK: 恢复 root 命令档位
+        io.github.mangi.eta.fork.command.DeviceCommandPolicy.restore(this@EtaApp)
+        // ETA-FORK: 到期自动导出一次（6 小时 / 保留 3 份）
+        applicationScope.launch {
+            io.github.mangi.eta.fork.backup.AutoBackup.maybeRun(this@EtaApp)
+        }
         // ETA-FORK: 自建模块只在真实进程启用，Robolectric 下保持上游行为
         if (!android.os.Build.FINGERPRINT.startsWith("robolectric")) {
             io.github.mangi.eta.core.ModuleFlags.toolsEnabled = true
