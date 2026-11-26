@@ -56,22 +56,40 @@ internal object DeviceCommandPolicy {
             if (isIrreversible(name)) {
                 return "已拒绝不可逆操作：$name"
             }
-            if (name in mutating && hitsProtectedPath(argv.drop(1))) {
-                return "已拒绝写入受保护目录：$name（${argv.drop(1).joinToString(" ")}）"
+            if (name in mutating) {
+                for (arg in argv.drop(1)) {
+                    if (arg.startsWith("-")) continue
+                    val normalized = normalizePath(arg.trim().trim('"', '\''))
+                    if (normalized.isEmpty()) continue
+                    val hit = protectedPrefixes.firstOrNull { protected ->
+                        normalized == protected || normalized.startsWith("$protected/")
+                    }
+                    if (hit != null) return "已拒绝写入受保护目录 $hit：请确认路径后再操作"
+                }
+            }
+            // 管道里混进来的危险命令也要拦：`cat x | dd of=/dev/block/...`
+            for (token in segment.split(Regex("[|&;]")).map { it.trim() }) {
+                val head = token.substringBefore(' ').substringAfterLast('/')
+                if (isIrreversible(head)) return "已拒绝不可逆操作：$head（出现在组合命令里）"
             }
         }
         return null
     }
 
-    private fun isIrreversible(name: String): Boolean = name.lowercase() in irreversible
+    private fun isIrreversible(name: String): Boolean =
+        name.lowercase() in irreversible || irreversible.any { prefix -> name.lowercase().startsWith("$prefix.") }
 
-    private fun hitsProtectedPath(args: List<String>): Boolean {
-        for (arg in args) {
-            if (!arg.startsWith("/")) continue
-            val path = arg.lowercase().substringBefore('*')
-            if (protectedPrefixes.any { path.startsWith(it) }) return true
-        }
-        return false
+    private fun normalizePath(raw: String): String {
+        var path = raw.lowercase()
+        val prefixes = listOf(
+            Regex("^/storage/emulated/[0-9]+"),
+            Regex("^/storage/[a-f0-9]{4}-[a-f0-9]{4}"),
+            Regex("^/mnt/sdcard"),
+            Regex("^/storage/self/primary"),
+            Regex("^/sdcard"),
+        )
+        for (regex in prefixes) path = regex.replace(path, "")
+        return path.ifEmpty { "/" }
     }
 
     /**
