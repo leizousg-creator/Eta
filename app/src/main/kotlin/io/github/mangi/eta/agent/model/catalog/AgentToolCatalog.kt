@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model.catalog
 
+import io.github.mangi.eta.core.ModuleFlags
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.config.Prefs
 import org.json.JSONArray
@@ -34,6 +35,8 @@ internal object AgentToolCatalog {
                 AgentWebToolCatalog.appendTo(tools, includeSearch = localWebSearch)
                 AgentBrowserToolCatalog.appendTo(tools)
             }
+            // ETA-FORK: 提示词包工具，仅真实应用进程注入（单测保持上游目录）
+            if (ModuleFlags.toolsEnabled) AgentPromptKitToolCatalog.appendTo(tools)
             AgentSkillToolCatalog.appendTo(
                 tools,
                 githubDiscovery = skillGitHubDiscovery,

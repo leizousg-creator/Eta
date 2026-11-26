@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.tool
 
+import io.github.mangi.eta.data.promptkit.PromptKitTool
 import org.json.JSONArray
 import io.github.mangi.eta.agent.model.AgentPlanMode
 import android.os.Looper
@@ -285,6 +286,7 @@ internal class AgentLocalTools(
                     textResult(appLaunchTools.openUri(args))
                 }
                 "browser_use" -> browserUse(args, toolCall.id)
+                "prompt_kit" -> textResult(PromptKitTool.execute(args))
                 "browser_devtools" -> browserDevtools(args, toolCall.id)
                 "web_search", "fetch_url" -> {
                     if (!browserToolsEnabled()) textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页搜索、读取与浏览器工具"))

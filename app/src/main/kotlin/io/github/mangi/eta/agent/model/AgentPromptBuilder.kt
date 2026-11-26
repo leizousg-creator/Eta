@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.data.promptkit.PromptKitBridge
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
@@ -56,6 +57,12 @@ internal object AgentPromptBuilder {
         val messages = JSONArray()
         if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
             messages.put(systemMessage(config.systemPrompt))
+        }
+        // ETA-FORK: 提示词包正文（角色扮演时不注入）
+        if (roleplayContext == null) {
+            PromptKitBridge.promptFor(null)?.takeIf { it.isNotBlank() }?.let { kit ->
+                messages.put(systemMessage(kit))
+            }
         }
         messages.put(
             systemMessage(

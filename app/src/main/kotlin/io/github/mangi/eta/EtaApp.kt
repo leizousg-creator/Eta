@@ -44,10 +44,16 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
             return
         }
         container = AppContainer(this).also(AppContainer::initialize)
+        // ETA-FORK: 提示词包存储
+        io.github.mangi.eta.data.promptkit.PromptKitBridge.init(this)
         // ETA-FORK: 审批需要 Application 上下文，档位快照供工具执行线程同步读取
         AgentApprovalBroker.initialize(this)
         applicationScope.launch {
             AgentApprovalRepository.flow().collect { settings -> AgentApprovalRepository.publish(settings) }
+        }
+        // ETA-FORK: 自建模块只在真实进程启用，Robolectric 下保持上游行为
+        if (!android.os.Build.FINGERPRINT.startsWith("robolectric")) {
+            io.github.mangi.eta.core.ModuleFlags.toolsEnabled = true
         }
         XposedServiceHelper.registerListener(this)
     }
