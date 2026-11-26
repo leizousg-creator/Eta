@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.mangi.eta.data.model.AgentApprovalSettings
+import io.github.mangi.eta.data.model.AgentRetrySettings
 import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
@@ -397,6 +398,29 @@ internal object SettingsDataStore {
     suspend fun setAgentApproval(settings: AgentApprovalSettings) {
         ensureInitialized()
         dataStore.edit { it[AGENT_APPROVAL_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
+    }
+
+    private val AGENT_RETRY_SETTINGS = stringPreferencesKey("agent_retry_settings_v1")
+
+    // ETA-FORK: 模型请求重试预算（次数 + 退避基数）
+    fun agentRetryFlow(): Flow<AgentRetrySettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                prefs[AGENT_RETRY_SETTINGS]?.let { raw ->
+                    runCatching { speechJson.decodeFromString<AgentRetrySettings>(raw) }.getOrNull()
+                }?.normalized() ?: AgentRetrySettings()
+            }
+    }
+
+    suspend fun agentRetry(): AgentRetrySettings = agentRetryFlow().first()
+
+    suspend fun setAgentRetry(settings: AgentRetrySettings) {
+        ensureInitialized()
+        dataStore.edit { it[AGENT_RETRY_SETTINGS] = speechJson.encodeToString(settings.normalized()) }
     }
 
 }

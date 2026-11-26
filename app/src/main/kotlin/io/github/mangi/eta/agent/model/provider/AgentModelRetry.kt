@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model.provider
 
+import io.github.mangi.eta.agent.model.AgentRetryPolicy
 import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunController
 
@@ -22,6 +23,8 @@ internal class AgentModelRetry(
     ): Result {
         var round = initialRound
         var retries = 0
+        // ETA-FORK: 重试预算改为可配快照（默认值与上游常量一致）
+        val policy = AgentRetryPolicy.settings()
         while (true) {
             controller.throwIfCancelled()
             onEvent(AgentEvent.RoundStarted(round, request.messages.length()))
@@ -46,16 +49,16 @@ internal class AgentModelRetry(
                     classified.code, false, classified.message.orEmpty(), classified,
                 )
                 if (!classified.retryable) throw classified
-                if (retries == MAX_RETRIES) {
+                if (retries == policy.maxRetries) {
                     throw AgentModelFailure(
                         classified.code, false,
-                        "${classified.message} 已重试 $MAX_RETRIES 次仍未恢复，已保留此前完成的工具结果。",
+                        "${classified.message} 已重试 ${policy.maxRetries} 次仍未恢复，已保留此前完成的工具结果。",
                         classified,
                     )
                 }
                 retries += 1
-                val delayMs = BASE_DELAY_MS shl (retries - 1)
-                onEvent(AgentEvent.ModelRetryScheduled(round, retries, MAX_RETRIES, delayMs.toInt(), classified.code))
+                val delayMs = policy.baseDelayMs.toLong() shl (retries - 1)
+                onEvent(AgentEvent.ModelRetryScheduled(round, retries, policy.maxRetries, delayMs.toInt(), classified.code))
                 waitBeforeRetry(controller, delayMs)
                 controller.throwIfCancelled()
                 // 展示保留失败尝试，模型上下文与最终思考摘要只接纳成功尝试。
@@ -65,8 +68,4 @@ internal class AgentModelRetry(
         }
     }
 
-    companion object {
-        private const val MAX_RETRIES = 3
-        private const val BASE_DELAY_MS = 2_000L
-    }
 }

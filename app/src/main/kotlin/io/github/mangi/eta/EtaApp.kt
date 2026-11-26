@@ -51,6 +51,12 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         applicationScope.launch {
             AgentApprovalRepository.flow().collect { settings -> AgentApprovalRepository.publish(settings) }
         }
+        // ETA-FORK: 重试预算快照
+        applicationScope.launch {
+            io.github.mangi.eta.data.repository.AgentRetryRepository.flow().collect { settings ->
+                io.github.mangi.eta.data.repository.AgentRetryRepository.publish(settings)
+            }
+        }
         // ETA-FORK: 恢复 root 命令档位
         io.github.mangi.eta.fork.command.DeviceCommandPolicy.restore(this@EtaApp)
         // ETA-FORK: 到期自动导出一次（6 小时 / 保留 3 份）
