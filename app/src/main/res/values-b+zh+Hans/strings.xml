@@ -1536,4 +1536,5 @@
   <string name="approval_deny">拒绝</string>
   <string name="tool_browser_devtools">页面调试</string>
   <string name="tool_browser_devtools_description">读页面的 console 日志、网络请求与 DOM 结构，或按需执行 JavaScript。</string>
+  <string name="overlay_virtual_canvas_paused">已暂停</string>
 </resources>
