@@ -167,14 +167,14 @@ internal fun OutboundRewriteScreen(
             ObCard {
                 BasicComponent(
                     title = "添加规则",
-                    summary = notice.value ?: "同名词再次添加会覆盖原规则；最多 ${OutboundRewriteSettings.MAX_RULES} 条",
+                    summary = notice ?: "同名词再次添加会覆盖原规则；最多 ${OutboundRewriteSettings.MAX_RULES} 条",
                     onClick = {
                         val from = fromState.text.toString().trim()
                         val to = toState.text.toString().trim()
                         if (from.isEmpty()) {
-                            notice.value = "原词不能为空"
+                            notice = "原词不能为空"
                         } else if (from == to) {
-                            notice.value = "原词和替换词相同，这条规则不会生效"
+                            notice = "原词和替换词相同，这条规则不会生效"
                         } else {
                             val rule = OutboundRewriteRule(from = from, to = to)
                             update { current ->
@@ -182,7 +182,7 @@ internal fun OutboundRewriteScreen(
                             }
                             fromState.setTextAndPlaceCursorAtEnd("")
                             toState.setTextAndPlaceCursorAtEnd("")
-                            notice.value = "已添加「${rule.from}」→「${rule.to.ifEmpty { "（删除）" }}」"
+                            notice = "已添加「${rule.from}」→「${rule.to.ifEmpty { "（删除）" }}」"
                         }
                     },
                 )
