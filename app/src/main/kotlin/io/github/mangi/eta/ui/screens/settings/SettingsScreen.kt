@@ -514,6 +514,17 @@ private fun SettingsPageContent(
             }
         }
 
+        item(key = "section_promptkit_title") {
+            SmallTitle("提示词包")
+        }
+        item(key = "section_promptkit") {
+            BasicComponent(
+                title = "提示词包",
+                summary = io.github.mangi.eta.data.promptkit.PromptKitBridge.statusLine(),
+                onClick = { onNavigate(AppRoute.PromptKit) },
+            )
+        }
+
         item(key = "section_approval") {
             // ETA-FORK: 操作审批档位，点一下循环切换
             val approvalScope = rememberCoroutineScope()

@@ -72,6 +72,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object SystemEnhance : AppRoute
 
+    /** ETA-FORK: 提示词包设置。 */
+    @Serializable
+    data object PromptKit : AppRoute
+
     @Serializable
     data object Settings : AppRoute
 
