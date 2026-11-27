@@ -5,7 +5,6 @@ import io.github.mangi.eta.data.model.OutboundRewriteSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 
 /**
  * 出站改写设置。
@@ -19,15 +18,13 @@ object AgentOutboundRepository {
 
     val stateFlow: StateFlow<OutboundRewriteSettings> = snapshot
 
-    fun flow(): Flow<OutboundRewriteSettings> =
-        SettingsDataStore.settingsFlow().map { it.outbound.normalized() }
+    fun flow(): Flow<OutboundRewriteSettings> = SettingsDataStore.outboundRewriteFlow()
 
-    suspend fun settings(): OutboundRewriteSettings = SettingsDataStore.settings().outbound.normalized()
+    suspend fun settings(): OutboundRewriteSettings = SettingsDataStore.outboundRewrite()
 
     suspend fun update(transform: (OutboundRewriteSettings) -> OutboundRewriteSettings) {
-        SettingsDataStore.updateSettings { current ->
-            current.copy(outbound = transform(current.outbound).normalized())
-        }
+        val current = SettingsDataStore.outboundRewrite()
+        SettingsDataStore.setOutboundRewrite(transform(current))
     }
 
     /** 请求路径同步读取；未初始化时返回默认值（关闭）。 */
