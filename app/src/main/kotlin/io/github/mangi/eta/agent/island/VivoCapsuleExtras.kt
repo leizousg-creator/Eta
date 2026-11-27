@@ -120,6 +120,12 @@ internal object VivoCapsuleExtras {
                     putBundle(
                         "notification.superx.capsule",
                         Bundle().apply {
+                            // 这条是插件的「新建态」路径：island 子 Bundle 缺失时它会走这里。
+                            // SuperXCapsuleDataController.addAtomIslandCapsuleElementToShow 里
+                            // state=0 表示「删除岛」，content 为空则直接 return，所以两个都必须给。
+                            putInt("notification.superx.capsule.state", 1)
+                            putString("notification.superx.capsule.content", content.take(40))
+                            putInt("notification.superx.capsule.showTime", seconds)
                             putParcelable("notification.superx.capsule.icon", icon)
                         },
                     )
