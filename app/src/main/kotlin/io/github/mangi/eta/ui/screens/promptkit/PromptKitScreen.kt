@@ -95,8 +95,8 @@ internal fun PromptKitScreen(
 
 /** 正文预览：优先 active 版本，其次追加文件。 */
 private fun currentBodyPreview(): String {
-    val store = PromptKitBridge.storeOrNull() ?: return ""
-    val body = store.active()?.body?.takeIf { it.isNotBlank() }
+    val manifest = PromptKitBridge.manifest()
+    val body = manifest.active()?.body?.takeIf { it.isNotBlank() }
     if (body != null) {
         return body.take(1200)
     }
