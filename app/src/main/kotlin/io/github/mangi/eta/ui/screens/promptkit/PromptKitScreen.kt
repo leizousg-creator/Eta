@@ -62,6 +62,9 @@ internal fun PromptKitScreen(
     val bodyState = remember { TextFieldState(savedBody) }
     val notice = remember { mutableStateOf<String?>(null) }
     val showRename = remember { mutableStateOf(false) }
+    val keywordsState = remember {
+        TextFieldState(manifest.value.keywords.joinToString("，"))
+    }
     val renameState = remember { TextFieldState(active?.name.orEmpty()) }
 
     fun refresh(next: PromptKitManifest) {
@@ -249,6 +252,37 @@ internal fun PromptKitScreen(
             }
         }
 
+        item(key = "pk_keywords_title") { SmallTitle("关键词") }
+        item(key = "pk_keywords") {
+            PkCard {
+                GlassTextField(
+                    state = keywordsState,
+                    label = "关键词（逗号、顿号或换行分隔）",
+                    lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 3, maxHeightInLines = 6),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                val current = parseKeywords(keywordsState.text.toString())
+                val saved = manifest.value.keywords
+                BasicComponent(
+                    title = if (current != saved) "保存关键词（有未保存修改）" else "保存关键词",
+                    summary = if (current.isEmpty()) {
+                        "当前没有关键词" + if (saved.isEmpty()) "" else "，点一下清空已保存的 ${saved.size} 个"
+                    } else {
+                        "共 ${current.size} 个：" + current.joinToString("、").take(60) +
+                            if (current != saved) "，点一下写入" else "，已保存"
+                    },
+                    onClick = {
+                        if (current != saved) {
+                            update { it.copy(keywords = current) }
+                            notice.value = "已保存 ${current.size} 个关键词"
+                        }
+                    },
+                )
+            }
+        }
+
         item(key = "pk_template_title") { SmallTitle("模板") }
         item(key = "pk_templates") {
             PkCard {
@@ -384,6 +418,10 @@ internal fun PromptKitScreen(
         }
     }
 }
+
+/** 关键词允许中英文逗号、顿号与换行分隔。 */
+private fun parseKeywords(text: String): List<String> =
+    text.split(',', '，', '、', '\n').map { it.trim() }.filter { it.isNotEmpty() }
 
 private fun nextVersionId(manifest: PromptKitManifest): String {
     var index = manifest.versions.size + 1
