@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.island
 import android.app.Notification
 import android.content.Context
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import io.github.mangi.eta.R
@@ -32,6 +33,18 @@ internal object VivoCapsuleExtras {
 
     /** 岛卡片的停留秒数；运行期间每次通知更新都会续期。调整体验时只改这里。 */
     const val CAPSULE_SHOW_SECONDS = 8
+
+    /**
+     * 只在 vivo 系（含 iQOO）启用。
+     *
+     * 别的机型没有人认这些字段，而且我们为了不让顶部出现两个胶囊会关掉 Live Update，
+     * 所以在非 vivo 上必须原样保留上游行为（含单测断言）。
+     */
+    fun isSupported(): Boolean =
+        Build.MANUFACTURER.equals("vivo", ignoreCase = true) ||
+            Build.BRAND.equals("vivo", ignoreCase = true) ||
+            Build.MANUFACTURER.equals("iQOO", ignoreCase = true) ||
+            Build.BRAND.equals("iQOO", ignoreCase = true)
 
     fun apply(
         context: Context,

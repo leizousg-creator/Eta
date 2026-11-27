@@ -171,7 +171,7 @@ internal class AgentExecutionService : Service() {
 
         // 原子岛：同一份通知的另一种呈现。岛和 promoted ongoing 同时开，顶部会出现两个胶囊，
         // 所以有岛时不申请 Live Update；GUI 悬浮窗接管顶部视觉位时同样让位。
-        val islandText = if (status != null && !suppressLiveUpdate &&
+        val islandText = if (status != null && !suppressLiveUpdate && VivoCapsuleExtras.isSupported() &&
             (activeRunCount > 0 || leases.count() > 0)
         ) {
             status.shortText()
