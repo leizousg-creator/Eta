@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassTextField
@@ -36,6 +37,17 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 另外 `files/promptkit/append.md` 与 `/sdcard/Download/eta_append.md` 仍支持热加载，
  * 想用文件管理器改也行，两条路都通。
  */
+@Composable
+private fun PkCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp),
+    ) {
+        content()
+    }
+}
+
 @Composable
 internal fun PromptKitScreen(
     onBack: () -> Unit,
@@ -112,14 +124,17 @@ internal fun PromptKitScreen(
     ) {
         item(key = "pk_status_title") { SmallTitle("状态") }
         item(key = "pk_status") {
+            PkCard {
             BasicComponent(
                 title = if (manifest.value.enabled) "已启用" else "未启用",
                 summary = status.value,
             )
+            }
         }
 
         item(key = "pk_switch_title") { SmallTitle("开关") }
         item(key = "pk_enabled") {
+            PkCard {
             BasicComponent(
                 title = "启用提示词包",
                 summary = if (manifest.value.enabled) {
@@ -129,8 +144,10 @@ internal fun PromptKitScreen(
                 },
                 onClick = { toggleMode(!manifest.value.enabled) },
             )
+            }
         }
         item(key = "pk_keyword") {
+            PkCard {
             BasicComponent(
                 title = "仅关键词命中时注入",
                 summary = if (manifest.value.keywordOnly) {
@@ -140,10 +157,12 @@ internal fun PromptKitScreen(
                 },
                 onClick = { toggleKeywordOnly(!manifest.value.keywordOnly) },
             )
+            }
         }
 
         item(key = "pk_body_title") { SmallTitle("正文") }
         item(key = "pk_body_editor") {
+            PkCard {
             GlassTextField(
                 state = bodyState,
                 label = active?.name ?: "正文",
@@ -152,8 +171,10 @@ internal fun PromptKitScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
+            }
         }
         item(key = "pk_body_actions") {
+            PkCard {
             val dirty = bodyState.text.toString() != savedBody
             BasicComponent(
                 title = if (dirty) "保存正文（有未保存修改）" else "保存正文",
@@ -161,8 +182,10 @@ internal fun PromptKitScreen(
                     if (dirty) "，点一下写入" else "，与已保存内容一致",
                 onClick = { if (dirty) saveBody() },
             )
+            }
         }
         item(key = "pk_import") {
+            PkCard {
             BasicComponent(
                 title = "从文件导入正文",
                 summary = "支持 txt / md；导入后只是填进编辑框，还要点一次「保存正文」",
@@ -172,6 +195,7 @@ internal fun PromptKitScreen(
                     }.onFailure { notice.value = "无法打开文件选择器" }
                 },
             )
+            }
         }
         notice.value?.let { message ->
             item(key = "pk_notice") {
@@ -186,11 +210,13 @@ internal fun PromptKitScreen(
 
         item(key = "pk_hint_title") { SmallTitle("其他改法") }
         item(key = "pk_hint") {
+            PkCard {
             BasicComponent(
                 title = "直接改追加文件",
                 summary = "编辑 /sdcard/Download/eta_append.md 或应用私有 files/promptkit/append.md，" +
                     "按修改时间即时生效，无需重装",
             )
+            }
         }
     }
 }
