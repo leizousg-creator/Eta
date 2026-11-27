@@ -15,6 +15,7 @@ import android.os.Looper
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
+import io.github.mangi.eta.agent.island.VivoCapsuleExtras
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.ui.MainActivity
@@ -46,6 +47,7 @@ internal class AgentExecutionService : Service() {
         try {
             startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             foregroundActive = true
+            scheduleCapsuleHeartbeat()
         } catch (failure: RuntimeException) {
             startRejected = true
             AndroidAgentLogger.warn("Execution service foreground failed: type=${failure.safeLogType()}")
@@ -68,8 +70,36 @@ internal class AgentExecutionService : Service() {
     override fun onDestroy() {
         if (instance === this) instance = null
         // 销毁时同样收回本服务拥有的任务。回收在独立有界工作线程上完成，不阻塞 Main。
+        mainHandler.removeCallbacks(capsuleHeartbeat)
         stopQueue.close(leases.drainOwner(owner))
         super.onDestroy()
+    }
+
+    /**
+     * 原子岛心跳。
+     *
+     * superx 的 `showTime` 只有几秒，且系统只在「通知数据变化」时才刷新岛；
+     * 任务跑到一半很久没有新事件，岛就会自己消失。这里按固定间隔重发同一条通知续期。
+     * SystemUI 侧对相同数据会去重（日志 `data not changed`），不会出现重复动画。
+     */
+    private fun scheduleCapsuleHeartbeat() {
+        mainHandler.removeCallbacks(capsuleHeartbeat)
+        mainHandler.postDelayed(capsuleHeartbeat, CAPSULE_HEARTBEAT_MS)
+    }
+
+    private val capsuleHeartbeat = object : Runnable {
+        override fun run() {
+            if (instance !== this@AgentExecutionService || !foregroundActive) return
+            // 只在「真的有 agent run 在跑」时续期。
+            // 服务可能因为终端会话、Linux 启动等长驻任务长时间停在前台，
+            // 那种情况下续期会让岛永久挂在「操作中」，属于明确的回归。
+            if (runStatus == null && activeRunCount == 0) {
+                AndroidAgentLogger.info("Island heartbeat stopped: no active run")
+                return
+            }
+            refreshNotification()
+            if (foregroundActive) mainHandler.postDelayed(this, CAPSULE_HEARTBEAT_MS)
+        }
     }
 
     private fun stopTasks(startFailed: Boolean = false) {
@@ -139,9 +169,24 @@ internal class AgentExecutionService : Service() {
                 .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         }
 
+        // 原子岛：同一份通知的另一种呈现。岛和 promoted ongoing 同时开，顶部会出现两个胶囊，
+        // 所以有岛时不申请 Live Update；GUI 悬浮窗接管顶部视觉位时同样让位。
+        val islandText = if (status != null && !suppressLiveUpdate &&
+            (activeRunCount > 0 || leases.count() > 0)
+        ) {
+            status.shortText()
+        } else {
+            null
+        }
+        if (islandText != null) {
+            VivoCapsuleExtras.apply(this, builder, islandText)
+        }
+
         // 只有 Agent run 在跑、且当前未由 GUI 悬浮窗接管顶部视觉位时才申请提升为 Live Update；
         // GUI 运行或虚拟屏微缩镜显示期间退回普通前台通知，避免顶部同时出现两个胶囊冲突。
-        if (status != null && !suppressLiveUpdate && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+        if (status != null && islandText == null && !suppressLiveUpdate &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA
+        ) {
             builder
                 .setStyle(Notification.BigTextStyle().bigText(""))
                 .setShortCriticalText(status.shortText())
@@ -173,6 +218,9 @@ internal class AgentExecutionService : Service() {
         private const val NOTIFICATION_ID = 1107
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private const val BRAND_COLOR = 0xFF4285F4.toInt()
+
+        /** 原子岛续期间隔：必须小于 [VivoCapsuleExtras.CAPSULE_SHOW_SECONDS]。 */
+        private const val CAPSULE_HEARTBEAT_MS = 6000L
         private val leases = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
