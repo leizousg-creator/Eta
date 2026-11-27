@@ -57,6 +57,12 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
                 io.github.mangi.eta.data.repository.AgentRetryRepository.publish(settings)
             }
         }
+        // ETA-FORK: 出站改写快照
+        applicationScope.launch {
+            io.github.mangi.eta.data.repository.AgentOutboundRepository.flow().collect { settings ->
+                io.github.mangi.eta.data.repository.AgentOutboundRepository.publish(settings)
+            }
+        }
         // ETA-FORK: 到期自动导出一次（6 小时 / 保留 3 份）
         applicationScope.launch {
             io.github.mangi.eta.fork.backup.AutoBackup.maybeRun(this@EtaApp)

@@ -76,6 +76,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object PromptKit : AppRoute
 
+    /** ETA-FORK: 出站改写（发送前按规则替换正文里的词）。 */
+    @Serializable
+    data object OutboundRewrite : AppRoute
+
     @Serializable
     data object Settings : AppRoute
 

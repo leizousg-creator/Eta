@@ -7,6 +7,7 @@ import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
 import io.github.mangi.eta.core.AppStrings
+import io.github.mangi.eta.data.repository.AgentOutboundRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -155,8 +156,12 @@ internal class AgentLoop(
             }
             publishTranscript()
             if (purpose.allowsTools) context.compact()
-            val requestMessages = AssistantScreenContextProjection.project(
-                roleplayContext?.projectMessages(messages) ?: messages,
+            // ETA-FORK: 出站改写——只改递出去的请求正文，本地历史与界面保持原文。
+            val requestMessages = OutboundRewrite.rewrite(
+                AssistantScreenContextProjection.project(
+                    roleplayContext?.projectMessages(messages) ?: messages,
+                ),
+                AgentOutboundRepository.current(),
             )
             var roundInputTokens: Int? = null
             var roundUsage: AgentTokenUsage? = null

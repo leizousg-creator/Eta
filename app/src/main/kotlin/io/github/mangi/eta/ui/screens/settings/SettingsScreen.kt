@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SportsBar
@@ -524,6 +525,19 @@ private fun SettingsPageContent(
                     summary = io.github.mangi.eta.data.promptkit.PromptKitBridge.statusLine(),
                     startAction = { SettingsIcon(Icons.Rounded.Description) },
                     onClick = { onNavigate(AppRoute.PromptKit) },
+                )
+                // ETA-FORK: 出站改写，发送前按规则替换正文里的词
+                val outboundSettings by io.github.mangi.eta.data.repository.AgentOutboundRepository
+                    .stateFlow.collectAsStateWithLifecycle()
+                ArrowPreference(
+                    title = "出站改写",
+                    summary = when {
+                        !outboundSettings.enabled -> "已关闭：请求按原文发出"
+                        outboundSettings.activeRules.isEmpty() -> "已启用但没有规则，请求仍按原文发出"
+                        else -> "已启用 ${outboundSettings.activeRules.size} 条规则，只改递给模型的文本"
+                    },
+                    startAction = { SettingsIcon(Icons.Rounded.SwapHoriz) },
+                    onClick = { onNavigate(AppRoute.OutboundRewrite) },
                 )
                 // ETA-FORK: 操作审批档位，点一下循环切换
                 val approvalScope = rememberCoroutineScope()

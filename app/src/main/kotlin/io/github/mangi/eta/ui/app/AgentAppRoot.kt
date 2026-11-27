@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.ui.screens.promptkit.PromptKitScreen
+import io.github.mangi.eta.ui.screens.settings.OutboundRewriteScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -707,6 +708,9 @@ fun AgentAppRoot(
                     }
                     entry<AppRoute.PromptKit>(swipeDismiss = activeSwipeDismiss) {
                         PromptKitScreen(onBack = ::popRoute)
+                    }
+                    entry<AppRoute.OutboundRewrite>(swipeDismiss = activeSwipeDismiss) {
+                        OutboundRewriteScreen(onBack = ::popRoute)
                     }
                     entry<AppRoute.SystemEnhance>(swipeDismiss = activeSwipeDismiss) {
                         SystemEnhanceScreen(
