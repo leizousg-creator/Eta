@@ -16,6 +16,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
 import io.github.mangi.eta.agent.island.VivoCapsuleExtras
+import io.github.mangi.eta.agent.island.VivoIslandPublisher
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.ui.MainActivity
@@ -179,7 +180,12 @@ internal class AgentExecutionService : Service() {
             null
         }
         if (islandText != null) {
+            // extras 那条路在第三方应用上会被 NMS 剥掉子 Bundle，留着只做兜底。
             VivoCapsuleExtras.apply(this, builder, islandText)
+            // 真正能出岛的是这条：岛进程里的 bridge 直接投递 AtomIslandsBean。
+            VivoIslandPublisher.publish(this, islandText, VivoCapsuleExtras.CAPSULE_SHOW_SECONDS)
+        } else {
+            VivoIslandPublisher.hide(this)
         }
 
         // 只有 Agent run 在跑、且当前未由 GUI 悬浮窗接管顶部视觉位时才申请提升为 Live Update；

@@ -13,6 +13,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.hook.aimemory.ColorOsMemoryHooks
 import io.github.mangi.eta.hook.colordirect.ColorDirectHooks
 import io.github.mangi.eta.hook.google.GoogleAppHooks
+import io.github.mangi.eta.hook.vivo.island.VivoIslandBridge
 import io.github.mangi.eta.hook.google.GoogleEligibilityHooks
 import io.github.mangi.eta.hook.hyperos.HyperOsLauncherHooks
 import io.github.mangi.eta.hook.hyperos.HyperOsScreenSearchHooks
@@ -100,6 +101,14 @@ class ModuleMain : XposedModule() {
                     recordInstallation(HyperOsScreenSearchHooks.install(this, logger, param.classLoader))
                 }
             }
+
+            // ETA-FORK: vivo 原子岛本体所在进程。岛的内部 API 只有在这里可用，
+            // 主进程（AgentExecutionService）发广播过来，由 bridge 直接投递 bean。
+            ModuleConfig.VIVO_ISLAND_PACKAGE -> {
+                if (isCurrentPackageProcess(ModuleConfig.VIVO_ISLAND_PACKAGE)) {
+                    recordInstallation(VivoIslandBridge.install(this, logger, param.classLoader))
+                }
+            }
         }
     }
 
@@ -121,7 +130,10 @@ class ModuleMain : XposedModule() {
             isPackageProcess(processName, ModuleConfig.GOOGLE_PACKAGE) ||
             isPackageProcess(processName, ModuleConfig.COLOR_DIRECT_PACKAGE) ||
             processName == ModuleConfig.COLOROS_MEMORY_PACKAGE ||
-            isPackageProcess(processName, ModuleConfig.XIAOAI_PACKAGE)
+            isPackageProcess(processName, ModuleConfig.XIAOAI_PACKAGE) ||
+            // ETA-FORK: 原子岛桥接要在 com.vivo.systemuiplugin:island 子进程里装 hook，
+            // 漏掉这里会在 onModuleLoaded 阶段被 detach()，注入成功也等于没装。
+            isPackageProcess(processName, ModuleConfig.VIVO_ISLAND_PACKAGE)
     }
 
     private fun isPackageProcess(processName: String, packageName: String): Boolean =

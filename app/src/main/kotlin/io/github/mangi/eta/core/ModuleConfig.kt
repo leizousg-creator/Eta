@@ -21,6 +21,9 @@ internal object ModuleConfig {
     const val SYSTEM_UI_PACKAGE = "com.android.systemui"
     const val COLOR_DIRECT_PACKAGE = "com.coloros.colordirectservice"
 
+    /** ETA-FORK: vivo 原子岛本体所在包（含 `:island` 子进程）。 */
+    const val VIVO_ISLAND_PACKAGE = "com.vivo.systemuiplugin"
+
     const val CONTEXTUAL_SEARCH_ACTION = "android.app.contextualsearch.action.LAUNCH_CONTEXTUAL_SEARCH"
     const val CONTEXTUAL_SEARCH_SERVICE = "contextual_search"
     const val CONTEXTUAL_SEARCH_CLASS =
