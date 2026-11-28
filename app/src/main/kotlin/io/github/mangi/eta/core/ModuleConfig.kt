@@ -24,6 +24,9 @@ internal object ModuleConfig {
     /** ETA-FORK: vivo 原子岛本体所在包（含 `:island` 子进程）。 */
     const val VIVO_ISLAND_PACKAGE = "com.vivo.systemuiplugin"
 
+    /** ETA-FORK: vivo 小 V。借它的系统应用身份发超级岛通知，extras 才不会被 NMS 白名单剥掉。 */
+    const val VIVO_COPILOT_PACKAGE = "com.vivo.ai.copilot"
+
     const val CONTEXTUAL_SEARCH_ACTION = "android.app.contextualsearch.action.LAUNCH_CONTEXTUAL_SEARCH"
     const val CONTEXTUAL_SEARCH_SERVICE = "contextual_search"
     const val CONTEXTUAL_SEARCH_CLASS =

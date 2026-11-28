@@ -13,6 +13,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.hook.aimemory.ColorOsMemoryHooks
 import io.github.mangi.eta.hook.colordirect.ColorDirectHooks
 import io.github.mangi.eta.hook.google.GoogleAppHooks
+import io.github.mangi.eta.hook.vivo.VivoIslandNotifyBridge
 import io.github.mangi.eta.hook.vivo.island.VivoIslandBridge
 import io.github.mangi.eta.hook.google.GoogleEligibilityHooks
 import io.github.mangi.eta.hook.hyperos.HyperOsLauncherHooks
@@ -109,6 +110,14 @@ class ModuleMain : XposedModule() {
                     recordInstallation(VivoIslandBridge.install(this, logger, param.classLoader))
                 }
             }
+
+            // ETA-FORK: vivo 小 V。借它的系统应用身份发超级岛通知——Eta 自己发的 extras
+            // 会被 NMS 白名单剥掉，岛进程里投递 bean 又拿不到 IslandServiceListener。
+            ModuleConfig.VIVO_COPILOT_PACKAGE -> {
+                if (isCurrentPackageProcess(ModuleConfig.VIVO_COPILOT_PACKAGE)) {
+                    recordInstallation(VivoIslandNotifyBridge.install(this, logger, param.classLoader))
+                }
+            }
         }
     }
 
@@ -133,7 +142,9 @@ class ModuleMain : XposedModule() {
             isPackageProcess(processName, ModuleConfig.XIAOAI_PACKAGE) ||
             // ETA-FORK: 原子岛桥接要在 com.vivo.systemuiplugin:island 子进程里装 hook，
             // 漏掉这里会在 onModuleLoaded 阶段被 detach()，注入成功也等于没装。
-            isPackageProcess(processName, ModuleConfig.VIVO_ISLAND_PACKAGE)
+            isPackageProcess(processName, ModuleConfig.VIVO_ISLAND_PACKAGE) ||
+            // ETA-FORK: 小 V 进程同理，超级岛通知桥要在那里挂 Application.onCreate。
+            isPackageProcess(processName, ModuleConfig.VIVO_COPILOT_PACKAGE)
     }
 
     private fun isPackageProcess(processName: String, packageName: String): Boolean =

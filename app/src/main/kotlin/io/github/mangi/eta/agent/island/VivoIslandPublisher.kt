@@ -20,6 +20,12 @@ import android.os.SystemClock
 internal object VivoIslandPublisher {
 
     private const val TARGET_PACKAGE = "com.vivo.systemuiplugin"
+
+    /**
+     * 超级岛通知必须借小 V 的身份发（见 VivoIslandNotifyBridge 的注释），
+     * 岛进程那条桥接作为次选一起发，两边谁在就谁处理。
+     */
+    private val TARGET_PACKAGES = listOf("com.vivo.ai.copilot", TARGET_PACKAGE)
     private const val ACTION_SHOW = "io.github.mangi.eta.island.SHOW"
     private const val ACTION_REMOVE = "io.github.mangi.eta.island.REMOVE"
     private const val EXTRA_ID = "id"
@@ -65,14 +71,16 @@ internal object VivoIslandPublisher {
         lastContent = content
         lastPublishedAt = now
         runCatching {
-            context.sendBroadcast(
-                Intent(ACTION_SHOW)
-                    .setPackage(TARGET_PACKAGE)
-                    .putExtra(EXTRA_ID, ISLAND_ID)
-                    .putExtra(EXTRA_CONTENT, content.take(40))
-                    .putExtra(EXTRA_CLASS, MAIN_ACTIVITY)
-                    .putExtra(EXTRA_SHOW_SECONDS, showSeconds),
-            )
+            TARGET_PACKAGES.forEach { target ->
+                context.sendBroadcast(
+                    Intent(ACTION_SHOW)
+                        .setPackage(target)
+                        .putExtra(EXTRA_ID, ISLAND_ID)
+                        .putExtra(EXTRA_CONTENT, content.take(40))
+                        .putExtra(EXTRA_CLASS, MAIN_ACTIVITY)
+                        .putExtra(EXTRA_SHOW_SECONDS, showSeconds),
+                )
+            }
         }
     }
 
@@ -96,9 +104,11 @@ internal object VivoIslandPublisher {
         if (lastContent == null) return
         lastContent = null
         runCatching {
-            context.sendBroadcast(
-                Intent(ACTION_REMOVE).setPackage(TARGET_PACKAGE).putExtra(EXTRA_ID, ISLAND_ID),
-            )
+            TARGET_PACKAGES.forEach { target ->
+                context.sendBroadcast(
+                    Intent(ACTION_REMOVE).setPackage(target).putExtra(EXTRA_ID, ISLAND_ID),
+                )
+            }
         }
     }
 }
