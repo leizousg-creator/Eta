@@ -213,6 +213,14 @@ internal object VivoIslandBridge {
 
         field("buildId", String::class.java, id)
         field("buildSourcePackage", String::class.java, ETA_PACKAGE)
+        // 第三方应用在插件里走的是 BUSINESS_NEW_SUPER_X（见 SuperXCapsuleDataController
+        // 的新建态分支），不设 businessKey 时岛内部的列表/视图层会取到 null。
+        field("buildBusinessKey", String::class.java, "BUSINESS_NEW_SUPER_X")
+        field("buildAtomIslandsType", Integer.TYPE, 2)
+        field("buildPriority", Integer.TYPE, 2)
+        field("buildLandingInfoPkn", String::class.java, ETA_PACKAGE)
+        field("buildLandingInfoPkt", String::class.java, MAIN_ACTIVITY)
+        field("buildLandingInfoIsDeepLink", java.lang.Boolean.TYPE, false)
         field("buildLeftTemplate", Integer.TYPE, 1)
         field("buildRightTemplate", Integer.TYPE, 4)
         field("buildLeftContent", CharSequence::class.java, "Eta")
@@ -261,7 +269,9 @@ internal object VivoIslandBridge {
         }.onSuccess {
             logger.debug { "island 已投递: $id → $content" }
         }.onFailure {
-            logger.warn("island 投递方法不可用: ${it.javaClass.simpleName} ${it.message}")
+            // InvocationTargetException 的 message 总是 null，真正原因在 cause 里。
+            val cause = it.cause ?: it
+            logger.warn("island 投递失败: ${cause.javaClass.simpleName}: ${cause.message}")
         }
     }
 
