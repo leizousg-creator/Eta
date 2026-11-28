@@ -172,8 +172,9 @@ internal class AgentExecutionService : Service() {
 
         // 原子岛：同一份通知的另一种呈现。岛和 promoted ongoing 同时开，顶部会出现两个胶囊，
         // 所以有岛时不申请 Live Update；GUI 悬浮窗接管顶部视觉位时同样让位。
+        val hasActiveTask = activeRunCount > 0 || leases.count() > 0
         val islandText = if (status != null && !suppressLiveUpdate && VivoCapsuleExtras.isSupported() &&
-            (activeRunCount > 0 || leases.count() > 0)
+            hasActiveTask
         ) {
             status.shortText()
         } else {
@@ -184,7 +185,9 @@ internal class AgentExecutionService : Service() {
             VivoCapsuleExtras.apply(this, builder, islandText)
             // 真正能出岛的是这条：岛进程里的 bridge 直接投递 AtomIslandsBean。
             VivoIslandPublisher.publish(this, islandText, VivoCapsuleExtras.CAPSULE_SHOW_SECONDS)
-        } else {
+        } else if (!hasActiveTask) {
+            // 只有真的没有任务时才删岛。GUI 接管顶部（suppressLiveUpdate）只是让位不更新，
+            // 删掉会造成岛一闪一闪：日志里 islandData 在 {} 和 {eta_agent_task=…} 之间反复跳。
             VivoIslandPublisher.hide(this)
         }
 
