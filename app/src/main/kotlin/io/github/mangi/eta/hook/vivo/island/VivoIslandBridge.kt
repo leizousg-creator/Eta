@@ -218,6 +218,13 @@ internal object VivoIslandBridge {
         field("buildLeftContent", CharSequence::class.java, "Eta")
         field("buildRightContent", CharSequence::class.java, content.take(40))
         field("buildShowTime", Integer.TYPE, seconds.coerceIn(3, 30))
+        // notifyAtomIsland 第一件事就是 buildTimestamp + build()，然后
+        // 「timeout < now 直接 return」——不设 timeout 等于投递被静默丢弃。
+        field(
+            "buildTimeout",
+            java.lang.Long.TYPE,
+            System.currentTimeMillis() + seconds.coerceIn(3, 30) * 1000L,
+        )
         field("buildForceShow", java.lang.Boolean.TYPE, true)
         field("buildSupportNewNode", java.lang.Boolean.TYPE, true)
         // 1 = 允许点击。不设这一项时岛条不响应点击（实测：点了没有任何反应），
@@ -245,12 +252,17 @@ internal object VivoIslandBridge {
             }.onFailure { logger.warn("island 点击响应装载失败: ${it.javaClass.simpleName}") }
         }
 
-        val bean = builderClass.getMethod("build").invoke(builder)
+        // 注意签名：notifyAtomIsland(AtomIslandsBean.Builder)，不是 Bean。
+        // 传 Bean 会抛 NoSuchMethodException，被外层 runCatching 吞成「投递失败」。
         val receiverClass = Class.forName("$PREFIX" + "data.AtomIslandsDataReceiver", false, loader)
         val receiver = receiverClass.getMethod("getInstance").invoke(null)
-        receiverClass.getMethod("notifyAtomIsland", Class.forName("$PREFIX" + "data.AtomIslandsBean", false, loader))
-            .invoke(receiver, bean)
-        logger.debug { "island 已投递: $id → $content" }
+        runCatching {
+            receiverClass.getMethod("notifyAtomIsland", builderClass).invoke(receiver, builder)
+        }.onSuccess {
+            logger.debug { "island 已投递: $id → $content" }
+        }.onFailure {
+            logger.warn("island 投递方法不可用: ${it.javaClass.simpleName} ${it.message}")
+        }
     }
 
     private fun deleteAtomIsland(context: Context, id: String, logger: ModuleLogger) {
